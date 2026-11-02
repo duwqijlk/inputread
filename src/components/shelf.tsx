@@ -1,0 +1,1034 @@
+import * as Dialog from "@radix-ui/react-dialog";
+import * as Menu from "@radix-ui/react-dropdown-menu";
+import {
+  ArrowRight,
+  BookOpen,
+  BookPlus,
+  Check,
+  ChevronRight,
+  CheckCircle2,
+  FileJson,
+  Info,
+  MoreVertical,
+  Pencil,
+  RotateCw,
+  Search,
+  Share2,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { listPackRecords, type PackRecord } from "@/lib/book-db";
+import { holdOffersUpdate, type ListHoldWhy } from "@/lib/word-list-plan";
+import { updateInstalledBooks, useListUpdates } from "@/lib/word-list-update";
+import {
+  overallProgress,
+  relativeTime,
+  useProgress,
+  type BookProgress,
+} from "@/lib/progress-store";
+import { summarize } from "@/lib/srs";
+import { useVocab } from "@/lib/vocab-store";
+import type { Book, VocabEntry } from "@/lib/vocab-model";
+import { useT, type Key } from "@/lib/i18n";
+import { useClassicBookIds, useClassicsRunning } from "@/lib/classics";
+import { bookHasUserWork } from "@/lib/shelf-work";
+import { bookSyncKey } from "@/lib/sync-merge";
+import { wordsFromBook } from "@/lib/wordbook";
+import { useShelfRemove } from "@/lib/shelf-remove";
+import { SHELF_MENU_ARM_MS, shelfPressDown, shelfPressMove, shelfPressRelease } from "@/lib/phone-gestures";
+import { BookCover, talkCoverTone, type CoverLook, type useCovers } from "@/components/book-cover";
+import { useBookTone } from "@/lib/cover-tone";
+import { lastReadLine } from "@/lib/last-read";
+import { ShelfBookInfo } from "@/components/shelf-book-info";
+import { isTedBook, useSpeechBookIds } from "@/lib/speech-books";
+import { navigate } from "@/lib/router";
+import { BookTag, BookTags, OldFashionedTag } from "@/components/cover-marks";
+import { btn, cn, field, ProgressBar, ProgressRing, selectCls } from "@/components/ui";
+import { compareLexile } from "@/lib/lexile";
+import { compareSeriesPlace } from "@/lib/discover-rails";
+import { asFinishedAt, matchesFinished, type FinishedFilter } from "@/lib/reading-stats";
+import { LazyShareDialog } from "@/components/share-button";
+import {
+  DifficultyControls,
+  matchesBand,
+  type BandChoice,
+  type SortChoice,
+} from "@/components/lexile-ui";
+import {
+  bookCardGrid,
+  bookCardShell,
+  cardAuthorClass,
+  cardTitleClass,
+  FilterMenu,
+  ListFilters,
+  type SeriesChoice,
+} from "@/components/list-filters";
+
+type Row = {
+  book: Book;
+  progress: BookProgress | undefined;
+  fraction: number;
+  words: number;
+  due: number;
+};
+
+type ListOffer = { why: ListHoldWhy; failure: string };
+
+function offerLine(offer: ListOffer, t: (key: Key, params?: Record<string, string | number>) => string): {
+  text: string;
+  warn: boolean;
+} {
+  if (offer.failure) return { text: offer.failure, warn: true };
+  if (offer.why === "bookChanged") return { text: t("lists.keptBook"), warn: true };
+  return { text: t("lists.newList"), warn: false };
+}
+
+/** Update, in the line under the author. Tapping it runs the update. */
+function UpdateTag({
+  title,
+  offer,
+  busy,
+  onUpdate,
+}: {
+  title: string;
+  offer: ListOffer;
+  busy: boolean;
+  onUpdate: () => void;
+}) {
+  const { t } = useT();
+  const line = offerLine(offer, t);
+  const label = busy ? t("lists.updating") : t("pack.update");
+  return (
+    <BookTag
+      tone="action"
+      onClick={onUpdate}
+      disabled={busy}
+      title={line.text}
+      aria-label={busy ? `${label}: ${title}` : t("lists.tagAria", { title })}
+      data-list-update={offer.why}
+      data-list-update-button=""
+    >
+      <RotateCw className={cn("size-3", busy && "animate-spin")} strokeWidth={2.5} aria-hidden />
+      {label}
+    </BookTag>
+  );
+}
+
+/** A speech's drawn cover is the talk look, as on Discover. */
+function lookOf(speeches: ReadonlySet<string>, bookId: string): CoverLook {
+  if (!speeches.has(bookId)) return "book";
+  return isTedBook(bookId) ? "ted" : "talk";
+}
+
+/**
+ * The shelf's own note about new word lists: which books, what stays, and one button for all of them.
+ * A book whose last try kept its old list is left to its own card, where the reason is shown.
+ */
+function ListUpdatesStrip({
+  rows,
+  covers,
+  step,
+  onUpdateAll,
+}: {
+  rows: readonly Row[];
+  covers: Record<string, string>;
+  step: { done: number; total: number } | null;
+  onUpdateAll: () => void;
+}) {
+  const { t, tn } = useT();
+  const speeches = useSpeechBookIds();
+  const shown = rows.slice(0, 4);
+  return (
+    <section
+      className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl bg-accent-soft/70 px-4 py-3 sm:px-5"
+      aria-label={tn("lists.strip", rows.length)}
+      data-lists-ready
+    >
+      <div className="flex shrink-0 -space-x-3" aria-hidden>
+        {shown.map((row) => (
+          <div key={row.book.id} className="w-9 overflow-hidden rounded-[3px] shadow-sm ring-2 ring-card sm:w-10">
+            <BookCover title={row.book.title} author={row.book.author} cover={covers[row.book.id]} look={lookOf(speeches, row.book.id)} />
+          </div>
+        ))}
+      </div>
+      <div className="grid min-w-0 flex-1 basis-48 gap-0.5">
+        <p className="font-semibold text-ink">{tn("lists.strip", rows.length)}</p>
+        <p className="text-sm leading-snug text-muted">
+          {step ? t("lists.updatingStep", { done: Math.min(step.done + 1, step.total), total: step.total }) : t("lists.stripBody")}
+        </p>
+      </div>
+      <button
+        type="button"
+        className={cn(btn.primary, "shrink-0 max-sm:w-full")}
+        onClick={onUpdateAll}
+        disabled={step !== null}
+        data-lists-update-all
+      >
+        <RotateCw className={cn("size-4", step && "animate-spin")} aria-hidden />
+        {rows.length === 1 ? t("pack.update") : t("lists.updateAll")}
+      </button>
+    </section>
+  );
+}
+
+function RenameDialog({ book, onClose }: { book: Book | null; onClose: () => void }) {
+  const { t } = useT();
+  const renameBook = useVocab((state) => state.renameBook);
+  const [title, setTitle] = useState("");
+  const [author, setAuthor] = useState("");
+  useEffect(() => {
+    if (book) {
+      setTitle(book.title);
+      setAuthor(book.author);
+    }
+  }, [book]);
+  return (
+    <Dialog.Root open={book !== null} onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/[0.32]" />
+        <Dialog.Content className="anim-pop fixed top-1/2 left-1/2 z-50 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-float-edge bg-float p-5 text-ink shadow-lift ">
+          <Dialog.Title className="font-bold tracking-[-0.02em] text-xl">
+            {t("rename.title")}
+          </Dialog.Title>
+          <Dialog.Description className="sr-only">{t("rename.desc")}</Dialog.Description>
+          <form
+            className="mt-4 grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!book || !title.trim()) return;
+              renameBook(book.id, title, author);
+              onClose();
+            }}
+          >
+            <label className="grid gap-1 text-sm font-medium">
+              {t("rename.titleField")}
+              <input
+                className={field}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                maxLength={80}
+                required
+              />
+            </label>
+            <label className="grid gap-1 text-sm font-medium">
+              {t("rename.authorField")}
+              <input
+                className={field}
+                value={author}
+                onChange={(e) => setAuthor(e.target.value)}
+                maxLength={80}
+              />
+            </label>
+            <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Dialog.Close className={btn.quiet}>{t("common.cancel")}</Dialog.Close>
+              <button type="submit" className={btn.primary}>
+                {t("common.save")}
+              </button>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+/**
+ * The shelf's hero (design system ContinueReading): the book being read, on a ground in its own
+ * colour (src/lib/cover-tone.ts). The cover stands like a book (page edges, a shadow in the book's
+ * colour), the title in Literata, a reading ring with the chapter, then "Keep reading" and the words
+ * saved from this book. On a phone it shows too: the cover on the left, the rest under it full width.
+ */
+function ContinueCard({
+  row,
+  cover,
+  offer,
+  updating,
+  onOpen,
+  onUpdate,
+  onNotebook,
+}: {
+  row: Row;
+  cover?: string;
+  offer: ListOffer | null;
+  updating: boolean;
+  onOpen: () => void;
+  onUpdate: () => void;
+  onNotebook: () => void;
+}) {
+  const speeches = useSpeechBookIds();
+  const { t, tn } = useT();
+  const { book, progress, fraction } = row;
+  const look = lookOf(speeches, book.id);
+  const tone = useBookTone(cover, look !== "book" && !cover ? talkCoverTone(book.title, book.author) : undefined);
+  const started = Boolean(progress && progress.updatedAt > 0 && fraction > 0);
+  const chapters = progress?.chapters ?? 0;
+  const left = progress ? Math.max(0, chapters - (progress.chapter + 1)) : 0;
+  const last = started ? lastReadLine(progress?.anchor) : "";
+  return (
+    <section
+      aria-label={t("shelf.continueReading")}
+      className={cn(
+        "tone-ground grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-x-6 gap-y-4 rounded-2xl p-5 shadow-hero sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-x-11 sm:gap-y-3 sm:px-11 sm:py-9",
+        last && "min-[960px]:grid-cols-[11rem_minmax(0,1fr)_minmax(0,19rem)]",
+      )}
+      style={tone}
+      data-continue-card
+    >
+      <div className="tone-cover relative sm:row-span-2" data-tilt>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="block w-full rounded-cover text-left"
+          aria-label={t("shelf.openAria", { title: book.title })}
+        >
+          <BookCover title={book.title} author={book.author} cover={cover} look={look} />
+        </button>
+      </div>
+      <div className="grid min-w-0 content-end gap-1.5 sm:gap-2">
+        <p className="flex items-center gap-2 text-[0.8125rem] font-bold text-[var(--book-deep)]">
+          <span className="size-1.5 rounded-full bg-current" aria-hidden />
+          {started ? t("shelf.continueReading") : t("shelf.startReading")}
+        </p>
+        <h2
+          className="font-display text-[1.875rem] leading-[1.1] font-bold tracking-[-0.015em] text-ink sm:text-[2.5rem] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden"
+          lang="en"
+        >
+          {book.title}
+        </h2>
+        {book.author ? (
+          <p className="truncate text-[0.9375rem] text-muted" lang="en">
+            {book.author}
+          </p>
+        ) : null}
+        {offer ? (
+          <BookTags>
+            <UpdateTag title={book.title} offer={offer} busy={updating} onUpdate={onUpdate} />
+          </BookTags>
+        ) : null}
+      </div>
+      <div className="col-span-2 grid gap-3.5 sm:col-span-1 sm:col-start-2 sm:content-start">
+        {started && progress ? (
+          <div className="flex items-center gap-3.5" data-continue-progress>
+            <ProgressRing value={fraction} label={t("shelf.readPct", { n: Math.round(fraction * 100) })} />
+            <div className="grid gap-0.5">
+              <b className="text-[0.9375rem] font-bold tabular-nums">
+                {t("shelf.chapterOf", { n: progress.chapter + 1, total: chapters })}
+              </b>
+              <span className="text-[0.8125rem] text-muted">
+                {[tn("shelf.chaptersLeft", left), progress.updatedAt ? t("shelf.readAgo", { time: relativeTime(progress.updatedAt) }) : ""]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            </div>
+          </div>
+        ) : chapters > 0 ? (
+          <p className="text-[0.9375rem] font-bold">{tn("shelf.chaptersTotal", chapters)}</p>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <button type="button" className={cn(btn.primary, "flex-[1_0_auto] px-6 sm:flex-none")} onClick={onOpen} data-continue-open>
+            <BookOpen className="size-5" aria-hidden />
+            {started ? t("shelf.continue") : t("shelf.start")}
+          </button>
+          {row.words > 0 ? (
+            <button
+              type="button"
+              className="inline-flex min-h-11 items-center gap-1 px-1.5 text-[0.9375rem] font-bold text-accent hover:underline hover:underline-offset-4"
+              onClick={onNotebook}
+              data-continue-words
+            >
+              {tn("shelf.bookWords", row.words)}
+              <ChevronRight className="size-4" aria-hidden />
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {last ? (
+        <blockquote className="continue-last col-start-3 row-span-2 row-start-1 m-0 hidden self-center min-[960px]:block" data-continue-last>
+          <span className="text-[0.8125rem] font-bold text-[var(--book-deep)]">{t("shelf.lastRead")}</span>
+          <p className="m-0 mt-1.5 font-display text-lg leading-[1.6] text-ink italic" lang="en">
+            {last}
+          </p>
+        </blockquote>
+      ) : null}
+    </section>
+  );
+}
+
+
+function ShelfSkeleton() {
+  return (
+    <div className="grid gap-6 sm:gap-8" aria-busy="true">
+      <div className="h-56 animate-pulse rounded-2xl bg-sheet sm:h-72" />
+      <div className={bookCardGrid}>
+        {Array.from({ length: 6 }, (_, index) => (
+          <div key={index} className="grid gap-2">
+            <div className="aspect-cover animate-pulse rounded-md bg-line" />
+            <div className="h-4 w-3/4 animate-pulse rounded bg-line" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** An empty shelf is one door to Discover. Books are added there, and only there. */
+function EmptyShelf({ onDiscover }: { onDiscover: () => void }) {
+  const { t } = useT();
+  return (
+    <div className="flex min-h-[50dvh] items-center justify-center">
+      {/* One line in the book's voice; the arrow nudges right now and then (EmptyStates). */}
+      <button
+        type="button"
+        className="inline-flex min-h-11 items-center gap-2 font-display text-xl text-accent hover:underline hover:underline-offset-4"
+        onClick={onDiscover}
+        data-empty-discover
+      >
+        {t("shelf.findBooks")}
+        <ArrowRight className="nudge-x size-5" aria-hidden />
+      </button>
+    </div>
+  );
+}
+
+const menuItem =
+  "flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg px-3 text-sm outline-none data-[highlighted]:bg-accent-soft";
+
+/** Phones use a 3-column shelf. A passing touch on the corner menu must not open it. */
+const PHONE_SHELF_QUERY = "(max-width: 639px)";
+
+function usePhoneShelf(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia(PHONE_SHELF_QUERY);
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(PHONE_SHELF_QUERY).matches,
+    () => false,
+  );
+}
+
+function BookCard({
+  row,
+  cover,
+  classic,
+  fileHere,
+  offer,
+  updating,
+  onOpen,
+  onNotebook,
+  onAddList,
+  onRename,
+  onUpdate,
+  phoneMenu,
+}: {
+  row: Row;
+  cover?: string;
+  classic: boolean;
+  /** null until local file presence has been read; false when only the shelf card is here */
+  fileHere: boolean | null;
+  offer: ListOffer | null;
+  updating: boolean;
+  onOpen: () => void;
+  onNotebook: () => void;
+  onAddList: () => void;
+  onRename: () => void;
+  onUpdate: () => void;
+  /** On a phone the menu opens on a second tap. A long press does not open it. */
+  phoneMenu: boolean;
+}) {
+  const speeches = useSpeechBookIds();
+  const { t } = useT();
+  const { book } = row;
+  const hintId = useId();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const infoPending = useRef(false);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  const [armed, setArmed] = useState(false);
+  const press = useRef({
+    arm: "idle" as "idle" | "wait" | "armed" | "scroll",
+    x: 0,
+    y: 0,
+    timer: 0,
+    suppress: false,
+  });
+  useEffect(() => () => window.clearTimeout(press.current.timer), []);
+  const pct = Math.round(row.fraction * 100);
+  const finished = asFinishedAt(book.finishedAt) !== undefined;
+  const setBookFinished = useVocab((state) => state.setBookFinished);
+  const [sharing, setSharing] = useState(false);
+  return (
+    <li className={bookCardShell}>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="block w-full rounded-cover text-left"
+          aria-label={t("shelf.openAria", { title: book.title })}
+          data-tilt
+        >
+          <BookCover title={book.title} author={book.author} cover={cover} look={lookOf(speeches, book.id)} />
+        </button>
+        {finished ? (
+          // The reader's own mark. The progress bar below is the reading place and does not change.
+          <span
+            className="pointer-events-none absolute bottom-1.5 right-1.5 z-[1] inline-flex items-center gap-0.5 rounded-sm bg-mark px-1.5 py-0.5 text-[0.62rem] leading-4 font-bold text-ink"
+            data-shelf-finished=""
+          >
+            <Check className="size-3 stroke-[3]" aria-hidden />
+            {t("finished.badge")}
+          </span>
+        ) : null}
+        {book.source === "epub" ? (
+          <div className="cover-progress pointer-events-none absolute inset-x-0 bottom-0 z-[1]">
+            <p className={cn("cover-progress-detail items-end justify-between gap-2 bg-gradient-to-t from-black/60 to-transparent px-2 pt-4 text-[0.68rem] leading-4 font-medium text-white", finished ? "pb-7" : "pb-0.5")}>
+              <span>{pct > 0 ? `${pct}%` : t("shelf.new")}</span>
+              {row.progress && row.progress.chapters > 0 ? (
+                <span className="truncate text-right">
+                  {t("shelf.chapterOf", { n: row.progress.chapter + 1, total: row.progress.chapters })}
+                </span>
+              ) : null}
+            </p>
+            <ProgressBar
+              value={row.fraction}
+              className="cover-progress-bar h-0.5 rounded-none bg-black/20"
+              label={t("shelf.progressFor", { title: book.title })}
+            />
+          </div>
+        ) : null}
+      </div>
+      <div className="grid flex-1 content-start gap-1">
+        <div className="flex items-start gap-1">
+          <button
+            type="button"
+            onClick={onOpen}
+            className={cn(cardTitleClass, "min-w-0 flex-1 text-left")}
+            lang="en"
+          >
+            {book.title}
+          </button>
+          <Menu.Root open={menuOpen} onOpenChange={setMenuOpen}>
+            <Menu.Trigger
+              ref={menuTrigger}
+              className={cn(
+                "relative inline-flex min-h-10 min-w-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded text-faint select-none hover:bg-sheet hover:text-ink -mr-1 sm:w-8 sm:-mr-2 [-webkit-touch-callout:none]",
+                armed && "bg-sheet text-ink",
+              )}
+              aria-label={t("shelf.moreAria", { title: book.title })}
+              aria-describedby={armed ? hintId : undefined}
+              data-shelf-more={offer ? "update" : "menu"}
+              data-shelf-arm={armed ? "" : undefined}
+              onPointerDown={(event) => {
+                if (!phoneMenu || menuOpen || event.button !== 0) return;
+                // Keep the browser from starting a text selection or opening on this press.
+                event.preventDefault();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                window.clearTimeout(press.current.timer);
+                press.current.suppress = false;
+                press.current.arm = shelfPressDown(press.current.arm);
+                press.current.x = event.clientX;
+                press.current.y = event.clientY;
+              }}
+              onPointerMove={(event) => {
+                if (press.current.arm !== "wait" && press.current.arm !== "armed") return;
+                const dx = event.clientX - press.current.x;
+                const dy = event.clientY - press.current.y;
+                press.current.arm = shelfPressMove(press.current.arm, dx * dx + dy * dy);
+              }}
+              onPointerUp={() => {
+                if (press.current.suppress) {
+                  press.current.suppress = false;
+                  press.current.arm = "idle";
+                  setArmed(false);
+                  return;
+                }
+                if (press.current.arm === "idle") return;
+                const action = shelfPressRelease(press.current.arm);
+                if (action === "menu") {
+                  press.current.arm = "idle";
+                  setArmed(false);
+                  setMenuOpen(true);
+                  return;
+                }
+                if (action === "arm") {
+                  press.current.arm = "armed";
+                  setArmed(true);
+                  press.current.timer = window.setTimeout(() => {
+                    if (press.current.arm !== "armed") return;
+                    press.current.arm = "idle";
+                    setArmed(false);
+                  }, SHELF_MENU_ARM_MS);
+                  return;
+                }
+                press.current.arm = "idle";
+                setArmed(false);
+              }}
+              onPointerCancel={() => {
+                window.clearTimeout(press.current.timer);
+                press.current.arm = "idle";
+                press.current.suppress = false;
+                setArmed(false);
+              }}
+              onContextMenu={(event) => {
+                if (!phoneMenu) return;
+                // A long press selects text on a phone. It does not open this menu.
+                event.preventDefault();
+                window.clearTimeout(press.current.timer);
+                press.current.suppress = true;
+                press.current.arm = "idle";
+                setArmed(false);
+              }}
+            >
+              <MoreVertical className="size-4" aria-hidden />
+              {armed ? (
+                <span id={hintId} className="sr-only">
+                  {t("shelf.moreAgain")}
+                </span>
+              ) : null}
+              {offer ? <span className="absolute top-2 right-2 size-2 rounded-full bg-accent" data-shelf-update-dot="" /> : null}
+            </Menu.Trigger>
+            <Menu.Portal>
+              <Menu.Content
+                onCloseAutoFocus={(event) => {
+                  if (!infoPending.current) return;
+                  // Let the menu unmount before the dialog takes focus (and the pointer lock).
+                  event.preventDefault();
+                  infoPending.current = false;
+                  setInfoOpen(true);
+                }}
+                align="end"
+                sideOffset={4}
+                className="anim-pop z-50 min-w-44 rounded-2xl border border-float-edge bg-float p-1.5 text-ink shadow-lift "
+              >
+                {offer ? (
+                  <Menu.Item
+                    className={menuItem}
+                    disabled={updating}
+                    onSelect={onUpdate}
+                    data-list-update-menu=""
+                  >
+                    <RotateCw className={cn("size-4", updating && "animate-spin")} aria-hidden />
+                    {updating ? t("lists.updating") : t("pack.update")}
+                  </Menu.Item>
+                ) : null}
+                <Menu.Item
+                  className={menuItem}
+                  onSelect={() => { infoPending.current = true; }}
+                  data-shelf-info-menu=""
+                >
+                  <Info className="size-4" aria-hidden />
+                  {t("shelf.info")}
+                </Menu.Item>
+                <Menu.Item className={menuItem} onSelect={onNotebook}>
+                  <BookPlus className="size-4" aria-hidden />
+                  {t("shelf.menuWords")}
+                  {row.due > 0 ? (
+                    <span className="ml-auto text-xs font-medium text-accent tabular-nums" data-shelf-menu-due="">
+                      {t("shelf.due", { n: row.due })}
+                    </span>
+                  ) : null}
+                </Menu.Item>
+                {book.source === "epub" ? (
+                  <Menu.Item className={menuItem} onSelect={onAddList}>
+                    <FileJson className="size-4" aria-hidden />
+                    {t("shelf.menuAddList")}
+                  </Menu.Item>
+                ) : null}
+                <Menu.Item
+                  className={menuItem}
+                  onSelect={() => setBookFinished(book.id, !finished)}
+                  data-shelf-finish-menu={finished ? "undo" : "mark"}
+                >
+                  <CheckCircle2 className="size-4" aria-hidden />
+                  {finished ? t("finished.unmark") : t("finished.mark")}
+                </Menu.Item>
+                {finished ? (
+                  <Menu.Item className={menuItem} onSelect={() => setSharing(true)} data-shelf-share-menu="">
+                    <Share2 className="size-4" aria-hidden />
+                    {t("share.menuFinished")}
+                  </Menu.Item>
+                ) : null}
+                <Menu.Item className={menuItem} onSelect={onRename}>
+                  <Pencil className="size-4" aria-hidden />
+                  {t("shelf.menuEdit")}
+                </Menu.Item>
+                <Menu.Separator className="my-1 h-px bg-line" />
+                <Menu.Item
+                  className={cn(menuItem, "text-warn data-[highlighted]:bg-warn-soft")}
+                  data-shelf-remove=""
+                  onSelect={() =>
+                    useShelfRemove.getState().ask(
+                      book,
+                      bookHasUserWork({
+                        source: book.source,
+                        needsEpub: book.needsEpub,
+                        classic,
+                        savedWords: row.words,
+                        progress: row.progress ?? null,
+                      }),
+                      row.words,
+                    )
+                  }
+                >
+                  <Trash2 className="size-4" aria-hidden />
+                  {t("discover.remove")}
+                </Menu.Item>
+              </Menu.Content>
+            </Menu.Portal>
+          </Menu.Root>
+        </div>
+        <p className={cardAuthorClass} lang="en">
+          {book.author}
+        </p>
+        <LazyShareDialog what={{ kind: "book", bookId: book.id }} open={sharing} onOpenChange={setSharing} />
+        <ShelfBookInfo
+          book={book}
+          classic={classic}
+          fileHere={fileHere}
+          due={row.due}
+          open={infoOpen}
+          onOpenChange={setInfoOpen}
+          onReturnFocus={() => menuTrigger.current?.focus({ preventScroll: true })}
+        />
+        {/* Keep only actionable or cautionary status on the card; facts live in Book info. */}
+        {offer || book.oldFashioned ? (
+          <BookTags>
+            {offer ? <UpdateTag title={book.title} offer={offer} busy={updating} onUpdate={onUpdate} /> : null}
+            {book.oldFashioned ? <OldFashionedTag reason={book.oldFashionedReason} /> : null}
+          </BookTags>
+        ) : null}
+        {book.needsEpub ? (
+          <p className="book-status text-warn" data-needs-epub="">
+            {t("shelf.needsEpub")}
+          </p>
+        ) : book.source === "epub" && fileHere === false ? (
+          <p className="book-status text-warn" data-file-missing="">
+            {t("shelf.fileMissing")}
+          </p>
+        ) : null}
+        {offer && offerLine(offer, t).warn ? (
+          <p className="book-status text-warn" data-list-hold-reason>
+            {offerLine(offer, t).text}
+          </p>
+        ) : null}
+        {typeof book.matchRate === "number" && Number.isFinite(book.matchRate) && book.matchRate >= 0 && book.matchRate < 80 ? (
+          <p className="book-status text-warn" data-shelf-low-match="">
+            {t("shelf.lowMatch", { n: Math.round(book.matchRate) })}
+          </p>
+        ) : null}
+      </div>
+      {book.source === "epub" || book.needsEpub ? null : (
+        <p className="mt-auto flex min-h-11 items-center text-xs text-muted" data-card-actions>
+          {t("shelf.sampleNotebook")}
+        </p>
+      )}
+    </li>
+  );
+}
+
+export function Shelf({
+  books,
+  words,
+  covers,
+  ready,
+  storedIds,
+  onOpen,
+  onNotebook,
+  onAddList,
+}: {
+  books: Book[];
+  words: VocabEntry[];
+  covers: ReturnType<typeof useCovers>;
+  ready: boolean;
+  /** ids whose book file is on this device; null until that list has been read */
+  storedIds: Set<string> | null;
+  onOpen: (bookId: string) => void;
+  onNotebook: (bookId: string) => void;
+  onAddList: (bookId: string | null) => void;
+}) {
+  const { t } = useT();
+  const progress = useProgress((state) => state.items);
+  const pendingId = useShelfRemove((state) => state.pending?.bookId ?? "");
+  const phoneMenu = usePhoneShelf();
+  const classicIds = useClassicBookIds(books.map((book) => book.id).join("|"));
+  const installingClassics = useClassicsRunning((state) => state.running);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortChoice>("recent");
+  const [band, setBand] = useState<BandChoice>("all");
+  const [author, setAuthor] = useState("all");
+  const [series, setSeries] = useState<SeriesChoice>("all");
+  const [finishedFilter, setFinishedFilter] = useState<FinishedFilter>("all");
+  const [renaming, setRenaming] = useState<Book | null>(null);
+  const [updatingId, setUpdatingId] = useState("");
+  const [packRecords, setPackRecords] = useState<PackRecord[]>([]);
+  const holds = useListUpdates((state) => state.holds);
+  const failures = useListUpdates((state) => state.failures);
+  const listsFinished = useListUpdates((state) => state.finished);
+  useEffect(() => {
+    let alive = true;
+    void listPackRecords()
+      .then((rows) => {
+        if (alive) setPackRecords(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [listsFinished, books.length]);
+  const offerByBook = useMemo(() => {
+    const map = new Map<string, ListOffer>();
+    for (const record of packRecords) {
+      const why = holds[`book:${record.bookId}`];
+      if (!why || !holdOffersUpdate(why)) continue;
+      map.set(record.bookId, { why, failure: failures[`book:${record.bookId}`] ?? "" });
+    }
+    return map;
+  }, [packRecords, holds, failures]);
+  const [step, setStep] = useState<{ done: number; total: number } | null>(null);
+  const [batch, setBatch] = useState<Row[]>([]);
+  function updateBook(bookId: string) {
+    if (updatingId || step) return;
+    const book = books.find((item) => item.id === bookId);
+    setUpdatingId(bookId);
+    void updateInstalledBooks([{ bookId, title: book?.title ?? "" }]).finally(() => setUpdatingId(""));
+  }
+
+  const liveBooks = useMemo(
+    () => books.filter((book) => book.id !== pendingId),
+    [books, pendingId],
+  );
+  const rows = useMemo<Row[]>(
+    () =>
+      liveBooks.map((book) => {
+        const mine = wordsFromBook(words, bookSyncKey(book));
+        const stat = summarize(mine);
+        return {
+          book,
+          progress: progress[book.id],
+          fraction: overallProgress(progress[book.id]),
+          words: mine.length,
+          due: stat.due,
+        };
+      }),
+    [liveBooks, words, progress],
+  );
+
+  /** Recent first: the book read last, then the book added last. */
+  const recent = useMemo(() => {
+    const lastOf = (row: Row) => row.progress?.updatedAt ?? 0;
+    return [...rows].sort((a, b) => lastOf(b) - lastOf(a) || b.book.updatedAt - a.book.updatedAt);
+  }, [rows]);
+
+  const hero = useMemo(() => recent.find((row) => row.book.source === "epub") ?? null, [recent]);
+
+  const authors = useMemo(
+    () => [...new Set(rows.map((row) => row.book.author).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [rows],
+  );
+  const seriesNames = useMemo(
+    () => [...new Set(rows.map((row) => row.book.series ?? "").filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [rows],
+  );
+  // Covers come from the live catalog only (useCovers), the same on every device.
+  const shelfCovers = covers;
+  const q = query.trim().toLowerCase();
+  const visible = useMemo(() => {
+    const searched = q
+      ? recent.filter((row) => `${row.book.title} ${row.book.author}`.toLowerCase().includes(q))
+      : recent;
+    let banded = searched.filter((row) => matchesBand(row.book.lexile ?? "", band));
+    if (author !== "all") banded = banded.filter((row) => row.book.author === author);
+    if (finishedFilter !== "all") banded = banded.filter((row) => matchesFinished(row.book, finishedFilter));
+    if (series === "none") banded = banded.filter((row) => !row.book.series);
+    else if (series !== "all" && series !== "grouped") banded = banded.filter((row) => row.book.series === series);
+    if (series === "grouped") {
+      return [...banded].sort(
+        (a, b) =>
+          (a.book.series ?? "\uffff").localeCompare(b.book.series ?? "\uffff") ||
+          compareSeriesPlace(a.book, b.book),
+      );
+    }
+    if (sort === "recent" || sort === "listed") return banded;
+    const copy = [...banded];
+    if (sort === "title") copy.sort((a, b) => a.book.title.localeCompare(b.book.title) || a.book.author.localeCompare(b.book.author));
+    else copy.sort((a, b) => compareLexile(a.book.lexile ?? "", b.book.lexile ?? "", sort) || a.book.title.localeCompare(b.book.title));
+    return copy;
+  }, [recent, q, band, sort, author, series, finishedFilter]);
+  const groups = useMemo(() => {
+    if (series !== "grouped") return [];
+    const names = [...new Set(visible.map((row) => row.book.series ?? "").filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const blocks = names.map((name) => ({
+      key: name,
+      title: name,
+      rows: visible
+        .filter((row) => row.book.series === name)
+        .sort((a, b) => compareSeriesPlace(a.book, b.book)),
+    }));
+    const rest = visible.filter((row) => !row.book.series);
+    if (rest.length) blocks.push({ key: "none", title: "", rows: rest });
+    return blocks;
+  }, [visible, series]);
+  const renderCard = (row: Row) => (
+    <BookCard
+      key={row.book.id}
+      row={row}
+      cover={shelfCovers[row.book.id]}
+      classic={classicIds.has(row.book.id)}
+      fileHere={storedIds === null ? null : storedIds.has(row.book.id)}
+      offer={offerByBook.get(row.book.id) ?? null}
+      updating={updatingId === row.book.id}
+      onOpen={() => onOpen(row.book.id)}
+      onNotebook={() => onNotebook(row.book.id)}
+      onAddList={() => onAddList(row.book.id)}
+      onRename={() => setRenaming(row.book)}
+      onUpdate={() => updateBook(row.book.id)}
+      phoneMenu={phoneMenu}
+    />
+  );
+  const waitingRows = useMemo(
+    () => recent.filter((row) => (offerByBook.get(row.book.id)?.failure ?? "") === "" && offerByBook.has(row.book.id)),
+    [recent, offerByBook],
+  );
+  function updateAll() {
+    if (updatingId || step || waitingRows.length === 0) return;
+    const list = waitingRows.map((row) => ({ bookId: row.book.id, title: row.book.title }));
+    setBatch(waitingRows);
+    setStep({ done: 0, total: list.length });
+    setUpdatingId(list[0].bookId);
+    void updateInstalledBooks(list, (done) => {
+      setStep({ done, total: list.length });
+      setUpdatingId(list[done]?.bookId ?? "");
+    }).finally(() => {
+      setStep(null);
+      setUpdatingId("");
+    });
+  }
+  const filtering =
+    band !== "all" ||
+    author !== "all" ||
+    series !== "all" ||
+    finishedFilter !== "all" ||
+    (sort !== "recent" && sort !== "listed");
+  const anyFinished = useMemo(() => books.some((book) => asFinishedAt(book.finishedAt) !== undefined), [books]);
+
+  return (
+    <div className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:gap-8 sm:px-6 sm:py-10">
+      {!ready || (books.length === 0 && installingClassics) ? (
+        <ShelfSkeleton />
+      ) : books.length === 0 ? (
+        <EmptyShelf onDiscover={() => navigate({ kind: "discover" })} />
+      ) : liveBooks.length === 0 ? null : (
+        <>
+          {waitingRows.length > 0 || step ? (
+            <ListUpdatesStrip
+              rows={step ? batch : waitingRows}
+              covers={shelfCovers}
+              step={step}
+              onUpdateAll={updateAll}
+            />
+          ) : null}
+          {hero && !q && !filtering ? (
+            <ContinueCard
+              row={hero}
+              cover={shelfCovers[hero.book.id]}
+              offer={offerByBook.get(hero.book.id) ?? null}
+              updating={updatingId === hero.book.id}
+              onOpen={() => onOpen(hero.book.id)}
+              onUpdate={() => updateBook(hero.book.id)}
+              onNotebook={() => onNotebook(hero.book.id)}
+            />
+          ) : null}
+
+          <section className="grid gap-4" aria-label={t("shelf.all")}>
+            {/* One row: the "All books" title (wide screens), then the search field and the Filter button. */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              {hero && !q && !filtering ? (
+                <h2 className="mr-auto hidden text-xl font-bold tracking-[-0.02em] sm:block">{t("shelf.all")}</h2>
+              ) : null}
+              {liveBooks.length >= 2 ? (
+                <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
+                  <label className="relative block min-w-0 flex-1 sm:w-64 sm:flex-none">
+                    <span className="sr-only">{t("shelf.search")}</span>
+                    <Search
+                      className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted"
+                      aria-hidden
+                    />
+                    <input
+                      className={cn(field, "pl-9")}
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder={t("shelf.search")}
+                      type="search"
+                      data-shelf-search
+                    />
+                  </label>
+                  <FilterMenu
+                    active={sort !== "recent" || band !== "all" || author !== "all" || series !== "all" || finishedFilter !== "all"}
+                    render={() => (
+                      <>
+                        <DifficultyControls
+                          sort={sort}
+                          sorts={["recent", "easy", "hard", "title"]}
+                          onSort={setSort}
+                          band={band}
+                          onBand={setBand}
+                        />
+                        {anyFinished || finishedFilter !== "all" ? (
+                          <select
+                            className={cn(selectCls, "w-auto max-w-full")}
+                            aria-label={t("finished.filterLabel")}
+                            data-finished-filter
+                            value={finishedFilter}
+                            onChange={(event) => setFinishedFilter(event.target.value as FinishedFilter)}
+                          >
+                            <option value="all">{t("finished.filter.all")}</option>
+                            <option value="finished">{t("finished.filter.finished")}</option>
+                            <option value="unfinished">{t("finished.filter.unfinished")}</option>
+                          </select>
+                        ) : null}
+                        <ListFilters
+                          authors={authors}
+                          seriesNames={seriesNames}
+                          author={author}
+                          series={series}
+                          onAuthor={setAuthor}
+                          onSeries={setSeries}
+                        />
+                      </>
+                    )}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            {visible.length === 0 && q ? (
+              <p className="py-10 text-center text-muted">{t("shelf.noMatch", { query })}</p>
+            ) : visible.length === 0 ? (
+              <p className="py-10 text-center text-muted">{t("lexile.none")}</p>
+            ) : (
+              series === "grouped" ? (
+                <div className="grid gap-8">
+                  {groups.map((group) => (
+                    <div key={group.key} className="grid gap-4" data-series-group={group.key}>
+                      <h3 className="font-bold tracking-[-0.02em] text-lg" lang={group.title ? "en" : undefined}>
+                        {group.title || t("shelf.series.none")}
+                      </h3>
+                      <ul className={bookCardGrid}>
+                        {group.rows.map(renderCard)}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+              <ul className={bookCardGrid}>{visible.map(renderCard)}</ul>
+              )
+            )}
+          </section>
+        </>
+      )}
+
+      <RenameDialog book={renaming} onClose={() => setRenaming(null)} />
+    </div>
+  );
+}

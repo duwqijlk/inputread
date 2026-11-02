@@ -1,0 +1,70 @@
+{
+  "version": 2,
+  "title": "Alice's Adventures in Wonderland",
+  "author": "Lewis Carroll",
+  "level": "Middle school. English meanings in simple words.",
+  "chapters": 13,
+  "glossary": {
+    "absurd": {
+      "pos": "adjective",
+      "meaning": "Very silly; not making sense."
+    },
+    "fancy": {
+      "pos": "base verb",
+      "meaning": "To imagine something; to see it in your mind.",
+      "forms": [
+        "fancy",
+        "fancying"
+      ],
+      "senses": [
+        {
+          "pos": "base verb",
+          "meaning": "To imagine something; to see it in your mind.",
+          "default": true
+        },
+        {
+          "meaning": "To start to like something. \"Take a fancy to\" means to begin to like it.",
+          "pos": "base verb",
+          "anchors": [
+            {
+              "chapter": 1,
+              "occurrence": 1,
+              "form": "fancy",
+              "context": "you’d take a fancy to cats"
+            }
+          ]
+        },
+        {
+          "meaning": "To think that something is probably true. \"It was Bill, I fancy\" means \"I think it was Bill\".",
+          "pos": "base verb",
+          "anchors": [
+            {
+              "chapter": 3,
+              "occurrence": 1,
+              "form": "fancy",
+              "context": "who did that?—It was Bill, I fancy—Who’s to"
+            }
+          ]
+        },
+        {
+          "meaning": "An idea that comes from your imagination; not a real thing.",
+          "pos": "singular noun",
+          "anchors": [
+            {
+              "chapter": 8,
+              "occurrence": 1,
+              "form": "fancy",
+              "context": "the Gryphon. “It’s all her fancy, that: they"
+            },
+            {
+              "chapter": 8,
+              "occurrence": 2,
+              "form": "fancy",
+              "context": "It’s all his fancy, that: he hasn’t"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

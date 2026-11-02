@@ -1,0 +1,181 @@
+import { isbnDigits } from "@/lib/book-meta";
+import { difficultyBand, lexileMeasure } from "@/lib/lexile";
+import { useT, type Key } from "@/lib/i18n";
+import { cn, selectCls } from "@/components/ui";
+
+/**
+ * The measure on a shelf card or a Discover card. An unrated book shows nothing: an "Unrated" chip
+ * on every such card said nothing and only added noise. The Filter menu still offers "Unrated".
+ */
+export function LexileBadge({ measure }: { measure?: string }) {
+  const { t } = useT();
+  const clean = lexileMeasure(measure ?? "");
+  if (!clean) return null;
+  return (
+    <p
+      className="inline-flex h-[22px] items-center gap-1 rounded bg-accent-soft px-[7px] text-xs text-accent"
+      data-lexile={clean}
+      aria-label={t("lexile.aria", { measure: clean })}
+    >
+      <b className="font-bold tabular-nums">{clean}</b>
+      <span>{t("lexile.name")}</span>
+    </p>
+  );
+}
+
+/** ISBN, series and match rate under the Lexile line. The third row is reserved so cards stay aligned. */
+export function BookMetaLines({
+  lexile,
+  isbn,
+  series,
+  seriesNumber,
+  matchRate,
+  aside,
+}: {
+  lexile?: string;
+  isbn?: string;
+  series?: string;
+  seriesNumber?: number;
+  matchRate?: number;
+  /** Short note for the reserved third row, when the book has no series and no match rate. */
+  aside?: string;
+}) {
+  const { t } = useT();
+  const cleanIsbn = isbnDigits(isbn ?? "");
+  return (
+    <div className="grid gap-1">
+      <div className="flex min-h-6 items-center">
+        <LexileBadge measure={lexile} />
+      </div>
+      <div className="flex min-h-4 items-center">
+        {cleanIsbn ? (
+          <p
+            className="truncate text-xs leading-4 text-muted tabular-nums"
+            data-isbn={cleanIsbn}
+            lang="en"
+            aria-label={t("isbn.aria", { isbn: cleanIsbn })}
+          >
+            {t("isbn.name")} {cleanIsbn}
+          </p>
+        ) : null}
+      </div>
+      <div className="flex min-h-4 items-center">
+        {series ? (
+          seriesNumber ? (
+            <p
+              className="truncate text-xs leading-4 text-muted"
+              lang="en"
+              data-series={series}
+              data-series-number={seriesNumber}
+              aria-label={t("series.aria", { name: series, n: seriesNumber })}
+            >
+              {t("series.book", { name: series, n: seriesNumber })}
+            </p>
+          ) : (
+            <p
+              className="truncate text-xs leading-4 text-muted"
+              lang="en"
+              data-series={series}
+              aria-label={t("series.ariaName", { name: series })}
+            >
+              {t("series.name", { name: series })}
+            </p>
+          )
+        ) : typeof matchRate === "number" ? (
+          <p
+            className={cn("text-xs leading-4 font-semibold", matchRate < 80 ? "text-warn" : "text-muted")}
+            data-match={matchRate}
+            aria-label={t("match.aria", { n: matchRate })}
+          >
+            {t("match.short", { n: matchRate })}
+          </p>
+        ) : aside ? (
+          <p className="truncate text-xs leading-4 text-[#6b3e22]" data-old-note>
+            {aside}
+          </p>
+        ) : null}
+      </div>
+      {series && typeof matchRate === "number" ? (
+        <p
+          className={cn("text-xs font-semibold", matchRate < 80 ? "text-warn" : "text-muted")}
+          data-match={matchRate}
+          aria-label={t("match.aria", { n: matchRate })}
+        >
+          {t("match.short", { n: matchRate })}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+export type SortChoice = "recent" | "listed" | "easy" | "hard" | "title";
+export type BandChoice = "all" | "under800" | "mid" | "high" | "unrated";
+
+const SORT_KEY: Record<SortChoice, Key> = {
+  recent: "lexile.sort.recent",
+  listed: "lexile.sort.listed",
+  easy: "lexile.sort.easy",
+  hard: "lexile.sort.hard",
+  title: "lexile.sort.title",
+};
+
+const BAND_KEY: Record<BandChoice, Key> = {
+  all: "lexile.filter.all",
+  under800: "lexile.filter.under800",
+  mid: "lexile.filter.mid",
+  high: "lexile.filter.high",
+  unrated: "lexile.filter.unrated",
+};
+
+const BANDS: BandChoice[] = ["all", "under800", "mid", "high", "unrated"];
+
+export function matchesBand(measure: string, band: BandChoice): boolean {
+  if (band === "all") return true;
+  return difficultyBand(measure) === band;
+}
+
+/** Sort and difficulty controls. They sit in the page header, never over the reading text. */
+export function DifficultyControls({
+  sort,
+  sorts,
+  onSort,
+  band,
+  onBand,
+}: {
+  sort: SortChoice;
+  sorts: SortChoice[];
+  onSort: (value: SortChoice) => void;
+  band: BandChoice;
+  onBand: (value: BandChoice) => void;
+}) {
+  const { t } = useT();
+  return (
+    <div className="flex flex-wrap gap-2">
+      <select
+        className={cn(selectCls, "w-auto max-w-full")}
+        aria-label={t("lexile.sortLabel")}
+        value={sort}
+        onChange={(event) => onSort(event.target.value as SortChoice)}
+      >
+        {sorts.map((item) => (
+          <option key={item} value={item}>
+            {t(SORT_KEY[item])}
+          </option>
+        ))}
+      </select>
+      <select
+        className={cn(selectCls, "w-auto max-w-full")}
+        aria-label={t("lexile.filterLabel")}
+        value={band}
+        data-lexile-filter
+        onChange={(event) => onBand(event.target.value as BandChoice)}
+      >
+        {BANDS.map((item) => (
+          <option key={item} value={item}>
+            {t(BAND_KEY[item])}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}

@@ -1,0 +1,839 @@
+import { AlertCircle, CheckCircle2, Compass, Library, NotebookPen, UserRound, X } from "lucide-react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { flushSync } from "react-dom";
+import {
+  bookFileExists,
+  checkBookStorage,
+  listBookSummaries,
+  loadBookMeta,
+  loadNotes,
+  loadPackRecord,
+  patchStoredBook,
+  purgeLegacyHelpCache,
+  requestPersistentStorage,
+} from "@/lib/book-db";
+import { readGlossaryFile } from "@/lib/glossary-import";
+import { canAddBooks, askToSignIn } from "@/lib/can-add";
+import { ensureClassics } from "@/lib/classics";
+import { useProgress } from "@/lib/progress-store";
+import { useQuotes } from "@/lib/quote-store";
+import { useFocusMode } from "@/lib/focus-mode";
+import { tr, trn, useT } from "@/lib/i18n";
+import { applyTheme, usePrefs } from "@/lib/reader-prefs";
+import type { VocabEntry } from "@/lib/vocab-model";
+import { markVocabHydrated, normalizeWord, useVocab } from "@/lib/vocab-store";
+import { useCovers } from "@/components/book-cover";
+import { ShelfToastHost } from "@/components/shelf-actions";
+import { finishPendingRemoval, useShelfRemove } from "@/lib/shelf-remove";
+import { SpineWarningList } from "@/components/spine-warnings";
+import { btn, cn } from "@/components/ui";
+import type { SpineNameWarning } from "@/lib/epub";
+import type { ListFlow } from "@/components/word-list";
+import { SiteNotice } from "@/components/site-notice";
+import { canonicalPath, DEFAULT_ROUTE, menuOf, navigate, pathNeedsRedirect, useRoute, type Route } from "@/lib/router";
+import { repairShelf } from "@/lib/shelf-repair";
+import { useAccount } from "@/lib/account-store";
+import { installCoverTilt, openFromCover } from "@/lib/motion";
+import {
+  feedbackTipSeen,
+  quoteTipSeen,
+  shouldOfferTutorial,
+  tutorialSeen,
+  useFeedbackTip,
+  useQuoteTip,
+  useTutorial,
+  useTutorialNews,
+} from "@/lib/tutorial";
+import { TutorialList } from "@/components/tutorial-tab";
+import { SponsorTab } from "@/components/sponsor-tab";
+import { notifySyncReady, startAccountSync } from "@/lib/sync-engine";
+import { takeLoginAfterWipe } from "@/lib/device-wipe";
+import { Avatar } from "@/components/avatar";
+import { AccountDialog } from "@/components/account-dialog";
+import { autoUpdateWordLists, useListUpdates } from "@/lib/word-list-update";
+import { rememberListPack, resolveFileOffer } from "@/lib/file-gap";
+import { useLiveGlossMeanings } from "@/components/presented-word";
+import { applyPageMeta, pageMeta } from "@/lib/page-meta";
+
+type Screen = Route;
+
+/**
+ * Books saved by an older version keep working. This runs once: it removes the saved answers
+ * of the old online helper and clears the old list of words that were waiting to be looked up.
+ * Word meanings, saved words and reading places are not touched.
+ */
+async function migrateOldData(): Promise<void> {
+  const KEY = "cibian-static-migrated-v1";
+  try {
+    if (localStorage.getItem(KEY)) return;
+    await purgeLegacyHelpCache();
+    for (const book of await listBookSummaries()) {
+      const meta = await loadBookMeta(book.id);
+      if (meta && meta.pending.length > 0) {
+        await patchStoredBook(book.id, (latest) => {
+          latest.pending = [];
+          latest.totalHard = Object.keys(latest.glossary).length;
+        });
+      }
+    }
+    localStorage.setItem(KEY, "1");
+  } catch {
+    // Try again next time.
+  }
+}
+
+// Each page is its own chunk: the first visit loads only the page that was asked for.
+const Shelf = lazy(() => import("@/components/shelf").then((m) => ({ default: m.Shelf })));
+const Notebook = lazy(() => import("@/components/notebook").then((m) => ({ default: m.Notebook })));
+const DiscoverScreen = lazy(() => import("@/components/discover").then((m) => ({ default: m.DiscoverScreen })));
+const DashboardScreen = lazy(() => import("@/components/dashboard-page").then((m) => ({ default: m.DashboardScreen })));
+const AdminPage = lazy(() => import("@/components/admin-page").then((m) => ({ default: m.AdminPage })));
+const OwnEpubDialog = lazy(() => import("@/components/own-epub-dialog").then((m) => ({ default: m.OwnEpubDialog })));
+const ReaderScreen = lazy(() => import("@/components/reader").then((m) => ({ default: m.ReaderScreen })));
+const ReviewScreen = lazy(() => import("@/components/review").then((m) => ({ default: m.ReviewScreen })));
+const WordListDialog = lazy(() => import("@/components/word-list").then((m) => ({ default: m.WordListDialog })));
+const TutorialDialog = lazy(() => import("@/components/tutorial-dialog"));
+const FeedbackTipDialog = lazy(() => import("@/components/feedback-tip-dialog"));
+const QuoteFlowDialog = lazy(() => import("@/components/quote-flow"));
+
+const setScreen = (route: Route, options?: { replace?: boolean; state?: unknown }) => navigate(route, options);
+
+export function MarginApp() {
+  const { t, tn } = useT();
+  const books = useVocab((state) => state.books);
+  const words = useVocab((state) => state.words);
+  useLiveGlossMeanings(words, books);
+  const restoreBooks = useVocab((state) => state.restoreBooks);
+  const replaceWords = useVocab((state) => state.replaceWords);
+  const theme = usePrefs((state) => state.theme);
+  const [ready, setReady] = useState(false);
+  const tutorialOpen = useTutorial((state) => state.open);
+  const feedbackTipOpen = useFeedbackTip((state) => state.open);
+  const quoteTipOpen = useQuoteTip((state) => state.open);
+  // A tutorial not seen yet: a dot on the account avatar (its "Tutorials" row says New).
+  const tutorialNews = useTutorialNews();
+  const signedIn = useAccount((state) => Boolean(state.email));
+  const publicId = useAccount((state) => state.publicId);
+  const nickname = useAccount((state) => state.nickname);
+  const avatar = useAccount((state) => state.avatar);
+  const screen: Screen = useRoute();
+  const [epubFor, setEpubFor] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
+  const listRef = useRef<HTMLInputElement>(null);
+  const listTarget = useRef<string | null>(null);
+  const [listFlow, setListFlow] = useState<ListFlow | null>(null);
+  const [notes, setNotes] = useState<string[]>([]);
+  const [spineWarnings, setSpineWarnings] = useState<SpineNameWarning[]>([]);
+  const listsWaiting = useListUpdates((state) => state.waiting);
+  const dismissListsWaiting = useListUpdates((state) => state.dismiss);
+  const [storedIds, setStoredIds] = useState<Set<string> | null>(null);
+  const opening = useRef(false);
+  // The previous screen, so closing the reader can retry a word-list update that waited.
+  const wasReading = useRef(false);
+  // The top bar answers the scroll (design system ScrollChrome): its hairline shows once content is
+  // under it, and on a phone the page's large title (data-page-title) hands over to a small one in it.
+  const topBar = useRef<HTMLElement | null>(null);
+
+  // Covers lean towards the pointer on devices that can hover (design system BookOpen).
+  useEffect(() => installCoverTilt(), []);
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
+
+  /**
+   * A start that never finishes had no visible symptom until a book was opened (the reader
+   * waited on `ready`). Say it out loud, into the notice `index.html` shows.
+   */
+  useEffect(() => {
+    if (ready) return;
+    const timer = setTimeout(() => {
+      const note = (window as unknown as { __mwNote?: (text: string) => void }).__mwNote;
+      try {
+        note?.("the app is still starting");
+      } catch {
+        // The notice is a diagnostic, never a requirement.
+      }
+    }, 12000);
+    return () => clearTimeout(timer);
+  }, [ready]);
+
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("reset");
+    if (token) useAccount.getState().openDialog("reset", token);
+    else if (takeLoginAfterWipe()) useAccount.getState().openDialog("login");
+    return startAccountSync();
+  }, []);
+
+  // "/" and any address that is not a page go to the bookshelf, without adding a history entry.
+  // /guide and /about (the Guide, removed) are not pages any more: they go to the bookshelf too.
+  // /thanks is the old thank-you page: the list is on the overview, so the address becomes /dashboard.
+  // popstate covers a Back press that lands on an old entry.
+  useEffect(() => {
+    const fix = () => {
+      if (pathNeedsRedirect()) navigate(DEFAULT_ROUTE, { replace: true });
+      else if (/^\/thanks\/?$/.test(window.location.pathname)) {
+        navigate({ kind: "dashboard" }, { replace: true });
+        window.history.replaceState(window.history.state, "", "/dashboard/#thanks");
+      } else {
+        // `/shelf` and `/shelf/` are one page: keep the address the app itself writes.
+        const canonical = canonicalPath();
+        if (canonical) window.history.replaceState(window.history.state, "", canonical + window.location.search + window.location.hash);
+      }
+    };
+    fix();
+    window.addEventListener("popstate", fix);
+    return () => window.removeEventListener("popstate", fix);
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        await Promise.all([
+          useVocab.persist.rehydrate(),
+          usePrefs.persist.rehydrate(),
+          useProgress.persist.rehydrate(),
+          useQuotes.persist.rehydrate(),
+        ]);
+      } catch {
+        // The shelf can still be rebuilt from the saved books.
+      }
+      markVocabHydrated();
+      await finishPendingRemoval();
+      try {
+        // Summaries only: loading every chapter and image here made the shelf slow.
+        const [storedResult, notesResult] = await Promise.allSettled([
+          listBookSummaries(),
+          loadNotes(),
+        ]);
+        if (storedResult.status === "fulfilled") {
+          restoreBooks(storedResult.value);
+          setStoredIds(new Set(storedResult.value.map((book) => book.id)));
+        }
+        const notes = notesResult.status === "fulfilled" ? notesResult.value : [];
+        if (useVocab.getState().words.length === 0 && notes.length > 0) {
+          const saved = notes.filter(
+            (item): item is VocabEntry =>
+              Boolean(item) &&
+              typeof item === "object" &&
+              typeof (item as VocabEntry).id === "string" &&
+              typeof (item as VocabEntry).lemma === "string",
+          );
+          if (saved.length > 0) replaceWords(saved);
+        } else {
+          // Re-save once so old cards get their new schedule fields.
+          const current = useVocab.getState().words;
+          if (current.some((word) => typeof word.stage !== "number"))
+            replaceWords(current.map(normalizeWord));
+        }
+      } catch {
+        // Keep whatever was already on this device.
+      }
+      try {
+        await repairShelf();
+      } catch {
+        // Two cards of one book are a nuisance, not a reason to stop: the next start tries again.
+      }
+      void migrateOldData();
+      // Tell the user up front if this browser cannot keep books.
+      void checkBookStorage().then((state) => {
+        setStorageWarning(state.ok ? null : state.reason);
+        if (state.ok) void requestPersistentStorage();
+      });
+      // Covers are read straight from the live catalog (useCovers); nothing is copied onto the device.
+      void ensureClassics();
+      // Installed books whose catalog revision changed get an Update button. Nothing is replaced yet.
+      void autoUpdateWordLists();
+      notifySyncReady();
+      setReady(true);
+    })();
+  }, [replaceWords, restoreBooks]);
+
+  useEffect(() => {
+    const refreshStored = () => {
+      void listBookSummaries()
+        .then((rows) => setStoredIds(new Set(rows.map((book) => book.id))))
+        .catch(() => undefined);
+    };
+    window.addEventListener("cibian-progress", refreshStored);
+    return () => window.removeEventListener("cibian-progress", refreshStored);
+  }, []);
+
+  const orderedBooks = useMemo(() => [...books].sort((a, b) => b.updatedAt - a.updatedAt), [books]);
+  const covers = useCovers(books);
+
+  // If the book on screen was deleted (here or in another tab), fall back to the shelf.
+  useEffect(() => {
+    if (!ready) return;
+    // /book/<id>/ names a catalog book, not a shelf card: it is never on the shelf by that id.
+    if (screen.kind !== "book" && "bookId" in screen && screen.bookId && !books.some((book) => book.id === screen.bookId)) {
+      navigate(DEFAULT_ROUTE, { replace: true });
+    }
+  }, [ready, books, screen]);
+
+  function clearMessages() {
+    setNotes([]);
+    setImportError(null);
+    setSpineWarnings([]);
+  }
+
+  /**
+   * A word list (.json) for a book already on the shelf, from the book-menu picker. Books
+   * themselves are added only on Discover (download, or the own-EPUB dialog of a word-list card).
+   */
+  async function takeListFile(file: File | undefined) {
+    if (!ready || !file) return;
+    clearMessages();
+    try {
+      const check = await readGlossaryFile(file);
+      setListFlow({ fileName: file.name, check, bookId: listTarget.current });
+    } catch {
+      setImportError(t("err.listUnreadable"));
+    }
+  }
+
+  async function openListPicker(bookId: string | null) {
+    listTarget.current = bookId;
+    listRef.current?.click();
+  }
+
+  /** Open the own-EPUB dialog. Importing the reader's own e-book completes an add: it needs the account too. */
+  async function askForEpub(bookId: string) {
+    if (!canAddBooks(useAccount.getState().phase)) {
+      askToSignIn();
+      return;
+    }
+    const known = await loadPackRecord(bookId).catch(() => null);
+    if (!known) {
+      const book =
+        useVocab.getState().books.find((item) => item.id === bookId) ??
+        books.find((item) => item.id === bookId);
+      if (book) {
+        const { offer } = await resolveFileOffer(book).catch(() => ({ offer: { kind: "discover" as const } }));
+        if (offer.kind === "epub") await rememberListPack(bookId, offer.packId).catch(() => undefined);
+      }
+    }
+    setEpubFor(bookId);
+  }
+
+  async function openBook(bookId: string) {
+    if (opening.current) return;
+    opening.current = true;
+    try {
+      // The store updates before React re-renders, so a book just added is visible here.
+      const book =
+        useVocab.getState().books.find((item) => item.id === bookId) ??
+        books.find((item) => item.id === bookId);
+      if (!book) return;
+      const here = await bookFileExists(bookId).catch(() => false);
+      if (here) {
+        // From a cover on the shelf, the cover grows into the page (src/lib/motion.ts).
+        openFromCover(() => flushSync(() => setScreen({ kind: "read", bookId })));
+        return;
+      }
+      // An unpaired word list is also stored as notes, but still needs its EPUB.
+      if (book.source !== "epub" && !book.needsEpub) {
+        setScreen({ kind: "words", bookId });
+        return;
+      }
+      // The card stays. A word-list book asks for the EPUB here. A classic downloads from the reader.
+      const { offer } = await resolveFileOffer(book).catch(() => ({ offer: { kind: "discover" as const } }));
+      if (offer.kind === "epub") {
+        await rememberListPack(bookId, offer.packId).catch(() => undefined);
+        if (!canAddBooks(useAccount.getState().phase)) {
+          askToSignIn();
+          return;
+        }
+        setEpubFor(bookId);
+        return;
+      }
+      setScreen({ kind: "read", bookId });
+    } finally {
+      opening.current = false;
+    }
+  }
+
+  useEffect(() => {
+    if (screen.kind === "shelf") useShelfRemove.getState().dismissNotice();
+  }, [screen.kind]);
+  // Leaving the reader asks again, so the shelf can offer Update for a list that changed
+  // while that book was open. The list stays until the reader taps Update.
+  useEffect(() => {
+    const leftReader = wasReading.current && screen.kind !== "read";
+    wasReading.current = screen.kind === "read";
+    if (leftReader) void autoUpdateWordLists();
+  }, [screen.kind]);
+  // Tab title, canonical address and index rule of the screen (src/lib/page-meta.ts).
+  const readTitle = screen.kind === "read" ? (books.find((book) => book.id === screen.bookId)?.title ?? "") : "";
+  const meta = pageMeta(screen, Boolean(readTitle));
+  const metaTitle = meta.titleKey ? t(meta.titleKey, { title: readTitle }) : null;
+  useEffect(() => {
+    applyPageMeta(meta, metaTitle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metaTitle, meta.canonical, meta.index]);
+  // The first-run tutorial (src/lib/tutorial.ts): once, over an empty shelf. The shelf stays one line.
+  useEffect(() => {
+    if (!ready) return;
+    if (shouldOfferTutorial(screen.kind, books.length, tutorialSeen(), signedIn)) useTutorial.getState().show();
+  }, [ready, screen.kind, books.length, signedIn]);
+  // The feedback tip: the first time the reader is on screen on this device, after the book has
+  // drawn, whatever the book (paired EPUB or public domain).
+  // Then, on a later book, the quote tip (design system QuoteFlow), once.
+  useEffect(() => {
+    if (screen.kind !== "read" || (feedbackTipSeen() && quoteTipSeen())) return;
+    const tipFirst = !feedbackTipSeen();
+    const timer = window.setTimeout(() => {
+      if (useTutorial.getState().open || useFeedbackTip.getState().open) return;
+      if (tipFirst) {
+        if (!feedbackTipSeen()) useFeedbackTip.getState().show();
+      } else if (!quoteTipSeen()) useQuoteTip.getState().show();
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [screen.kind]);
+  useEffect(() => {
+    if (screen.kind === "read") return;
+    let frame = 0;
+    const phone = () => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 639px)").matches;
+    const measure = () => {
+      frame = 0;
+      const bar = topBar.current;
+      if (!bar) return;
+      if (window.scrollY > 2) bar.setAttribute("data-under", "");
+      else bar.removeAttribute("data-under");
+      const title = document.querySelector<HTMLElement>("main [data-page-title], [data-page-title]");
+      const small = bar.querySelector<HTMLElement>("[data-top-title]");
+      if (small && title && small.textContent !== title.textContent) small.textContent = title.textContent;
+      const under = Boolean(title) && phone() && (title?.getBoundingClientRect().bottom ?? 0) < bar.getBoundingClientRect().bottom + 4;
+      if (under) bar.setAttribute("data-titled", "");
+      else bar.removeAttribute("data-titled");
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    measure();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [screen.kind]);
+  const reading = screen.kind === "read";
+  // Root scope also reaches dialogs and menus portalled outside the app container.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (reading) root.removeAttribute("data-ui-font");
+    else root.setAttribute("data-ui-font", "display");
+    return () => root.removeAttribute("data-ui-font");
+  }, [reading]);
+  const offline = useOffline();
+  // A review round runs in focus mode (focus-mode.ts): none of the site chrome, as in the reader.
+  const focus = useFocusMode((state) => state.on) && screen.kind === "review";
+  const bare = reading || focus;
+  const menu = menuOf(screen);
+  const tabs = [
+    {
+      id: "shelf",
+      label: t("nav.shelf"),
+      Icon: Library,
+      active: menu === "shelf",
+      go: () => setScreen({ kind: "shelf" }),
+    },
+    {
+      id: "discover",
+      label: t("nav.discover"),
+      Icon: Compass,
+      active: menu === "discover",
+      go: () => setScreen({ kind: "discover" }),
+    },
+    {
+      id: "dashboard",
+      label: t("nav.dashboard"),
+      Icon: OverviewIcon,
+      active: menu === "dashboard",
+      go: () => setScreen({ kind: "dashboard" }),
+    },
+  ];
+  return (
+    <div
+      className={cn(
+        "min-h-dvh bg-paper text-ink",
+        !reading && "flex flex-col",
+        !bare && "max-sm:pb-[calc(3.75rem+env(safe-area-inset-bottom))]",
+      )}
+    >
+      {/* The only file input of the app: a word list (.json) for a book that is already on the shelf.
+          Books themselves are added only on Discover. */}
+      <input
+        ref={listRef}
+        id="list-file"
+        className="sr-only"
+        type="file"
+        accept=".json,application/json"
+        tabIndex={-1}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          void takeListFile(file);
+        }}
+      />
+      {spineWarnings.length > 0 ? (
+        <div className="pointer-events-none fixed inset-x-0 top-16 z-40 px-4">
+          <div className="pointer-events-auto mx-auto max-w-6xl">
+            <Banner tone="warn" onClose={() => setSpineWarnings([])}>
+              <SpineWarningList warnings={spineWarnings} />
+            </Banner>
+          </div>
+        </div>
+      ) : null}
+      {/* One notice for the whole site: the copyright line and what a word tap reports. Not in the
+          reader, where it would sit over the words. */}
+      {bare ? null : <SiteNotice />}
+      {bare ? null : (
+        <header ref={topBar} className="chrome-bar chrome-top sticky top-0 z-40" data-top-bar>
+          <div className="relative mx-auto flex h-14 max-w-6xl items-center gap-1 px-2 sm:gap-2 sm:px-6">
+            <span className="chrome-title text-ink sm:hidden" aria-hidden data-top-title />
+            <button
+              type="button"
+              className="shrink-0 inline-flex min-h-11 items-center rounded-lg px-2 font-display text-lg font-semibold tracking-tight text-ink sm:text-xl -translate-y-0.5"
+              onClick={() => setScreen({ kind: "shelf" })}
+              data-brand
+            >
+              {t("common.brand")}
+            </button>
+            <nav className="hidden min-w-0 flex-1 items-stretch gap-6 self-stretch pl-4 sm:flex" aria-label={t("nav.main")}>
+              {tabs.map((tab) => (
+                <NavButton key={tab.id} id={tab.id} active={tab.active} onClick={tab.go}>
+                  {tab.label}
+                </NavButton>
+              ))}
+            </nav>
+            <div className="min-w-0 flex-1 sm:hidden" />
+            <button
+              type="button"
+              className={cn(btn.icon, "size-11", menu === "words" && "text-accent")}
+              onClick={() => setScreen({ kind: "words", bookId: null })}
+              aria-label={t("nav.notebook")}
+              aria-current={menu === "words" ? "page" : undefined}
+              data-notebook-button
+            >
+              <NotebookPen className="size-5" strokeWidth={1.75} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className={cn(btn.icon, "size-11")}
+              onClick={() => useAccount.getState().openDialog()}
+              aria-label={t("nav.account")}
+              data-account-button
+            >
+              <span className="relative inline-flex">
+                {signedIn ? (
+                  <Avatar key={(publicId ?? "") + ":" + avatar} id={publicId ?? ""} name={nickname ?? ""} version={avatar} size={24} className="[&>svg]:!size-5" eager />
+                ) : (
+                  <UserRound className="size-5" strokeWidth={1.75} aria-hidden />
+                )}
+                {tutorialNews ? <i className="absolute -top-0.5 -right-0.5 size-[7px] rounded-full bg-accent shadow-[0_0_0_2px_var(--paper)]" data-account-dot /> : null}
+              </span>
+            </button>
+          </div>
+        </header>
+      )}
+
+      {bare ? null : (
+        <nav
+          className="chrome-bar chrome-tabs fixed inset-x-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)] sm:hidden"
+          aria-label={t("nav.main")}
+          data-tab-bar
+        >
+          <div className="mx-auto grid max-w-md grid-cols-3">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={tab.go}
+                aria-current={tab.active ? "page" : undefined}
+                data-nav={tab.id}
+                className={cn(
+                  // Design system TopBar: icon over label, ink-3; the current tab brand and bold with a
+                  // 2px brand line over the bar's top rule, 40% of the tab wide (no pill).
+                  "relative flex h-[3.75rem] flex-col items-center justify-start gap-[3px] px-1 pt-2.5 pb-2 text-xs leading-4 transition-colors duration-100",
+                  tab.active ? "font-bold text-accent" : "text-faint active:text-ink",
+                )}
+              >
+                {tab.active ? <span className="absolute -top-px right-[30%] left-[30%] h-0.5 bg-accent" aria-hidden /> : null}
+                <tab.Icon className="size-[22px] shrink-0" aria-hidden />
+                <span className="max-w-full truncate">{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
+
+      {bare ? null : (
+        <div className="mx-auto grid max-w-6xl gap-2 px-4 pt-4 empty:hidden sm:px-6">
+          {importError ? (
+            <Banner tone="warn" onClose={() => setImportError(null)}>
+              {importError}
+            </Banner>
+          ) : null}
+          {listsWaiting > 0 && screen.kind !== "shelf" ? (
+            <Banner tone="good" onClose={dismissListsWaiting} data-lists-waiting>
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>{tn("msg.listsReady", listsWaiting)}</span>
+                <button
+                  type="button"
+                  className="font-semibold text-accent underline underline-offset-4"
+                  onClick={() => setScreen({ kind: "shelf" })}
+                >
+                  {t("msg.listsGo")}
+                </button>
+              </span>
+            </Banner>
+          ) : null}
+          {notes.length > 0 ? (
+            <Banner tone="good" onClose={() => setNotes([])}>
+              <ul className="grid gap-0.5">
+                {notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            </Banner>
+          ) : null}
+          {storageWarning ? <Banner tone="warn">{storageWarning}</Banner> : null}
+          {offline ? (
+            <Banner tone="warn" data-offline-notice>
+              {t("msg.offline")}
+            </Banner>
+          ) : null}
+        </div>
+      )}
+
+      <Suspense fallback={<div className="min-h-[60dvh]" aria-busy="true" />}>
+        {/*
+          The reader is never held behind the boot sequence: it loads its own book, and a slow
+          or stuck start used to leave `/read/<id>` as an empty block - the shelf still drew
+          (it is exempt below), so the only symptom was a white page when a book was opened.
+        */}
+        {!ready && screen.kind !== "shelf" && screen.kind !== "read" ? (
+          <div className="min-h-[60dvh]" aria-busy="true" />
+        ) : (
+          <>
+          {screen.kind === "read" ? (
+            <ReaderScreen
+              key={screen.bookId}
+              bookId={screen.bookId}
+              onBack={() => setScreen({ kind: "shelf" })}
+              onNotebook={() => setScreen({ kind: "words", bookId: screen.bookId })}
+              onQuotes={() => setScreen({ kind: "words", bookId: screen.bookId }, { state: { tab: "quotes" } })}
+              onAddEpub={() => void askForEpub(screen.bookId)}
+              onDiscover={() => setScreen({ kind: "discover" })}
+            />
+          ) : screen.kind === "dashboard" ? (
+            <DashboardScreen />
+          ) : screen.kind === "admin" ? (
+            <AdminPage />
+          ) : screen.kind === "discover" || screen.kind === "book" ? (
+            <DiscoverScreen
+              shelf={orderedBooks}
+              onOpen={openBook}
+              onNeedsEpub={askForEpub}
+              routeCategory={screen.kind === "discover" ? screen.category : undefined}
+              routeBookId={screen.kind === "book" ? screen.bookId : undefined}
+            />
+          ) : screen.kind === "words" ? (
+            <Notebook
+              books={orderedBooks}
+              words={words}
+              bookId={screen.bookId}
+              onBookChange={(bookId) => setScreen({ kind: "words", bookId })}
+              onReview={(bookId, pool, mode) => setScreen({ kind: "review", bookId }, { state: { review: pool, mode } })}
+              onReviewData={(bookId) => setScreen({ kind: "review", bookId }, { state: { review: "overview" } })}
+              onOpenBook={openBook}
+            />
+          ) : screen.kind === "review" ? (
+            <ReviewScreen
+              books={orderedBooks}
+              words={words}
+              bookId={screen.bookId}
+              onBack={() => setScreen({ kind: "words", bookId: screen.bookId })}
+            />
+          ) : (
+            <Shelf
+              books={orderedBooks}
+              words={words}
+              covers={covers}
+              ready={ready}
+              onOpen={(bookId) => void openBook(bookId)}
+              storedIds={storedIds}
+              onNotebook={(bookId) => setScreen({ kind: "words", bookId })}
+              onAddList={(bookId) => void openListPicker(bookId)}
+            />
+          )}
+          </>
+        )}
+      </Suspense>
+      <Suspense fallback={null}>
+        {epubFor !== null ? (
+          <OwnEpubDialog
+            bookId={epubFor}
+            onClose={() => setEpubFor(null)}
+            onSaved={(bookId, warnings) => {
+              setEpubFor(null);
+              if (warnings.length > 0) setSpineWarnings(warnings);
+              openBook(bookId);
+            }}
+          />
+        ) : null}
+        {tutorialOpen ? <TutorialDialog /> : null}
+        {feedbackTipOpen ? <FeedbackTipDialog /> : null}
+        {quoteTipOpen ? <QuoteFlowDialog /> : null}
+      </Suspense>
+      {/* Coffee shortcut on public pages only; tutorials stay available in Settings. */}
+      {ready && (menu === "shelf" || menu === "discover" || menu === "dashboard") && screen.kind !== "read" ? <SponsorTab /> : null}
+      <TutorialList />
+      <AccountDialog />
+      <ShelfToastHost onViewShelf={() => setScreen({ kind: "shelf" })} aboveTabs={!reading} />
+      <Suspense fallback={null}>
+        {listFlow ? (
+          <WordListDialog
+            flow={listFlow}
+            books={orderedBooks
+              .filter((book) => book.source === "epub")
+              .map((book) => ({ id: book.id, title: book.title }))}
+            onClose={() => setListFlow(null)}
+            onPickAnother={(bookId) => {
+              setListFlow(null);
+              void openListPicker(bookId);
+            }}
+            onDone={(_bookId, result, extra) => {
+              setListFlow(null);
+              setNotes([listAddedNote(result), ...extra]);
+            }}
+          />
+        ) : null}
+      </Suspense>
+    </div>
+  );
+}
+
+/** "Word list added: 3 words, 1 with more than one meaning. 2 old meanings were kept." */
+function listAddedNote(result: { written: number; multi: number; kept: number }): string {
+  return tr("msg.listAdded", {
+    words: trn("count.word", result.written),
+    multi: result.multi > 0 ? tr("msg.listMulti", { n: result.multi }) : "",
+    kept: result.kept > 0 ? trn("msg.listKept", result.kept) : "",
+  });
+}
+
+function Banner({
+  tone,
+  onClose,
+  children,
+  ...rest
+}: {
+  tone: "warn" | "good";
+  onClose?: () => void;
+  children: React.ReactNode;
+} & Record<`data-${string}`, unknown>) {
+  const { t } = useT();
+  const Icon = tone === "warn" ? AlertCircle : CheckCircle2;
+  return (
+    <div
+      role={tone === "warn" ? "alert" : "status"}
+      className={cn(
+        "flex items-start gap-3 rounded-2xl px-4 py-3 text-sm",
+        tone === "warn" ? "bg-warn-soft text-warn" : "bg-accent-soft text-ink",
+      )}
+      {...rest}
+    >
+      <Icon
+        className={cn("mt-0.5 size-5 shrink-0", tone === "good" && "text-accent")}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1 text-[0.95rem] leading-relaxed font-medium">{children}</div>
+      {onClose ? (
+        <button
+          type="button"
+          className="-my-2 -mr-2 inline-flex size-11 shrink-0 items-center justify-center rounded-lg hover:bg-black/5"
+          onClick={onClose}
+          aria-label={t("common.close")}
+        >
+          <X className="size-4" aria-hidden />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** The Overview tab's icon from the design (a column chart on its axes), drawn like a Lucide icon. */
+function OverviewIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={cn("lucide", className)}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+      <path d="M7 16h.01" />
+      <path d="M11 16V9" />
+      <path d="M15 16v-5" />
+      <path d="M19 16V5" />
+    </svg>
+  );
+}
+
+function NavButton({
+  id,
+  active,
+  onClick,
+  children,
+}: {
+  id: string;
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      data-nav={id}
+      className={cn(
+        // Section names in bold; the current one in ink with a 2px brand line along the bottom of the
+        // bar, the others ink-3 (design system TopBar).
+        "inline-flex h-14 shrink-0 items-center border-y-2 border-t-transparent px-1 text-[0.95rem] font-bold transition-colors duration-100",
+        active ? "border-b-accent text-ink" : "border-b-transparent text-faint hover:text-ink",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+const onLineEvents = (change: () => void) => {
+  window.addEventListener("online", change);
+  window.addEventListener("offline", change);
+  return () => {
+    window.removeEventListener("online", change);
+    window.removeEventListener("offline", change);
+  };
+};
+
+/**
+ * No network (design system LoadingStates): a notice at the top of the page that says what still
+ * works. It goes away by itself when the network is back.
+ */
+function useOffline(): boolean {
+  return useSyncExternalStore(
+    onLineEvents,
+    () => typeof navigator !== "undefined" && navigator.onLine === false,
+    () => false,
+  );
+}

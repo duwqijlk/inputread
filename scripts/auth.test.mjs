@@ -1,0 +1,3502 @@
+// Auth and sync handlers against the real migration SQL (node:sqlite standing in for D1).
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { test } from "node:test";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { PBKDF2_ITERATIONS, hashPassword, sha256Hex, verifyPassword } from "../functions/lib/password.ts";
+import { rateLimitIp, sessionCookie } from "../functions/lib/http.ts";
+import {
+  handleDelete,
+  handleEmailCodeConfirm,
+  handleEmailCodeSend,
+  handleExport,
+  handleLogin,
+  handleLogout,
+  handleMe,
+  handleNickname,
+  handlePasswordResetConfirm,
+  handlePasswordResetRequest,
+  handleRegister, handleRegisterConfirm, handleRegisterResend,
+  handleSyncPull,
+  handleSyncPush,
+} from "../functions/lib/handlers.ts";
+import { handleList, handleSetRole } from "../functions/api/admin/users.ts";
+import { handlePublish } from "../functions/api/admin/word-lists.ts";
+import { handleGet as handleGlossaryWorkGet, handlePut as handleGlossaryWorkPut } from "../functions/api/admin/glossary-work.ts";
+import { handlePut as handleQqGroupsPut } from "../functions/api/admin/qq-groups.ts";
+import { handleGet as handleQqGroupsGet } from "../functions/api/qq-groups.ts";
+import { handleUpload } from "../functions/api/admin/books.ts";
+import { handleGet as handleBlurbGet, handlePut as handleBlurbPut } from "../functions/api/admin/blurb.ts";
+import { handleGlossary } from "../functions/api/glossary/[id].ts";
+import { GLOSSARY_MAX } from "../functions/lib/glossary-limit.ts";
+import { GLOSSARY_WEEK_BOOKS, GLOSSARY_WEEK_MS, GLOSSARY_WEEK_SPEECHES, trustedUntil } from "../functions/lib/trust.ts";
+import { SYNC_CURSOR_OVERLAP_MS, SYNC_PUSH_MAX } from "../src/lib/limits.ts";
+import { handleEpub } from "../functions/api/book/[id]/epub.ts";
+import { handleWordTapsPost } from "../functions/api/analytics/word-taps.ts";
+import { handleAdminWordTapsGet, handleAdminWordTapsPost } from "../functions/api/admin/word-taps.ts";
+import { handleWordFeedbackPost } from "../functions/api/feedback/word.ts";
+import { handleAdminWordFeedbackGet, handleAdminWordFeedbackPost } from "../functions/api/admin/word-feedback.ts";
+import { assertIpRateLimit, assertUserRateLimit, DAILY_WRITE_BUDGET, PRUNE_EVERY_MS, RATE_WINDOW_MS, resetUserTallies, setPruneRoll, USER_BATCH } from "../functions/lib/rate-limit.ts";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const NOW = 1_700_000_000_000;
+
+/** Register and finish with the emailed code: the account the tests used to get from one call. */
+async function signUpFully(handlerRegister, env, input, now = NOW) {
+  let code = "";
+  const opts = { now, sendCode: async (message) => { code = message.code; return { sent: true }; } };
+  const body = input.body ?? input;
+  const started = await handlerRegister(
+    new Request("http://localhost/api/auth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(input.ip ? { "cf-connecting-ip": input.ip } : {}) },
+      body: JSON.stringify(body),
+    }),
+    env,
+    opts,
+  );
+  if (started.status !== 202) return started;
+  const { ticket } = await started.json();
+  return handleRegisterConfirm(
+    new Request(`${input.https ? "https" : "http"}://localhost/api/auth/register/confirm`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(input.ip ? { "cf-connecting-ip": input.ip } : {}) },
+      body: JSON.stringify({ email: body.email, code, ticket }),
+    }),
+    env,
+    { now },
+  );
+}
+
+function openDb() {
+  const db = new DatabaseSync(":memory:");
+  db.exec("PRAGMA foreign_keys = ON");
+  // Every migration, in filename order: a hand-kept list here went stale once already.
+  for (const name of readdirSync(join(ROOT, "migrations")).filter((file) => file.endsWith(".sql")).sort()) {
+    db.exec(readFileSync(join(ROOT, "migrations", name), "utf8"));
+  }
+  return {
+    prepare(sql) {
+      const stmt = db.prepare(sql);
+      const api = {
+        args: [],
+        bind(...values) {
+          api.args = values;
+          return api;
+        },
+        async first() {
+          const row = stmt.get(...api.args);
+          api.args = [];
+          return row ?? null;
+        },
+        async all() {
+          const results = stmt.all(...api.args);
+          api.args = [];
+          return { results };
+        },
+        async run() {
+          stmt.run(...api.args);
+          api.args = [];
+          return { success: true };
+        },
+      };
+      return api;
+    },
+    async batch(statements) {
+      // node:sqlite has no shared transaction handle here; run in order. The
+      // handlers only rely on "every statement executed and results returned".
+      const results = [];
+      for (const stmt of statements) {
+        const rows = stmt.all ? await stmt.all() : null;
+        results.push(rows ?? { results: [] });
+      }
+      return results;
+    },
+    raw: db,
+  };
+}
+
+/** Accounts predating the sign-up allowlist must not be recreated through registration. */
+async function seedExistingUser(db, email, { password = "correct horse", iterations = PBKDF2_ITERATIONS, verified = true } = {}) {
+  const hashed = await hashPassword(password, undefined, iterations);
+  const id = crypto.randomUUID();
+  db.raw.prepare(
+    "INSERT INTO users (id, email, password_hash, password_salt, password_iters, created_at, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(id, email, hashed.hash, hashed.salt, hashed.iterations, NOW - 86_400_000, verified ? NOW - 86_400_000 : null);
+  return id;
+}
+
+function envOf(db, extra = {}) {
+  return { DB: db, ...extra };
+}
+
+async function call(handler, env, { method = "POST", path = "/", body, cookie, https = false, ip } = {}) {
+  const headers = new Headers();
+  if (cookie) headers.set("cookie", cookie);
+  if (ip) headers.set("cf-connecting-ip", ip);
+  const request = new Request(`${https ? "https" : "http"}://localhost${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return handler(request, env, { now: NOW });
+}
+
+function tokenFrom(response) {
+  const raw = response.headers.get("set-cookie") ?? "";
+  const match = /mw_session=([^;]*)/.exec(raw);
+  return match?.[1] ?? "";
+}
+
+function cookieHeader(response) {
+  const token = tokenFrom(response);
+  return token ? `mw_session=${token}` : "";
+}
+
+test("password hashing uses PBKDF2-SHA256 with a per-user salt, at a count the Free plan can pay for", async () => {
+  // 100k iterations measured 16.4ms of CPU in V8/BoringSSL, and a Pages Function on the Free
+  // plan gets 10ms: every sign-in was cut off with error 1101. 10k measured 1.7ms. The salt is
+  // what carries the security here, and an old 100k hash is rewritten on the next sign-in.
+  assert.ok(PBKDF2_ITERATIONS >= 10_000, "below that the hash stops resisting offline guessing");
+  assert.equal((await hashPassword("correct horse")).iterations, PBKDF2_ITERATIONS);
+  const a = await hashPassword("correct horse", undefined, 1_000);
+  const b = await hashPassword("correct horse", undefined, 1_000);
+  assert.notEqual(a.salt, b.salt);
+  assert.notEqual(a.hash, b.hash);
+  assert.equal(await verifyPassword("correct horse", a.hash, a.salt, 1_000), true);
+  assert.equal(await verifyPassword("wrong horse", a.hash, a.salt, 1_000), false);
+});
+
+test("the session cookie is HttpOnly and SameSite=Lax, and Secure only on https", () => {
+  const http = sessionCookie("abc", new Request("http://localhost/api/auth/login"));
+  const https = sessionCookie("abc", new Request("https://inputread.site/api/auth/login"));
+  assert.match(http, /HttpOnly/);
+  assert.match(http, /SameSite=Lax/);
+  assert.doesNotMatch(http, /Secure/);
+  assert.match(https, /Secure/);
+  assert.match(http, /Max-Age=2592000/);
+});
+
+test("register, login, me, logout, and a wrong password", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const created = await signUpFully(handleRegister, env, {
+    body: { email: "Reader@Gmail.com", password: "correct horse" },
+  });
+  assert.equal(created.status, 201);
+  const createdBody = await created.json();
+  assert.equal(createdBody.user.email, "reader@gmail.com");
+  assert.equal(createdBody.user.password_hash, undefined);
+  const cookie = cookieHeader(created);
+  assert.ok(cookie.startsWith("mw_session="));
+  assert.doesNotMatch(created.headers.get("set-cookie") ?? "", /Secure/);
+
+  const me = await call(handleMe, env, { method: "GET", cookie });
+  assert.equal(me.status, 200);
+  const meBody = await me.json();
+  assert.equal(meBody.user.email, "reader@gmail.com");
+  assert.deepEqual(meBody.glossary, { used: 0, limit: GLOSSARY_WEEK_BOOKS, resetAt: 0, unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
+
+  const bad = await call(handleLogin, env, {
+    body: { email: "reader@gmail.com", password: "not the password" },
+  });
+  assert.equal(bad.status, 401);
+  assert.equal((await bad.json()).error, "credentials");
+
+  const missing = await call(handleLogin, env, {
+    body: { email: "nobody@gmail.com", password: "correct horse" },
+  });
+  assert.equal(missing.status, 401);
+  assert.equal((await missing.json()).error, "credentials");
+
+  const again = await call(handleLogin, env, {
+    https: true,
+    body: { email: "reader@gmail.com", password: "correct horse" },
+  });
+  assert.equal(again.status, 200);
+  assert.match(again.headers.get("set-cookie") ?? "", /Secure/);
+
+  const loggedOut = await call(handleLogout, env, { cookie });
+  assert.equal(loggedOut.status, 200);
+  const after = await call(handleMe, env, { method: "GET", cookie });
+  assert.equal(after.status, 200);
+  assert.deepEqual(await after.json(), { user: null, resetEmail: false });
+
+  const anon = await call(handleMe, env, { method: "GET" });
+  assert.equal(anon.status, 200);
+  assert.deepEqual(await anon.json(), { user: null, resetEmail: false });
+});
+
+test("the same email cannot register twice", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  await signUpFully(handleRegister, env, { body: { email: "reader@gmail.com", password: "correct horse" } });
+  const second = await signUpFully(handleRegister, env, {
+    body: { email: "reader@gmail.com", password: "another horse" },
+  });
+  assert.equal(second.status, 409);
+  assert.equal((await second.json()).error, "email-taken");
+});
+
+test("all eight sign-up providers create verified accounts after email normalization", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const domains = ["qq.com", "163.com", "126.com", "gmail.com", "outlook.com", "hotmail.com", "icloud.com", "yahoo.com"];
+  for (const domain of domains) {
+    const created = await signUpFully(handleRegister, env, {
+      body: { email: ` \tReader+Books@${domain.toUpperCase()} \n`, password: "correct horse" },
+    });
+    assert.equal(created.status, 201, domain);
+    const { user } = await created.json();
+    assert.equal(user.email, `reader+books@${domain}`);
+    assert.equal(user.emailVerified, true);
+    assert.ok(cookieHeader(created));
+  }
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 8);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM sessions").get().n, 8);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM pending_signups").get().n, 0);
+});
+
+test("registration rejects nonallowlisted domains before human checks, account lookup, or mail", async () => {
+  for (const email of ["reader@example.com", "reader@gamil.com", "reader@mail.gmail.com", "reader@gmail.com.evil.com", "reader@evilgmail.com"]) {
+    const db = openDb();
+    const statements = [];
+    const env = envOf({ ...db, prepare(sql) { statements.push(sql); return db.prepare(sql); } }, { TURNSTILE_SECRET_KEY: "secret" });
+    let humanChecks = 0;
+    let mail = 0;
+    const response = await handleRegister(
+      new Request("http://localhost/api/auth/register", { method: "POST", body: JSON.stringify({ email, password: "correct horse", turnstileToken: "human-token" }) }),
+      env,
+      {
+        now: NOW,
+        fetch: async () => { humanChecks += 1; throw new Error("must not contact turnstile"); },
+        sendCode: async () => { mail += 1; return { sent: true }; },
+      },
+    );
+    assert.equal(response.status, 400, email);
+    assert.equal((await response.json()).error, "email-domain", email);
+    assert.equal(response.headers.get("set-cookie"), null);
+    assert.equal(humanChecks, 0);
+    assert.equal(mail, 0);
+    assert.ok(statements.length > 0, "rate checks still access their buckets");
+    assert.ok(statements.every((sql) => /rate_limits/.test(sql)), statements.join("\n"));
+    assert.equal(db.raw.prepare("SELECT hits FROM rate_limits WHERE bucket = ?").get(`register:email:${email}`).hits, 1);
+    for (const table of ["users", "sessions", "pending_signups"]) {
+      assert.equal(db.raw.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0, table);
+    }
+  }
+});
+
+test("old pending nonallowlisted sign-ups cannot resend or confirm even with their valid code and ticket", async () => {
+  for (const handler of [handleRegisterResend, handleRegisterConfirm]) {
+    const db = openDb();
+    const email = "pending@example.com";
+    const code = "123456";
+    const ticket = "old-browser-ticket-".repeat(3);
+    const hashed = await hashPassword("correct horse");
+    const codeHash = await sha256Hex(`signup:${email}:${code}`);
+    const ticketHash = await sha256Hex(ticket);
+    db.raw.prepare(
+      "INSERT INTO pending_signups (email, password_hash, password_salt, password_iters, code_hash, attempts, created_at, expires_at, ticket_hash) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)",
+    ).run(email, hashed.hash, hashed.salt, hashed.iterations, codeHash, NOW - 61_000, NOW + 10 * 60_000, ticketHash);
+    const before = db.raw.prepare("SELECT * FROM pending_signups WHERE email = ?").get(email);
+    const statements = [];
+    const env = envOf({ ...db, prepare(sql) { statements.push(sql); return db.prepare(sql); } });
+    let mail = 0;
+    const response = await handler(
+      new Request("http://localhost/api/auth/register", { method: "POST", body: JSON.stringify({ email: " Pending@Example.COM ", code, ticket }) }),
+      env,
+      { now: NOW, sendCode: async () => { mail += 1; return { sent: true }; } },
+    );
+    assert.equal(response.status, 400, handler.name);
+    assert.equal((await response.json()).error, "email-domain", handler.name);
+    assert.equal(response.headers.get("set-cookie"), null);
+    assert.equal(mail, 0);
+    assert.ok(statements.length > 0);
+    assert.ok(statements.every((sql) => /rate_limits/.test(sql)), statements.join("\n"));
+    const action = handler === handleRegisterConfirm ? "signup-code" : "register";
+    assert.equal(db.raw.prepare("SELECT hits FROM rate_limits WHERE bucket = ?").get(`${action}:email:${email}`).hits, 1);
+    assert.deepEqual(db.raw.prepare("SELECT * FROM pending_signups WHERE email = ?").get(email), before, "no pending fields or attempt counters change");
+    assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 0);
+    assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM sessions").get().n, 0);
+  }
+});
+
+test("disallowed sign-up requests still spend the existing register and code-check rate limits", async () => {
+  for (const [handler, allowedAttempts] of [[handleRegister, 5], [handleRegisterResend, 5], [handleRegisterConfirm, 20]]) {
+    const db = openDb();
+    const env = envOf(db, { TURNSTILE_SECRET_KEY: "secret" });
+    let mail = 0;
+    let humanChecks = 0;
+    for (let i = 0; i <= allowedAttempts; i += 1) {
+      const response = await handler(
+        new Request("http://localhost/api/auth/register", { method: "POST", body: JSON.stringify({ email: "rate@example.com", password: "correct horse", code: "123456", ticket: "valid-length-ticket-but-no-pending" }) }),
+        env,
+        {
+          now: NOW,
+          sendCode: async () => { mail += 1; return { sent: true }; },
+          fetch: async () => { humanChecks += 1; throw new Error("unexpected human check"); },
+        },
+      );
+      assert.equal(response.status, i < allowedAttempts ? 400 : 429, `${handler.name}: attempt ${i + 1}`);
+      assert.equal((await response.json()).error, i < allowedAttempts ? "email-domain" : "rate");
+      assert.equal(response.headers.get("set-cookie"), null);
+    }
+    assert.equal(mail, 0);
+    assert.equal(humanChecks, 0);
+    for (const table of ["users", "sessions", "pending_signups"]) {
+      assert.equal(db.raw.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0, table);
+    }
+  }
+});
+
+test("an existing nonallowlisted account can send and confirm its email verification code", async () => {
+  const db = openDb();
+  const env = envOf(db, { TURNSTILE_SECRET_KEY: "secret" });
+  const userId = await seedExistingUser(db, "legacy@example.com", { verified: false });
+  const login = await call(handleLogin, env, { body: { email: " Legacy@Example.COM ", password: "correct horse" } });
+  assert.equal(login.status, 200);
+  const cookie = cookieHeader(login);
+  const sent = [];
+  const request = () => new Request("http://localhost/api/auth/email-code/send", { method: "POST", headers: { cookie } });
+  const sendCode = async (message) => { sent.push(message); return { sent: true }; };
+  const requested = await handleEmailCodeSend(request(), env, { now: NOW, sendCode });
+  assert.equal(requested.status, 200);
+  assert.deepEqual(await requested.json(), { ok: true, sent: true });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].email, "legacy@example.com");
+  assert.match(sent[0].code, /^\d{6}$/);
+  const wait = await handleEmailCodeSend(request(), env, { now: NOW + 1_000, sendCode });
+  assert.equal(wait.status, 429);
+  assert.equal((await wait.json()).error, "code-wait");
+  const wrong = sent[0].code === "000000" ? "111111" : "000000";
+  const bad = await call(handleEmailCodeConfirm, env, { cookie, body: { code: wrong } });
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).error, "code");
+  const confirmed = await call(handleEmailCodeConfirm, env, { cookie, body: { code: sent[0].code } });
+  assert.equal(confirmed.status, 200);
+  const { user } = await confirmed.json();
+  assert.equal(user.email, "legacy@example.com");
+  assert.equal(user.emailVerified, true);
+  assert.equal(db.raw.prepare("SELECT email_verified_at FROM users WHERE id = ?").get(userId).email_verified_at, NOW);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM email_codes").get().n, 0);
+  assert.equal((await handleEmailCodeSend(request(), env, { now: NOW, sendCode })).status, 200);
+  assert.equal(sent.length, 1, "already verified does not send another message");
+});
+
+test("an IPv6 rate-limit key is the /64, and an IPv4 address stays whole", () => {
+  const prefix = "2001:0db8:85a3:0001::/64";
+  assert.equal(rateLimitIp("2001:db8:85a3:1:1111:2222:3333:4444"), prefix);
+  assert.equal(rateLimitIp("2001:0db8:85a3:1::abcd"), prefix);
+  assert.notEqual(rateLimitIp("2001:db8:85a3:2::1"), prefix);
+  assert.equal(rateLimitIp("203.0.113.5"), "203.0.113.5");
+  assert.equal(rateLimitIp("::ffff:203.0.113.9"), "203.0.113.9");
+});
+
+test("only failed logins count toward the per-email limit, and one IPv6 /64 shares a bucket", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  await signUpFully(handleRegister, env, { body: { email: "reader@gmail.com", password: "correct horse" } });
+  const body = { email: "reader@gmail.com", password: "correct horse" };
+  for (let i = 0; i < 12; i += 1) {
+    const ok = await call(handleLogin, env, { ip: "203.0.113.8", body });
+    assert.equal(ok.status, 200);
+  }
+  const emailBefore = db.raw.prepare("SELECT hits FROM rate_limits WHERE bucket = ?").get("login:email:reader@gmail.com");
+  assert.equal(emailBefore, undefined);
+
+  const wrong = { email: "reader@gmail.com", password: "not the password" };
+  const same = "2001:db8:85a3:4:1:2:3:4";
+  const alsoSame = "2001:db8:85a3:4::ffff";
+  const other = "2001:db8:85a3:5::1";
+  assert.equal((await call(handleLogin, env, { ip: same, body: wrong })).status, 401);
+  assert.equal((await call(handleLogin, env, { ip: alsoSame, body: wrong })).status, 401);
+  assert.equal((await call(handleLogin, env, { ip: other, body: wrong })).status, 401);
+  const buckets = db.raw.prepare("SELECT bucket, hits FROM rate_limits WHERE bucket LIKE 'login:ip:%' ORDER BY bucket").all();
+  const shared = buckets.find((row) => row.bucket === "login:ip:2001:0db8:85a3:0004::/64");
+  const separate = buckets.find((row) => row.bucket === "login:ip:2001:0db8:85a3:0005::/64");
+  assert.equal(shared.hits, 2);
+  assert.equal(separate.hits, 1);
+
+  for (let i = 0; i < 7; i += 1) {
+    assert.equal((await call(handleLogin, env, { ip: "198.51.100.20", body: wrong })).status, 401);
+  }
+  const blocked = await call(handleLogin, env, { ip: "198.51.100.21", body: wrong });
+  assert.equal(blocked.status, 429);
+  const locked = await call(handleLogin, env, { ip: "198.51.100.22", body });
+  assert.equal(locked.status, 429);
+});
+
+test("register is rate-limited per email", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  let last = null;
+  for (let i = 0; i < 6; i += 1) {
+    last = await signUpFully(handleRegister, env, {
+      body: { email: "reader@gmail.com", password: "correct horse" },
+    });
+  }
+  assert.equal(last.status, 429);
+  assert.equal((await last.json()).error, "rate");
+});
+
+test("turnstile is skipped until the secret is set, then a token is required", async () => {
+  const skipped = await signUpFully(handleRegister, envOf(openDb()), {
+    body: { email: "one@gmail.com", password: "correct horse" },
+  });
+  assert.equal(skipped.status, 201);
+
+  const rejected = await handleRegister(
+    new Request("http://localhost/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        email: "two@gmail.com",
+        password: "correct horse",
+        turnstileToken: "token-token-token",
+      }),
+    }),
+    envOf(openDb(), { TURNSTILE_SECRET_KEY: "secret" }),
+    { now: NOW, fetch: async () => new Response(JSON.stringify({ success: false }), { status: 200 }) },
+  );
+  assert.equal(rejected.status, 403);
+  assert.equal((await rejected.json()).error, "turnstile");
+
+  const ok = await handleRegister(
+    new Request("http://localhost/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        email: "three@gmail.com",
+        password: "correct horse",
+        turnstileToken: "token-token-token",
+      }),
+    }),
+    envOf(openDb(), { TURNSTILE_SECRET_KEY: "secret" }),
+    {
+      now: NOW,
+      sendCode: async () => ({ sent: true }),
+      fetch: async () =>
+        new Response(JSON.stringify({ success: true, action: "signup", hostname: "inputread.site" }), { status: 200 }),
+    },
+  );
+  assert.equal(ok.status, 202, "a human passes and gets a code by email");
+
+  const wrongHost = await handleRegister(
+    new Request("http://localhost/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        email: "four@gmail.com",
+        password: "correct horse",
+        turnstileToken: "token-token-token",
+      }),
+    }),
+    envOf(openDb(), { TURNSTILE_SECRET_KEY: "secret" }),
+    {
+      now: NOW,
+      fetch: async () =>
+        new Response(JSON.stringify({ success: true, action: "signup", hostname: "evil.example" }), { status: 200 }),
+    },
+  );
+  assert.equal(wrongHost.status, 403);
+  assert.equal((await wrongHost.json()).error, "turnstile");
+});
+
+test("an existing nonallowlisted account logs in without turnstile, even when the secret is set", async () => {
+  const db = openDb();
+  await seedExistingUser(db, "reader@example.com");
+
+  // The challenge host does not finish on some networks in mainland China, and a reader who
+  // already has an account must still be able to sign in. Registration and the reset request
+  // keep the check; login is covered by the per-IP and per-email limits and by failed-login
+  // counting instead.
+  const env = envOf(db, { TURNSTILE_SECRET_KEY: "secret" });
+  const ok = await call(handleLogin, env, {
+    body: { email: "reader@example.com", password: "correct horse" },
+  });
+  assert.equal(ok.status, 200);
+
+  const wrong = await call(handleLogin, env, {
+    body: { email: "reader@example.com", password: "wrong horse" },
+  });
+  assert.equal(wrong.status, 401);
+  assert.equal((await wrong.json()).error, "credentials");
+});
+
+test("delete removes every row, and export has no password hash", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const created = await signUpFully(handleRegister, env, {
+    body: { email: "reader@gmail.com", password: "correct horse" },
+  });
+  const cookie = cookieHeader(created);
+  await call(handleSyncPush, env, {
+    cookie,
+    body: {
+      items: [
+        {
+          kind: "settings",
+          itemId: "main",
+          updatedAt: NOW,
+          deleted: false,
+          data: {
+            theme: "dark",
+            font: "literata",
+            size: 20,
+            leading: 1.8,
+            width: "medium",
+            column: 39,
+            focus: false,
+            locale: "en",
+            reviewLog: {},
+          },
+        },
+      ],
+    },
+  });
+  const exported = await call(handleExport, env, { method: "GET", cookie });
+  const payload = await exported.json();
+  assert.equal(payload.account.email, "reader@gmail.com");
+  assert.equal(JSON.stringify(payload).includes("password"), false);
+  assert.equal(payload.items.length, 1);
+
+  const removed = await call(handleDelete, env, { cookie, body: { password: "correct horse" } });
+  assert.equal(removed.status, 200);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 0);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM sessions").get().n, 0);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM sync_items").get().n, 0);
+  const after = await call(handleExport, env, { method: "GET", cookie });
+  assert.equal(after.status, 401);
+});
+
+test("password reset for an existing nonallowlisted account stores a token and replaces the password", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  await seedExistingUser(db, "reader@example.com");
+  const existing = await call(handleLogin, env, { body: { email: "reader@example.com", password: "correct horse" } });
+  assert.equal(existing.status, 200);
+  const cookie = cookieHeader(existing);
+  let captured = null;
+  const requested = await handlePasswordResetRequest(
+    new Request("http://localhost/api/auth/password-reset/request", {
+      method: "POST",
+      body: JSON.stringify({ email: "reader@example.com" }),
+    }),
+    env,
+    {
+      now: NOW,
+      sendReset: async (message) => {
+        captured = message;
+        return { sent: false };
+      },
+    },
+  );
+  assert.equal(requested.status, 200);
+  assert.equal((await requested.json()).ok, true);
+  assert.equal(captured.email, "reader@example.com");
+  assert.match(captured.resetUrl, /reset=/);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM password_resets").get().n, 1);
+
+  const confirmed = await call(handlePasswordResetConfirm, env, {
+    body: { token: captured.token, password: "a newer horse" },
+  });
+  assert.equal(confirmed.status, 200);
+  const oldSession = await call(handleMe, env, { method: "GET", cookie });
+  assert.equal(oldSession.status, 200);
+  assert.deepEqual(await oldSession.json(), { user: null, resetEmail: false });
+  const loggedIn = await call(handleLogin, env, {
+    body: { email: "reader@example.com", password: "a newer horse" },
+  });
+  assert.equal(loggedIn.status, 200);
+});
+
+test("password reset request requires a turnstile token when the secret is set", async () => {
+  const db = openDb();
+  await seedExistingUser(db, "reader@example.com");
+  const env = envOf(db, { TURNSTILE_SECRET_KEY: "secret" });
+  const missing = await call(handlePasswordResetRequest, env, {
+    body: { email: "reader@example.com" },
+  });
+  assert.equal(missing.status, 403);
+  assert.equal((await missing.json()).error, "turnstile");
+
+  const ok = await handlePasswordResetRequest(
+    new Request("http://localhost/api/auth/password-reset/request", {
+      method: "POST",
+      body: JSON.stringify({ email: "reader@example.com", turnstileToken: "token-token-token" }),
+    }),
+    env,
+    {
+      now: NOW,
+      fetch: async () =>
+        new Response(JSON.stringify({ success: true, action: "reset", hostname: "inputread.site" }), { status: 200 }),
+      sendReset: async () => ({ sent: false }),
+    },
+  );
+  assert.equal(ok.status, 200);
+  assert.equal((await ok.json()).ok, true);
+
+  const wrongAction = await handlePasswordResetRequest(
+    new Request("http://localhost/api/auth/password-reset/request", {
+      method: "POST",
+      body: JSON.stringify({ email: "reader@example.com", turnstileToken: "token-token-token" }),
+    }),
+    env,
+    {
+      now: NOW,
+      fetch: async () =>
+        new Response(JSON.stringify({ success: true, action: "login", hostname: "inputread.site" }), { status: 200 }),
+    },
+  );
+  assert.equal(wrongAction.status, 403);
+  assert.equal((await wrongAction.json()).error, "turnstile");
+});
+
+test("sync merges word blobs and keeps the newer shelf card", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const created = await signUpFully(handleRegister, env, {
+    body: { email: "reader@gmail.com", password: "correct horse" },
+  });
+  const cookie = cookieHeader(created);
+  const key = "book:treasureisland|stevenson";
+  const word = (lemma, updatedAt) => ({
+    id: `id-${lemma}`,
+    surface: lemma,
+    lemma,
+    pos: "noun",
+    meaning: lemma,
+    whyHard: "",
+    recommend: false,
+    sentence: lemma,
+    stage: 0,
+    dueAt: updatedAt,
+    createdAt: updatedAt,
+    reps: 0,
+    lapses: 0,
+    updatedAt,
+  });
+  const first = await call(handleSyncPush, env, {
+    cookie,
+    body: {
+      items: [
+        {
+          kind: "words",
+          itemId: key,
+          updatedAt: 10,
+          deleted: false,
+          data: { words: [word("shore", 10)], removed: [] },
+        },
+        {
+          kind: "shelf",
+          itemId: key,
+          updatedAt: 10,
+          deleted: false,
+          data: {
+            id: "card-a",
+            title: "Treasure Island",
+            author: "Stevenson",
+            cloth: "cloth",
+            createdAt: 1,
+            updatedAt: 10,
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(first.status, 200);
+  const second = await call(handleSyncPush, env, {
+    cookie,
+    body: {
+      items: [
+        {
+          kind: "words",
+          itemId: key,
+          updatedAt: 12,
+          deleted: false,
+          data: { words: [word("map", 12)], removed: [] },
+        },
+        {
+          kind: "shelf",
+          itemId: key,
+          updatedAt: 4,
+          deleted: false,
+          data: {
+            id: "card-b",
+            title: "Treasure Island",
+            author: "Stevenson",
+            cloth: "ink",
+            createdAt: 1,
+            updatedAt: 4,
+          },
+        },
+      ],
+    },
+  });
+  const saved = await second.json();
+  const words = saved.items.find((item) => item.kind === "words");
+  assert.deepEqual(
+    words.data.words.map((item) => item.lemma).sort(),
+    ["map", "shore"],
+  );
+  const card = saved.items.find((item) => item.kind === "shelf");
+  assert.equal(card.data.id, "card-a");
+  assert.equal(card.updatedAt, 10);
+
+  const pulled = await call(handleSyncPull, env, { method: "GET", path: "/api/sync", cookie });
+  assert.equal(pulled.status, 200);
+  assert.equal((await pulled.json()).items.length, 2);
+
+  const anon = await call(handleSyncPull, env, { method: "GET", path: "/api/sync" });
+  assert.equal(anon.status, 401);
+});
+
+test("sync settings round-trip every hint mode through push, database, and pull", async (t) => {
+  const db = openDb();
+  t.after(() => db.raw.close());
+  const env = envOf(db);
+  // In-memory account only; signUpFully captures the email code instead of sending mail.
+  const created = await signUpFully(handleRegister, env, {
+    body: { email: "hint-reader@gmail.com", password: "correct horse" },
+  });
+  assert.equal(created.status, 201);
+  const cookie = cookieHeader(created);
+  const hintsOf = ({ wordHints, quietMarks }) => ({ wordHints, quietMarks });
+  const push = async (updatedAt, hints, expectedMode, expectedAt = updatedAt) => {
+    const response = await call(handleSyncPush, env, {
+      path: "/api/sync", cookie,
+      body: { items: [{ kind: "settings", itemId: "main", updatedAt, deleted: false, data: hints }] },
+    });
+    assert.equal(response.status, 200);
+    const saved = (await response.json()).items.find((item) => item.kind === "settings");
+    assert.ok(saved);
+    assert.equal(saved.updatedAt, expectedAt);
+    const expected = { wordHints: expectedMode, quietMarks: expectedMode === "off" };
+    assert.deepEqual(hintsOf(saved.data), expected, "push returns the normalized winning hint mode");
+    const row = db.raw.prepare("SELECT data, updated_at FROM sync_items WHERE kind = 'settings' AND item_id = 'main'").get();
+    assert.equal(row.updated_at, expectedAt);
+    assert.deepEqual(hintsOf(JSON.parse(row.data)), expected, "the enum and compatibility flag are actually stored");
+    const pulled = await call(handleSyncPull, env, { method: "GET", path: "/api/sync", cookie });
+    assert.equal(pulled.status, 200);
+    const remote = (await pulled.json()).items.find((item) => item.kind === "settings");
+    assert.equal(remote.updatedAt, expectedAt);
+    assert.deepEqual(hintsOf(remote.data), expected, "another device receives both fields");
+  };
+
+  for (const [index, wordHints] of ["subtle", "underline", "off"].entries()) {
+    await push(10 + index, { wordHints, quietMarks: wordHints !== "off" }, wordHints);
+  }
+  await push(20, { wordHints: "underline" }, "underline");
+  await push(19, { quietMarks: true }, "underline", 20);
+  await push(30, { quietMarks: false }, "subtle");
+  await push(40, { quietMarks: true }, "off");
+  await push(50, { wordHints: "invalid", quietMarks: false }, "subtle");
+});
+
+test("an `after` pull returns only rows the server wrote since the cursor, whatever the item clock says", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const created = await signUpFully(handleRegister, env, {
+    body: { email: "reader@gmail.com", password: "correct horse" },
+  });
+  const cookie = cookieHeader(created);
+  const at = (handler, now, { method = "POST", path = "/api/sync", body } = {}) =>
+    handler(
+      new Request(`http://localhost${path}`, {
+        method,
+        headers: { cookie },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+      env,
+      { now },
+    );
+  const shelf = (key, updatedAt, title) => ({
+    kind: "shelf",
+    itemId: key,
+    updatedAt,
+    deleted: false,
+    data: { id: `card-${key}`, title, author: "A", cloth: "cloth", createdAt: 1, updatedAt },
+  });
+  const T0 = NOW;
+  assert.equal((await at(handleSyncPush, T0, { body: { items: [shelf("book:a", 50, "A"), shelf("book:b", 50, "B")] } })).status, 200);
+
+  // The first pull of a device reads everything and gets a cursor that reaches back by the overlap.
+  const full = await (await at(handleSyncPull, T0 + 10 * 60_000, { method: "GET" })).json();
+  assert.equal(full.items.length, 2);
+  assert.equal(full.full, true);
+  assert.equal(full.cursor, T0 + 10 * 60_000 - SYNC_CURSOR_OVERLAP_MS);
+
+  // Nothing written since: an empty answer, not the whole account.
+  const quiet = await (await at(handleSyncPull, T0 + 11 * 60_000, { method: "GET", path: `/api/sync?after=${full.cursor}` })).json();
+  assert.deepEqual(quiet.items, []);
+  assert.equal(quiet.full, false);
+
+  // Another device with a slow clock changes book:a: its item time (20) is far behind every cursor,
+  // but the server stamps the write, so the next `after` pull still sees it.
+  assert.equal((await at(handleSyncPush, T0 + 12 * 60_000, { body: { items: [shelf("book:a", 20, "A from a slow clock")] } })).status, 200);
+  // Pulled half an overlap after that write, so the write is still inside the next cursor's window.
+  const next = await (await at(handleSyncPull, T0 + 12 * 60_000 + SYNC_CURSOR_OVERLAP_MS / 2, { method: "GET", path: `/api/sync?after=${quiet.cursor}` })).json();
+  assert.deepEqual(next.items.map((item) => item.itemId), ["book:a"]);
+
+  // A write inside the overlap window is returned again by the next pull; merging it twice is harmless.
+  const repeat = await (await at(handleSyncPull, T0 + 18 * 60_000, { method: "GET", path: `/api/sync?after=${next.cursor}` })).json();
+  assert.deepEqual(repeat.items.map((item) => item.itemId), ["book:a"]);
+
+  // A delete is a write too.
+  assert.equal((await at(handleSyncPush, T0 + 20 * 60_000, { body: { items: [{ ...shelf("book:b", 60, "B"), deleted: true, data: {} }] } })).status, 200);
+  const gone = await (await at(handleSyncPull, T0 + 21 * 60_000, { method: "GET", path: `/api/sync?after=${repeat.cursor}` })).json();
+  assert.deepEqual(gone.items.map((item) => [item.itemId, item.deleted]), [["book:b", true]]);
+
+  // A row from before migration 0021 (server_at 0) is only in a full pull.
+  db.prepare("UPDATE sync_items SET server_at = 0 WHERE item_id = 'book:a'").run();
+  const old = await (await at(handleSyncPull, T0 + 22 * 60_000, { method: "GET", path: "/api/sync?after=0" })).json();
+  assert.deepEqual(old.items.map((item) => item.itemId), ["book:b"]);
+  const again = await (await at(handleSyncPull, T0 + 22 * 60_000, { method: "GET" })).json();
+  assert.equal(again.items.length, 2);
+});
+
+test("a nickname is optional, can be shared by two accounts, and is not a password", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const first = await signUpFully(handleRegister, env, {
+    body: { email: "one@gmail.com", password: "correct horse" },
+  });
+  const second = await signUpFully(handleRegister, env, {
+    body: { email: "two@gmail.com", password: "correct horse" },
+  });
+  assert.equal((await first.json()).user.nickname, null);
+  const cookieA = cookieHeader(first);
+  const cookieB = cookieHeader(second);
+
+  const missing = await call(handleNickname, env, { cookie: cookieA, body: { nickname: "   " } });
+  assert.equal(missing.status, 400);
+  assert.equal((await missing.json()).error, "nickname");
+
+  const tooLong = await call(handleNickname, env, {
+    cookie: cookieA,
+    body: { nickname: "abcdefghijklmnopq" },
+  });
+  assert.equal(tooLong.status, 400);
+
+  const savedA = await call(handleNickname, env, { cookie: cookieA, body: { nickname: "  Mina  " } });
+  assert.equal(savedA.status, 200);
+  assert.equal((await savedA.json()).user.nickname, "Mina");
+  const savedB = await call(handleNickname, env, { cookie: cookieB, body: { nickname: "Mina" } });
+  assert.equal(savedB.status, 200);
+  assert.equal((await savedB.json()).user.nickname, "Mina");
+
+  const me = await call(handleMe, env, { method: "GET", cookie: cookieA });
+  assert.equal((await me.json()).user.nickname, "Mina");
+  const again = await call(handleLogin, env, {
+    body: { email: "one@gmail.com", password: "correct horse" },
+  });
+  assert.equal((await again.json()).user.nickname, "Mina");
+
+  const exported = await call(handleExport, env, { method: "GET", cookie: cookieA });
+  const payload = await exported.json();
+  assert.equal(payload.account.nickname, "Mina");
+  assert.equal(JSON.stringify(payload).includes("password_hash"), false);
+
+  const signedOut = await call(handleNickname, env, { body: { nickname: "Mina" } });
+  assert.equal(signedOut.status, 401);
+});
+
+test("admin users: gate, search, grant trusted, admin locked", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const admin = await signUpFully(handleRegister, env, {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  assert.equal(admin.status, 201);
+  const adminCookie = cookieHeader(admin);
+  const adminId = (await admin.json()).user.id;
+  const reader = await signUpFully(handleRegister, env, {
+    body: { email: "reader@gmail.com", password: "correct horse" },
+  });
+  const readerCookie = cookieHeader(reader);
+
+  const refused = await call(handleList, env, { method: "GET", cookie: readerCookie });
+  assert.equal(refused.status, 403);
+  assert.equal((await refused.json()).error, "forbidden");
+
+  const listed = await call(handleList, env, {
+    method: "GET",
+    path: "/api/admin/users?q=reader",
+    cookie: adminCookie,
+  });
+  assert.equal(listed.status, 200);
+  const payload = await listed.json();
+  assert.equal(payload.total, 1);
+  assert.equal(payload.users[0].email, "reader@gmail.com");
+  assert.equal(payload.users[0].role, "user");
+
+  const granted = await call(handleSetRole, env, {
+    body: { id: payload.users[0].id, role: "trusted" },
+    cookie: adminCookie,
+  });
+  assert.equal(granted.status, 200);
+  assert.equal((await granted.json()).user.role, "trusted");
+  assert.equal((await call(handleList, env, { method: "GET", path: "/api/admin/users?q=reader", cookie: adminCookie }).then((res) => res.json())).users[0].trustedUntil, null);
+
+  const week = await call(handleSetRole, env, {
+    body: { id: payload.users[0].id, role: "trusted", term: "week" },
+    cookie: adminCookie,
+  });
+  assert.equal((await week.json()).user.trustedUntil, trustedUntil("week", NOW));
+  const badTerm = await call(handleSetRole, env, {
+    body: { id: payload.users[0].id, role: "trusted", term: "nope" },
+    cookie: adminCookie,
+  });
+  assert.equal(badTerm.status, 400);
+  assert.equal((await badTerm.json()).error, "bad-term");
+
+  const revoked = await call(handleSetRole, env, {
+    body: { id: payload.users[0].id, role: "user" },
+    cookie: adminCookie,
+  });
+  const revokedBody = await revoked.json();
+  assert.equal(revokedBody.user.role, "user");
+  assert.equal(revokedBody.user.trustedUntil, null);
+
+  const locked = await call(handleSetRole, env, {
+    body: { id: adminId, role: "user" },
+    cookie: adminCookie,
+  });
+  assert.equal(locked.status, 400);
+  assert.equal((await locked.json()).error, "admin-locked");
+});
+
+function stubBucket(files) {
+  return {
+    async get(key) {
+      const value = files.get(key);
+      if (!value) return null;
+      const copy = value.slice();
+      return {
+        body: new Blob([copy]).stream(),
+        arrayBuffer: async () => copy.buffer,
+        size: copy.byteLength,
+      };
+    },
+    async put(key, value) {
+      const bytes = typeof value === "string"
+        ? new TextEncoder().encode(value)
+        : value instanceof Uint8Array
+          ? value
+          : new Uint8Array(value);
+      files.set(key, bytes);
+      return {};
+    },
+  };
+}
+
+function raw(path, cookie, body) {
+  const headers = new Headers();
+  if (cookie) headers.set("cookie", cookie);
+  if (body !== undefined) headers.set("content-type", "application/json");
+  return new Request(`http://localhost${path}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers,
+    body,
+  });
+}
+
+test("word-list publish: hash computed once, other rows untouched, unknown id refused", async () => {
+  const db = openDb();
+  await signUpFully(handleRegister, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const login = await call(handleLogin, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const adminCookie = cookieHeader(login);
+  const files = new Map();
+  const liveCatalog = {
+    format: 1,
+    name: "Word lists",
+    updated: "2026-10-01T00:00:00.000Z",
+    lists: [
+      {
+        id: "charlie",
+        title: "Charlie",
+        words: 10,
+        glossary: { url: "charlie/glossary.json", bytes: 5, sha256: "aaa" },
+        updated: "2026-10-01T00:00:00+00:00",
+        paragraphs: 1,
+        sentences: 1,
+        phrases: 1,
+      },
+      {
+        id: "george",
+        title: "George",
+        words: 20,
+        glossary: { url: "george/glossary.json", bytes: 6, sha256: "bbb" },
+        updated: "2026-10-01T00:00:00+00:00",
+        paragraphs: 2,
+        sentences: 2,
+        phrases: 2,
+      },
+    ],
+  };
+  files.set("word-lists/catalog.json", new TextEncoder().encode(`${JSON.stringify(liveCatalog, null, 1)}\n`));
+  const env = envOf(db, { BOOKS: stubBucket(files) });
+
+  const glossary = JSON.stringify({
+    count: 3,
+    glossary: { a: {}, b: {}, c: {} },
+    paragraphs: [1, 2],
+    sentences: [1],
+    phrases: { x: 1 },
+  });
+  const published = await handlePublish(
+    raw("/api/admin/word-lists?id=charlie", adminCookie, glossary),
+    env,
+    { now: NOW },
+  );
+  assert.equal(published.status, 200);
+  const { row } = await published.json();
+  assert.equal(row.words, 3);
+  assert.equal(row.paragraphs, 2);
+  assert.equal(row.sentences, 1);
+  assert.equal(row.phrases, 1);
+
+  const storedCatalog = JSON.parse(new TextDecoder().decode(files.get("word-lists/catalog.json")));
+  const storedRow = storedCatalog.lists.find((item) => item.id === "charlie");
+  assert.equal(storedRow.glossary.sha256, row.glossary.sha256);
+  assert.equal(storedRow.glossary.bytes, new TextEncoder().encode(glossary).length);
+  assert.equal(new TextDecoder().decode(files.get("word-lists/charlie/glossary.json")), glossary);
+  assert.equal(
+    storedCatalog.lists.find((item) => item.id === "george").glossary.sha256,
+    "bbb",
+  );
+
+  const unknown = await handlePublish(
+    raw("/api/admin/word-lists?id=nope", adminCookie, glossary),
+    env,
+    { now: NOW },
+  );
+  assert.equal(unknown.status, 404);
+  assert.equal((await unknown.json()).error, "unknown-id");
+
+  const onboarded = await handlePublish(
+    raw(
+      "/api/admin/word-lists?id=brand-new-book",
+      adminCookie,
+      JSON.stringify({ title: "A New Book", author: "Someone", glossary: { z: {} }, count: 1 }),
+    ),
+    env,
+    { now: NOW },
+  );
+  assert.equal(onboarded.status, 200);
+  const storedAfter = JSON.parse(new TextDecoder().decode(files.get("word-lists/catalog.json")));
+  const newRow = storedAfter.lists.find((item) => item.id === "brand-new-book");
+  assert.equal(newRow.title, "A New Book");
+  assert.equal(newRow.author, "Someone");
+  assert.equal(newRow.words, 1);
+  assert.equal(newRow.glossary.url, "brand-new-book/glossary.json");
+  assert.equal(storedAfter.lists.length, 3);
+
+  const clash = await handlePublish(
+    raw(
+      "/api/admin/word-lists?id=charlie-2",
+      adminCookie,
+      JSON.stringify({ title: "Charlie!", glossary: { z: {} }, count: 1 }),
+    ),
+    env,
+    { now: NOW },
+  );
+  assert.equal(clash.status, 409);
+  assert.equal((await clash.json()).error, "duplicate-title");
+
+  const charlieBefore = storedAfter.lists.find((item) => item.id === "charlie");
+  const different = await handlePublish(
+    raw(
+      "/api/admin/word-lists?id=charlie",
+      adminCookie,
+      JSON.stringify({ title: "James", author: "Percival Everett", glossary: { jim: {} }, count: 1 }),
+    ),
+    env,
+    { now: NOW },
+  );
+  assert.equal(different.status, 409);
+  assert.equal((await different.json()).error, "different-book");
+  const afterRefuse = JSON.parse(new TextDecoder().decode(files.get("word-lists/catalog.json")));
+  const charlieKept = afterRefuse.lists.find((item) => item.id === "charlie");
+  assert.equal(charlieKept.title, "Charlie");
+  assert.equal(charlieKept.glossary.sha256, charlieBefore.glossary.sha256);
+  assert.equal(new TextDecoder().decode(files.get("word-lists/charlie/glossary.json")), glossary);
+
+  const sameBook = await handlePublish(
+    raw(
+      "/api/admin/word-lists?id=charlie",
+      adminCookie,
+      JSON.stringify({ title: "Charlie!", glossary: { a: {}, b: {}, c: {}, d: {} }, count: 4 }),
+    ),
+    env,
+    { now: NOW },
+  );
+  assert.equal(sameBook.status, 200);
+  const sameBody = await sameBook.json();
+  assert.equal(sameBody.row.title, "Charlie");
+  assert.equal(sameBody.row.words, 4);
+
+  const edition = await handlePublish(
+    raw(
+      "/api/admin/word-lists?id=charlie",
+      adminCookie,
+      JSON.stringify({ title: "Charlie: A Novel", glossary: { a: {} }, count: 1 }),
+    ),
+    env,
+    { now: NOW },
+  );
+  assert.equal(edition.status, 200);
+  assert.equal((await edition.json()).row.title, "Charlie");
+
+  // ?category= moves a book between the novel and speech tabs (and weekly counts).
+  const george = JSON.stringify({ title: "George", glossary: { a: {} }, count: 1 });
+  const stored = () => JSON.parse(new TextDecoder().decode(files.get("word-lists/catalog.json")));
+  const toSpeech = await handlePublish(
+    raw("/api/admin/word-lists?id=george&category=speech", adminCookie, george),
+    env,
+    { now: NOW },
+  );
+  assert.equal(toSpeech.status, 200);
+  assert.equal(stored().lists.find((item) => item.id === "george").category, "speech");
+  const kept = await handlePublish(raw("/api/admin/word-lists?id=george", adminCookie, george), env, { now: NOW });
+  assert.equal(kept.status, 200);
+  assert.equal(stored().lists.find((item) => item.id === "george").category, "speech");
+  // ?series= gives a speech (or a novel) its series row; an empty name removes it.
+  const toSeries = await handlePublish(
+    raw("/api/admin/word-lists?id=george&series=TED&seriesNumber=3", adminCookie, george),
+    env,
+    { now: NOW },
+  );
+  assert.equal(toSeries.status, 200);
+  let georgeRow = stored().lists.find((item) => item.id === "george");
+  assert.equal(georgeRow.series, "TED");
+  assert.equal(georgeRow.seriesNumber, 3);
+  assert.equal(georgeRow.category, "speech", "the category stays when only the series changes");
+  await handlePublish(raw("/api/admin/word-lists?id=george&series=TED&seriesNumber=abc", adminCookie, george), env, { now: NOW });
+  georgeRow = stored().lists.find((item) => item.id === "george");
+  assert.equal(georgeRow.series, "TED");
+  assert.equal("seriesNumber" in georgeRow, false, "a number that is not a whole number above 0 is dropped");
+  await handlePublish(raw("/api/admin/word-lists?id=george&series=&seriesNumber=", adminCookie, george), env, { now: NOW });
+  georgeRow = stored().lists.find((item) => item.id === "george");
+  assert.equal("series" in georgeRow, false, "an empty name removes the series");
+  const toNovel = await handlePublish(
+    raw("/api/admin/word-lists?id=george&category=novel", adminCookie, george),
+    env,
+    { now: NOW },
+  );
+  assert.equal(toNovel.status, 200);
+  assert.equal("category" in stored().lists.find((item) => item.id === "george"), false);
+
+  const editionClash = await handlePublish(
+    raw(
+      "/api/admin/word-lists?id=charlie-edition",
+      adminCookie,
+      JSON.stringify({ title: "Charlie: A Memoir", glossary: { a: {} }, count: 1 }),
+    ),
+    env,
+    { now: NOW },
+  );
+  assert.equal(editionClash.status, 409);
+  assert.equal((await editionClash.json()).error, "duplicate-title");
+
+  const sequel = await handlePublish(
+    raw(
+      "/api/admin/word-lists?id=charlie",
+      adminCookie,
+      JSON.stringify({ title: "Charlie: Catching Fire", glossary: { a: {} }, count: 1 }),
+    ),
+    env,
+    { now: NOW },
+  );
+  assert.equal(sequel.status, 409);
+  assert.equal((await sequel.json()).error, "different-book");
+
+  const sized = glossaryOfLength(4_000_001);
+  assert.equal(sized.length, 4_000_001);
+  const accepted = await handlePublish(
+    raw("/api/admin/word-lists?id=charlie", adminCookie, sized),
+    env,
+    { now: NOW },
+  );
+  assert.equal(accepted.status, 200);
+  const acceptedBody = await accepted.json();
+  assert.equal(acceptedBody.row.title, "Charlie");
+  assert.equal(acceptedBody.row.words, 1);
+  assert.equal(acceptedBody.row.glossary.bytes, 4_000_001);
+
+  const beforeHuge = new TextDecoder().decode(files.get("word-lists/charlie/glossary.json"));
+  const refusedSize = await handlePublish(
+    raw("/api/admin/word-lists?id=charlie", adminCookie, "x".repeat(GLOSSARY_MAX + 1)),
+    env,
+    { now: NOW },
+  );
+  assert.equal(refusedSize.status, 413);
+  assert.equal((await refusedSize.json()).error, "too-large");
+  assert.equal(new TextDecoder().decode(files.get("word-lists/charlie/glossary.json")), beforeHuge);
+
+  // A NEW row needs a title slug; an old id keeps whatever spelling it already has.
+  const fresh = (title) => JSON.stringify({ title, glossary: { z: {} }, count: 1 });
+  for (const id of ["new_book", "custom", "mth--05"]) {
+    const refusedId = await handlePublish(raw(`/api/admin/word-lists?id=${id}`, adminCookie, fresh(`Fresh ${id}`)), env, { now: NOW });
+    assert.equal(refusedId.status, 400, id);
+    assert.equal((await refusedId.json()).error, "bad-new-id", id);
+    assert.equal(stored().lists.some((item) => item.id === id), false, id);
+  }
+  const legacy = stored();
+  legacy.lists.push({ id: "mth_05", title: "Night of the Ninjas", words: 1, glossary: { url: "mth_05/glossary.json", bytes: 1, sha256: "x" } });
+  files.set("word-lists/catalog.json", new TextEncoder().encode(`${JSON.stringify(legacy, null, 1)}\n`));
+  const legacyUpdate = await handlePublish(
+    raw("/api/admin/word-lists?id=mth_05", adminCookie, fresh("Night of the Ninjas")),
+    env,
+    { now: NOW },
+  );
+  assert.equal(legacyUpdate.status, 200, "an existing legacy id is still updated");
+  assert.equal(stored().lists.find((item) => item.id === "mth_05").words, 1);
+});
+
+function glossaryOfLength(length) {
+  const head = '{"title":"Charlie","count":1,"glossary":{"word":{}},"note":"';
+  const tail = '"}';
+  return head + "x".repeat(length - head.length - tail.length) + tail;
+}
+
+test("public glossary update replaces the list and keeps the epub", async () => {
+  const db = openDb();
+  await signUpFully(handleRegister, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const login = await call(handleLogin, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const adminCookie = cookieHeader(login);
+  const files = new Map();
+  const live = {
+    format: 1,
+    packs: [
+      {
+        id: "alice",
+        title: "Alice's Adventures in Wonderland",
+        author: "Lewis Carroll",
+        rev: "oldrevoldrev",
+        words: 10,
+        epub: { url: "alice/book.epub", bytes: 4, sha256: "abc" },
+        glossary: { url: "alice/glossary.json", bytes: 2, sha256: "dd", rev: "dd" },
+      },
+      {
+        id: "looking-glass",
+        title: "Through the Looking-Glass",
+        rev: "keepmekeepme",
+        words: 7,
+        epub: { url: "looking-glass/book.epub", bytes: 4, sha256: "eee" },
+        glossary: { url: "looking-glass/glossary.json", bytes: 2, sha256: "ff", rev: "ff" },
+      },
+    ],
+  };
+  files.set("public-books/catalog.json", new TextEncoder().encode(`${JSON.stringify(live, null, 1)}\n`));
+  files.set("public-books/alice/book.epub", new Uint8Array([9, 9, 9, 9]));
+  const env = envOf(db, { BOOKS: stubBucket(files), PUBLIC_BOOK_PUBLISH_CPU_CONFIRMED: "true" });
+  const glossary = JSON.stringify({
+    version: 2,
+    title: "Alice's Adventures in Wonderland",
+    author: "Lewis Carroll",
+    glossary: { rabbit: { meaning: "A small animal." }, tea: { meaning: "A hot drink." } },
+    phrases: { "the present": { pos: "phrase", meaning: "The time now." } },
+  });
+  const published = await handlePublish(
+    raw("/api/admin/word-lists?id=alice&catalog=public", adminCookie, glossary),
+    env,
+    { now: NOW },
+  );
+  assert.equal(published.status, 200);
+  const body = await published.json();
+  assert.equal(body.catalog, "public");
+  assert.equal(body.row.words, 2);
+  assert.equal(body.row.phrases, 1);
+  assert.equal(body.row.epub.sha256, "abc");
+  assert.equal(body.row.rev, body.row.glossary.sha256.slice(0, 12));
+  assert.notEqual(body.row.rev, "oldrevoldrev");
+
+  const stored = JSON.parse(new TextDecoder().decode(files.get("public-books/catalog.json")));
+  const alice = stored.packs.find((item) => item.id === "alice");
+  const other = stored.packs.find((item) => item.id === "looking-glass");
+  assert.equal(alice.glossary.sha256, body.row.glossary.sha256);
+  assert.equal(alice.epub.sha256, "abc");
+  assert.equal(other.rev, "keepmekeepme");
+  assert.equal(new TextDecoder().decode(files.get("public-books/alice/glossary.json")), glossary);
+  assert.equal(files.has("word-lists/catalog.json"), false);
+  assert.deepEqual([...files.get("public-books/alice/book.epub")], [9, 9, 9, 9]);
+
+  const missing = await handlePublish(
+    raw("/api/admin/word-lists?id=no-such-book&catalog=public", adminCookie, glossary),
+    env,
+    { now: NOW },
+  );
+  assert.equal(missing.status, 404);
+
+  files.set(
+    "word-lists/catalog.json",
+    new TextEncoder().encode(`${JSON.stringify({ format: 1, lists: [] }, null, 1)}\n`),
+  );
+  const duplicate = await handlePublish(
+    raw(
+      "/api/admin/word-lists?id=alice-in-wonderland-lite",
+      adminCookie,
+      JSON.stringify({ title: "Alice's Adventures in Wonderland", glossary: { a: {} } }),
+    ),
+    env,
+    { now: NOW },
+  );
+  assert.equal(duplicate.status, 409);
+  assert.equal((await duplicate.json()).error, "duplicate-title");
+});
+
+test("private epub: user denied, trusted allowed and logged, missing book 404", async () => {
+  const db = openDb();
+  const reader = await signUpFully(handleRegister, envOf(db), {
+    body: { email: "reader@gmail.com", password: "correct horse" },
+  });
+  const readerCookie = cookieHeader(reader);
+  const readerId = (await reader.json()).user.id;
+  // grant trusted through the handler (admin cookie needed)
+  const admin = await signUpFully(handleRegister, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const adminCookie = cookieHeader(admin);
+  const listed = await call(handleList, envOf(db), { method: "GET", cookie: adminCookie });
+  const target = (await listed.json()).users.find((item) => item.email === "reader@gmail.com");
+  await call(handleSetRole, envOf(db), { body: { id: target.id, role: "trusted" }, cookie: adminCookie });
+
+  const files = new Map([["great-book/book.epub", new Uint8Array([1, 2, 3])]]);
+  const env = envOf(db, { PRIVATE: stubBucket(files) });
+
+  const denied = await handleEpub(raw("/api/book/great-book/epub", ""), env, "great-book", { now: NOW });
+  assert.equal(denied.status, 401);
+
+  const reLogin = await call(handleLogin, envOf(db), {
+    body: { email: "reader@gmail.com", password: "correct horse" },
+  });
+  const freshCookie = cookieHeader(reLogin);
+  const ok = await handleEpub(raw("/api/book/great-book/epub", freshCookie), env, "great-book", { now: NOW });
+  assert.equal(ok.status, 200);
+  assert.equal(new Uint8Array(await ok.arrayBuffer())[0], 1);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM book_downloads").get().n, 1);
+
+  const missing = await handleEpub(raw("/api/book/no-such-book/epub", freshCookie), env, "no-such-book", { now: NOW });
+  assert.equal(missing.status, 404);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM book_downloads").get().n, 1);
+  assert.equal(readerId !== "", true);
+
+  await call(handleSetRole, envOf(db), {
+    body: { id: target.id, role: "trusted", term: "week" },
+    cookie: adminCookie,
+  });
+  const expired = await handleEpub(raw("/api/book/great-book/epub", freshCookie), env, "great-book", {
+    now: NOW + 8 * 24 * 60 * 60 * 1000,
+  });
+  assert.equal(expired.status, 403);
+  const me = await handleMe(raw("/api/auth/me", freshCookie), envOf(db), {
+    now: NOW + 8 * 24 * 60 * 60 * 1000,
+  });
+  const meBody = await me.json();
+  assert.equal(meBody.user.role, "user");
+  assert.deepEqual(meBody.glossary, { used: 0, limit: GLOSSARY_WEEK_BOOKS, resetAt: 0, unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
+});
+
+test("word-list reads: seven new books a week, an old book stays free, trusted is unlimited", async () => {
+  const db = openDb();
+  const reader = await signUpFully(handleRegister, envOf(db), {
+    body: { email: "reader@gmail.com", password: "correct horse" },
+  });
+  const readerCookie = cookieHeader(reader);
+  const readerId = (await reader.json()).user.id;
+  // This test is about the weekly cap, for a reader who already checked their email.
+  db.raw.prepare("UPDATE users SET email_verified_at = ? WHERE id = ?").run(NOW, readerId);
+  const admin = await signUpFully(handleRegister, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const adminCookie = cookieHeader(admin);
+  const files = new Map();
+  const text = (id) => new TextEncoder().encode(`{"glossary":{"${id}":{}}}`);
+  files.set("public-books/public-one/glossary.json", text("public-one"));
+  for (let n = 1; n <= 8; n += 1) files.set(`word-lists/book-${n}/glossary.json`, text(`book-${n}`));
+  const env = envOf(db, { BOOKS: stubBucket(files) });
+  const open = (id, cookie, now = NOW) => handleGlossary(raw(`/api/glossary/${id}`, cookie), env, id, { now });
+  const later = NOW + GLOSSARY_WEEK_MS + 1;
+
+  assert.equal((await open("book-1", "")).status, 401);
+  assert.equal((await open("missing-book", readerCookie)).status, 404);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n, 0);
+  assert.equal((await open("public-one", readerCookie)).status, 200);
+  for (let n = 1; n <= 6; n += 1) assert.equal((await open(`book-${n}`, readerCookie)).status, 200);
+  assert.equal((await open("book-1", readerCookie)).status, 200);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n, 7);
+  const capped = await handleMe(raw("/api/auth/me", readerCookie), envOf(db), { now: NOW });
+  assert.deepEqual((await capped.json()).glossary, { used: 7, limit: GLOSSARY_WEEK_BOOKS, resetAt: NOW + GLOSSARY_WEEK_MS, unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
+
+  const blocked = await open("book-7", readerCookie);
+  assert.equal(blocked.status, 429);
+  assert.deepEqual(await blocked.json(), { error: "glossary-week", resetAt: NOW + GLOSSARY_WEEK_MS });
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n, 7);
+
+  // Another device, a week later: a book already opened is free and takes no new place.
+  assert.equal((await open("book-1", readerCookie, later)).status, 200);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n, 7);
+  assert.equal((await open("book-7", readerCookie, later)).status, 200);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n, 8);
+  const laterMe = await handleMe(raw("/api/auth/me", readerCookie), envOf(db), { now: later });
+  assert.deepEqual((await laterMe.json()).glossary, { used: 1, limit: GLOSSARY_WEEK_BOOKS, resetAt: later + GLOSSARY_WEEK_MS, unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
+
+  const listed = await call(handleList, envOf(db), { method: "GET", cookie: adminCookie });
+  const target = (await listed.json()).users.find((item) => item.id === readerId);
+  await call(handleSetRole, envOf(db), {
+    body: { id: target.id, role: "trusted", term: "forever" },
+    cookie: adminCookie,
+  });
+  const reads = db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n;
+  assert.equal((await open("book-8", readerCookie)).status, 200);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n, reads);
+  const trustedMe = await handleMe(raw("/api/auth/me", readerCookie), envOf(db), { now: NOW });
+  assert.deepEqual((await trustedMe.json()).glossary, { used: 0, limit: GLOSSARY_WEEK_BOOKS, resetAt: 0, unlimited: true, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
+});
+
+test("word-list reads: speeches have their own seven a week, apart from novels", async () => {
+  const db = openDb();
+  const reader = await signUpFully(handleRegister, envOf(db), {
+    body: { email: "speech-reader@gmail.com", password: "correct horse" },
+  });
+  const readerCookie = cookieHeader(reader);
+  const readerId = (await reader.json()).user.id;
+  db.raw.prepare("UPDATE users SET email_verified_at = ? WHERE id = ?").run(NOW, readerId);
+  const files = new Map();
+  const text = (id) => new TextEncoder().encode(`{"glossary":{"${id}":{}}}`);
+  const lists = [];
+  for (let n = 1; n <= 8; n += 1) {
+    files.set(`word-lists/novel-${n}/glossary.json`, text(`novel-${n}`));
+    lists.push({ id: `novel-${n}`, title: `Novel ${n}` });
+  }
+  for (let n = 1; n <= 7; n += 1) {
+    files.set(`word-lists/talk-${n}/glossary.json`, text(`talk-${n}`));
+    lists.push({ id: `talk-${n}`, title: `Talk ${n}`, category: "speech" });
+  }
+  files.set("public-books/speech-8/glossary.json", text("speech-8"));
+  files.set("word-lists/catalog.json", new TextEncoder().encode(JSON.stringify({ lists })));
+  files.set(
+    "public-books/catalog.json",
+    new TextEncoder().encode(JSON.stringify({ packs: [{ id: "speech-8", title: "Speech 8", category: "speech" }] })),
+  );
+  const env = envOf(db, { BOOKS: stubBucket(files) });
+  const open = (id) => handleGlossary(raw(`/api/glossary/${id}`, readerCookie), env, id, { now: NOW });
+
+  for (let n = 1; n <= 7; n += 1) assert.equal((await open(`novel-${n}`)).status, 200);
+  // Seven novels do not use any speech place.
+  for (let n = 1; n <= 7; n += 1) assert.equal((await open(`talk-${n}`)).status, 200);
+  const novelFull = await open("novel-8");
+  assert.equal(novelFull.status, 429);
+  assert.equal((await novelFull.json()).error, "glossary-week");
+  const speechFull = await open("speech-8");
+  assert.equal(speechFull.status, 429);
+  assert.deepEqual(await speechFull.json(), { error: "glossary-week-speech", resetAt: NOW + GLOSSARY_WEEK_MS });
+  // A speech opened before still downloads.
+  assert.equal((await open("talk-1")).status, 200);
+  const me = await handleMe(raw("/api/auth/me", readerCookie), env, { now: NOW });
+  assert.deepEqual((await me.json()).glossary, {
+    used: 7,
+    limit: GLOSSARY_WEEK_BOOKS,
+    resetAt: NOW + GLOSSARY_WEEK_MS,
+    unlimited: false,
+    speech: { used: 7, limit: GLOSSARY_WEEK_SPEECHES, resetAt: NOW + GLOSSARY_WEEK_MS },
+  });
+});
+
+test("sign-up makes no account until the emailed code comes back", async () => {
+  const tickets = {};
+  const db = openDb();
+  const files = new Map([["word-lists/book-1/glossary.json", new TextEncoder().encode('{"glossary":{"a":{}}}')]]);
+  const env = envOf(db, { BOOKS: stubBucket(files) });
+  const sent = [];
+  const sendCode = async (message) => {
+    sent.push(message);
+    return { sent: true };
+  };
+  const post = (path, body, cookie) =>
+    new Request(`http://localhost${path}`, {
+      method: "POST",
+      headers: cookie ? { cookie } : {},
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+  const started = await handleRegister(post("/api/auth/register", { email: "New@Gmail.com", password: "correct horse" }), env, { now: NOW, sendCode });
+  assert.equal(started.status, 202);
+  const startedBody = await started.json();
+  tickets["new@gmail.com"] = startedBody.ticket;
+  assert.deepEqual({ ...startedBody, ticket: undefined }, { pending: true, email: "new@gmail.com", codeSent: true, ticket: undefined });
+  assert.match(startedBody.ticket, /^[A-Za-z0-9_-]{40,}$/);
+  assert.equal(started.headers.get("set-cookie"), null, "nothing is signed in yet");
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 0, "no account before the code");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].email, "new@gmail.com");
+  assert.match(sent[0].code, /^\d{6}$/);
+  const pending = db.raw.prepare("SELECT code_hash, password_hash FROM pending_signups").get();
+  assert.notEqual(pending.code_hash, sent[0].code, "only a hash of the code is stored");
+  assert.notEqual(pending.password_hash, "correct horse", "only a hash of the password is stored");
+
+  // A double click on Create account right away does not send a second message.
+  const tooSoon = await handleRegister(post("/api/auth/register", { email: "new@gmail.com", password: "correct horse" }), env, { now: NOW + 1000, sendCode });
+  assert.equal(tooSoon.status, 429);
+  assert.equal((await tooSoon.json()).error, "code-wait");
+
+  const wrong = sent[0].code === "000000" ? "111111" : "000000";
+  const bad = await handleRegisterConfirm(post("/api/auth/register/confirm", { email: "new@gmail.com", code: wrong, ticket: tickets["new@gmail.com"] }), env, { now: NOW });
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).error, "code");
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 0);
+
+  const done = await handleRegisterConfirm(post("/api/auth/register/confirm", { email: "new@gmail.com", code: sent[0].code, ticket: tickets["new@gmail.com"] }), env, { now: NOW });
+  assert.equal(done.status, 201);
+  const user = (await done.json()).user;
+  assert.equal(user.email, "new@gmail.com");
+  assert.equal(user.emailVerified, true, "the account is checked from the start");
+  assert.match(user.publicId, /^[a-z0-9]{12}$/);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM pending_signups").get().n, 0, "the pending sign-up is gone");
+  const cookie = cookieHeader(done);
+  assert.ok(cookie, "the right code signs in");
+  assert.equal((await handleGlossary(raw("/api/glossary/book-1", cookie), env, "book-1", { now: NOW })).status, 200, "word lists open at once");
+
+  // The password typed at sign-up is the one that signs in.
+  const login = await call(handleLogin, env, { body: { email: "new@gmail.com", password: "correct horse" } });
+  assert.equal(login.status, 200);
+  // The address is taken now.
+  const again = await handleRegister(post("/api/auth/register", { email: "new@gmail.com", password: "correct horse" }), env, { now: NOW + 120_000, sendCode });
+  if (again.status === 202) tickets["new@gmail.com"] = (await again.clone().json()).ticket;
+  assert.equal(again.status, 409);
+});
+
+test("sign-up expires at exactly 15 minutes and a direct same-email restart rotates the ticket", async () => {
+  const db = openDb();
+  const env = envOf(db, { TURNSTILE_SECRET_KEY: "secret" });
+  const sent = [];
+  const sendCode = async (message) => {
+    sent.push(message);
+    return { sent: true };
+  };
+  let humanChecks = 0;
+  const human = async () => {
+    humanChecks += 1;
+    return new Response(JSON.stringify({ success: true, action: "signup", hostname: "inputread.site" }), { status: 200 });
+  };
+  const post = (path, body) => new Request(`http://localhost${path}`, { method: "POST", body: JSON.stringify(body) });
+  const email = "restart@gmail.com";
+  const register = (now, turnstileToken) => handleRegister(
+    post("/api/auth/register", { email, password: "correct horse", turnstileToken }),
+    env,
+    { now, sendCode, fetch: human },
+  );
+  const started = await register(NOW, "initial-human-token");
+  assert.equal(started.status, 202);
+  const { ticket: oldTicket } = await started.json();
+  assert.equal(sent.length, 1);
+  assert.equal(humanChecks, 1);
+
+  const expiresAt = NOW + 15 * 60 * 1000;
+  assert.equal(db.raw.prepare("SELECT expires_at FROM pending_signups WHERE email = ?").get(email).expires_at, expiresAt);
+  const expiredConfirm = await handleRegisterConfirm(
+    post("/api/auth/register/confirm", { email, code: sent[0].code, ticket: oldTicket }), env, { now: expiresAt },
+  );
+  assert.equal(expiredConfirm.status, 400);
+  assert.equal((await expiredConfirm.json()).error, "code-expired");
+  const expiredResend = await handleRegisterResend(
+    post("/api/auth/register/resend", { email, ticket: oldTicket }), env, { now: expiresAt, sendCode },
+  );
+  assert.equal(expiredResend.status, 400);
+  assert.equal((await expiredResend.json()).error, "code-expired");
+  assert.equal(sent.length, 1, "neither expired request sends another message");
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 0);
+
+  // No other registration clears the expired row before this same-email retry.
+  const restarted = await register(expiresAt, "fresh-human-token");
+  assert.equal(restarted.status, 202);
+  const { ticket: freshTicket } = await restarted.json();
+  assert.match(freshTicket, /^[A-Za-z0-9_-]{40,}$/);
+  assert.notEqual(freshTicket, oldTicket);
+  assert.equal(humanChecks, 2, "restarting performs a fresh human check");
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].email, email);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM pending_signups").get().n, 1);
+
+  // Wait past the resend cooldown so a stale ticket, not the cooldown, rejects it.
+  const confirmAt = expiresAt + 61_000;
+  const staleResend = await handleRegisterResend(
+    post("/api/auth/register/resend", { email, ticket: oldTicket }), env, { now: confirmAt, sendCode },
+  );
+  assert.equal(staleResend.status, 400);
+  assert.equal((await staleResend.json()).error, "code-expired");
+  const staleConfirm = await handleRegisterConfirm(
+    post("/api/auth/register/confirm", { email, code: sent[1].code, ticket: oldTicket }), env, { now: confirmAt },
+  );
+  assert.equal(staleConfirm.status, 400);
+  assert.equal((await staleConfirm.json()).error, "code-expired", "even the fresh code cannot revive the old ticket");
+  assert.equal(sent.length, 2, "the stale ticket cannot send mail or replace the fresh code");
+  assert.equal(humanChecks, 2, "resend and confirm do not perform human checks");
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 0);
+
+  const done = await handleRegisterConfirm(
+    post("/api/auth/register/confirm", { email, code: sent[1].code, ticket: freshTicket }), env, { now: confirmAt },
+  );
+  assert.equal(done.status, 201);
+  const { user } = await done.json();
+  assert.equal(user.email, email);
+  assert.equal(user.emailVerified, true);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 1);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users WHERE email = ? AND email_verified_at IS NOT NULL").get(email).n, 1);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM pending_signups").get().n, 0);
+  assert.equal(sent.length, 2);
+});
+
+test("a domain typo is rejected early; an undelivered or expired allowed sign-up leaves no account", async () => {
+  const tickets = {};
+  const db = openDb();
+  const env = envOf(db);
+  const sent = [];
+  const sendCode = async (message) => {
+    sent.push(message);
+    return { sent: true };
+  };
+  const post = (path, body) =>
+    new Request(`http://localhost${path}`, { method: "POST", body: JSON.stringify(body) });
+  // A provider typo no longer sends mail or creates a pending sign-up.
+  const typo = await handleRegister(post("/api/auth/register", { email: "reader@gamil.com", password: "correct horse" }), env, { now: NOW, sendCode });
+  assert.equal(typo.status, 400);
+  assert.equal((await typo.json()).error, "email-domain");
+  assert.equal(sent.length, 0);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 0);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM sessions").get().n, 0);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM pending_signups").get().n, 0);
+
+  // A valid provider but the wrong mailbox still needs its code before any account exists.
+  const started = await handleRegister(post("/api/auth/register", { email: "wrong-mailbox@gmail.com", password: "correct horse" }), env, { now: NOW, sendCode });
+  assert.equal(started.status, 202);
+  tickets["wrong-mailbox@gmail.com"] = (await started.json()).ticket;
+  assert.equal(sent.length, 1);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 0);
+  // A code that never left: nothing is kept, so trying again is not blocked.
+  const failed = await handleRegister(post("/api/auth/register", { email: "other@gmail.com", password: "correct horse" }), env, { now: NOW, sendCode: async () => ({ sent: false }) });
+  assert.equal(failed.status, 502);
+  assert.equal((await failed.json()).error, "code-send");
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM pending_signups WHERE email = 'other@gmail.com'").get().n, 0);
+  // After 15 minutes the old pending sign-up is dropped on the next sign-up, and the address can start over.
+  const later = NOW + 15 * 60 * 1000 + 1;
+  const expired = await handleRegisterConfirm(post("/api/auth/register/confirm", { email: "wrong-mailbox@gmail.com", code: sent[0].code, ticket: tickets["wrong-mailbox@gmail.com"] }), env, { now: later });
+  assert.equal(expired.status, 400);
+  assert.equal((await expired.json()).error, "code-expired", "a code works for 15 minutes");
+  const other = await handleRegister(post("/api/auth/register", { email: "someone@gmail.com", password: "correct horse" }), env, { now: later, sendCode });
+  assert.equal(other.status, 202);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM pending_signups WHERE email = 'wrong-mailbox@gmail.com'").get().n, 0);
+  const restart = await handleRegister(post("/api/auth/register", { email: "wrong-mailbox@gmail.com", password: "correct horse" }), env, { now: later, sendCode });
+  assert.equal(restart.status, 202);
+});
+
+test("five wrong codes end a pending sign-up; registering again sends a new one", async () => {
+  const tickets = {};
+  const db = openDb();
+  const env = envOf(db);
+  const sent = [];
+  const sendCode = async (message) => {
+    sent.push(message);
+    return { sent: true };
+  };
+  const post = (path, body) =>
+    new Request(`http://localhost${path}`, { method: "POST", body: JSON.stringify(body) });
+  {
+    const made = await handleRegister(post("/api/auth/register", { email: "guess@gmail.com", password: "correct horse" }), env, { now: NOW, sendCode });
+    if (made.status === 202) tickets["guess@gmail.com"] = (await made.json()).ticket;
+  }
+  const wrong = sent[0].code === "000000" ? "111111" : "000000";
+  for (let n = 0; n < 5; n += 1) {
+    const response = await handleRegisterConfirm(post("/api/auth/register/confirm", { email: "guess@gmail.com", code: wrong, ticket: tickets["guess@gmail.com"] }), env, { now: NOW });
+    assert.equal((await response.json()).error, "code");
+  }
+  const locked = await handleRegisterConfirm(post("/api/auth/register/confirm", { email: "guess@gmail.com", code: sent[0].code, ticket: tickets["guess@gmail.com"] }), env, { now: NOW });
+  assert.equal((await locked.json()).error, "code-expired", "after five misses even the right code is refused");
+  const again = await handleRegister(post("/api/auth/register", { email: "guess@gmail.com", password: "correct horse" }), env, { now: NOW + 61_000, sendCode });
+  if (again.status === 202) tickets["guess@gmail.com"] = (await again.clone().json()).ticket;
+  assert.equal(again.status, 202);
+  assert.equal(sent.length, 2);
+  if (sent[0].code !== sent[1].code) {
+    const old = await handleRegisterConfirm(post("/api/auth/register/confirm", { email: "guess@gmail.com", code: sent[0].code, ticket: tickets["guess@gmail.com"] }), env, { now: NOW + 62_000 });
+    assert.equal((await old.json()).error, "code");
+  }
+  const ok = await handleRegisterConfirm(post("/api/auth/register/confirm", { email: "guess@gmail.com", code: sent[1].code, ticket: tickets["guess@gmail.com"] }), env, { now: NOW + 62_000 });
+  assert.equal(ok.status, 201);
+});
+
+test("accounts made before the email check count as checked", async () => {
+  const db = openDb();
+  const migrated = db.raw.prepare("SELECT COUNT(*) AS n FROM users WHERE email_verified_at IS NULL").get().n;
+  assert.equal(migrated, 0);
+  const sql = readFileSync(join(ROOT, "migrations", "0012_email_verification.sql"), "utf8");
+  assert.match(sql, /UPDATE users SET email_verified_at = created_at WHERE email_verified_at IS NULL/);
+});
+
+test("a book already on the shelf can be downloaded when the week is full", async () => {
+  const db = openDb();
+  const reader = await signUpFully(handleRegister, envOf(db), {
+    body: { email: "reader@gmail.com", password: "correct horse" },
+  });
+  const readerCookie = cookieHeader(reader);
+  const readerId = (await reader.json()).user.id;
+  db.raw.prepare("UPDATE users SET email_verified_at = ? WHERE id = ?").run(NOW, readerId);
+  const files = new Map();
+  const text = (id) => new TextEncoder().encode(`{"glossary":{"${id}":{}}}`);
+  const catalog = {
+    format: 1,
+    lists: [
+      { id: "owned-book", title: "Owned Book", author: "Ada Lovelace" },
+      { id: "fresh-book", title: "Fresh Book", author: "Ada Lovelace" },
+    ],
+  };
+  files.set("word-lists/catalog.json", new TextEncoder().encode(JSON.stringify(catalog)));
+  files.set("word-lists/owned-book/glossary.json", text("owned"));
+  files.set("word-lists/fresh-book/glossary.json", text("fresh"));
+  for (let n = 1; n <= 7; n += 1) files.set(`word-lists/book-${n}/glossary.json`, text(`book-${n}`));
+  const env = envOf(db, { BOOKS: stubBucket(files) });
+  const open = (id) => handleGlossary(raw(`/api/glossary/${id}`, readerCookie), env, id, { now: NOW });
+  db.raw
+    .prepare(
+      "INSERT INTO sync_items (user_id, kind, item_id, data, updated_at, deleted, grant_title, grant_author, grant_isbn) VALUES (?, 'shelf', 'book:owned', '{}', ?, 0, 'Owned Book', 'Ada Lovelace', '')",
+    )
+    .run(readerId, NOW);
+  db.raw
+    .prepare(
+      "INSERT INTO sync_items (user_id, kind, item_id, data, updated_at, deleted, grant_title, grant_author, grant_isbn) VALUES (?, 'shelf', 'book:fresh', ?, ?, 0, '', '', '')",
+    )
+    .run(readerId, JSON.stringify({ title: "Fresh Book", author: "Ada Lovelace" }), NOW);
+
+  for (let n = 1; n <= 7; n += 1) assert.equal((await open(`book-${n}`)).status, 200);
+  assert.equal((await open("fresh-book")).status, 429);
+  assert.equal((await open("owned-book")).status, 200);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads WHERE created_at > 0").get().n, 7);
+  assert.equal(db.raw.prepare("SELECT created_at AS at FROM glossary_reads WHERE book_id = 'owned-book'").get().at, 0);
+  const me = await handleMe(raw("/api/auth/me", readerCookie), envOf(db), { now: NOW });
+  assert.deepEqual((await me.json()).glossary, { used: 7, limit: GLOSSARY_WEEK_BOOKS, resetAt: NOW + GLOSSARY_WEEK_MS, unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
+  assert.equal((await open("owned-book")).status, 200);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads WHERE book_id = 'owned-book'").get().n, 1);
+});
+
+test("book upload: private streams to PRIVATE, public updates its catalog row", async () => {
+  const db = openDb();
+  const admin = await signUpFully(handleRegister, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const adminCookie = cookieHeader(admin);
+  const epubBytes = new Uint8Array([80, 75, 3, 4, 9, 9]);
+  const coverBytes = new Uint8Array([255, 216, 255, 1, 2]);
+
+  function formWith(kindFiles) {
+    const form = new FormData();
+    form.set("epub", new File([epubBytes], "book.epub", { type: "application/epub+zip" }));
+    if (kindFiles.cover) form.set("cover", new File([coverBytes], "cover.jpg", { type: "image/jpeg" }));
+    if (kindFiles.glossary) form.set("glossary", new File([kindFiles.glossary], "glossary.json", { type: "application/json" }));
+    return form;
+  }
+
+  // private: epub + cover land in the PRIVATE bucket, and the card cover reaches the books host
+  const privateFiles = new Map();
+  const cardCatalog = {
+    format: 1,
+    name: "Word lists",
+    updated: "2026-10-01T00:00:00.000Z",
+    lists: [
+      {
+        id: "great-book",
+        title: "Great Book",
+        words: 10,
+        glossary: { url: "great-book/glossary.json", bytes: 5, sha256: "aaa" },
+        updated: "2026-10-01T00:00:00+00:00",
+        paragraphs: 1,
+        sentences: 1,
+        phrases: 1,
+      },
+    ],
+  };
+  const cardFiles = new Map([
+    ["word-lists/catalog.json", new TextEncoder().encode(`${JSON.stringify(cardCatalog, null, 1)}\n`)],
+  ]);
+  const privateEnv = envOf(db, { PRIVATE: stubBucket(privateFiles), BOOKS: stubBucket(cardFiles) });
+  const privateOk = await handleUpload(
+    form("/api/admin/books?id=great-book&kind=private", adminCookie, formWith({ cover: true })),
+    privateEnv,
+    { now: NOW },
+  );
+  assert.equal(privateOk.status, 200);
+  const privateJson = await privateOk.json();
+  assert.equal(privateJson.kind, "private");
+  assert.deepEqual(privateFiles.get("great-book/book.epub"), epubBytes, "private EPUB preserves every original byte");
+  assert.ok(privateFiles.has("great-book/cover.jpg"));
+  const storedCardCatalog = JSON.parse(new TextDecoder().decode(cardFiles.get("word-lists/catalog.json")));
+  // Card covers live under covers/ (no Worker on that path), named in the catalog by full address.
+  assert.equal(storedCardCatalog.lists[0].cover.url, "https://books.inputread.site/covers/lists-great-book.jpg");
+  assert.ok(cardFiles.has("covers/lists-great-book.jpg"));
+
+  // A cover part that is a Blob, not a File, is still the picture Discover shows.
+  const blobFiles = new Map();
+  const blobCard = new Map([
+    ["word-lists/catalog.json", new TextEncoder().encode(`${JSON.stringify(cardCatalog, null, 1)}\n`)],
+  ]);
+  const blobRequest = form(
+    "/api/admin/books?id=great-book&kind=private",
+    adminCookie,
+    formWith({ cover: false }),
+  );
+  blobRequest.formData = async () => ({
+    get(name) {
+      if (name === "epub") return new File([epubBytes], "book.epub", { type: "application/epub+zip" });
+      if (name === "cover") return new Blob([coverBytes], { type: "image/jpeg" });
+      return null;
+    },
+  });
+  const blobOk = await handleUpload(blobRequest, envOf(db, { PRIVATE: stubBucket(blobFiles), BOOKS: stubBucket(blobCard) }), {
+    now: NOW,
+  });
+  assert.equal(blobOk.status, 200);
+  assert.ok(blobFiles.has("great-book/cover.jpg"));
+  assert.ok(blobCard.has("covers/lists-great-book.jpg"));
+
+  // A chosen cover with no word-list row must not report success.
+  const lonelyCatalog = { ...cardCatalog, lists: [] };
+  const lonelyCard = new Map([
+    ["word-lists/catalog.json", new TextEncoder().encode(`${JSON.stringify(lonelyCatalog, null, 1)}\n`)],
+  ]);
+  const lonely = await handleUpload(
+    form("/api/admin/books?id=great-book&kind=private", adminCookie, formWith({ cover: true })),
+    envOf(db, { PRIVATE: stubBucket(new Map()), BOOKS: stubBucket(lonelyCard) }),
+    { now: NOW },
+  );
+  assert.equal(lonely.status, 409);
+  assert.equal((await lonely.json()).error, "cover-not-saved");
+
+  // A glossary for a different book must not replace this id's EPUB or cover.
+  const mismatchFiles = new Map();
+  const mismatchCard = new Map([
+    ["word-lists/catalog.json", new TextEncoder().encode(`${JSON.stringify(cardCatalog, null, 1)}\n`)],
+  ]);
+  const mismatch = await handleUpload(
+    form(
+      "/api/admin/books?id=great-book&kind=private",
+      adminCookie,
+      formWith({ glossary: JSON.stringify({ title: "James", author: "Percival Everett", glossary: { jim: {} } }) }),
+    ),
+    envOf(db, { PRIVATE: stubBucket(mismatchFiles), BOOKS: stubBucket(mismatchCard) }),
+    { now: NOW },
+  );
+  assert.equal(mismatch.status, 409);
+  assert.equal((await mismatch.json()).error, "different-book");
+  assert.equal(mismatchFiles.has("great-book/book.epub"), false);
+  const mismatchCatalog = JSON.parse(new TextDecoder().decode(mismatchCard.get("word-lists/catalog.json")));
+  assert.equal(mismatchCatalog.lists[0].title, "Great Book");
+  assert.equal(mismatchCatalog.lists[0].cover, undefined);
+
+  // public without a glossary file is refused
+  const booksFiles = new Map();
+  const livePublic = {
+    format: 1,
+    name: "Public books",
+    updated: "2026-10-01T00:00:00.000Z",
+    packs: [{ id: "alice", title: "Alice", glossary: { url: "alice/glossary.json", bytes: 1, sha256: "aaa" } }],
+  };
+  booksFiles.set("public-books/catalog.json", new TextEncoder().encode(`${JSON.stringify(livePublic, null, 1)}\n`));
+  const publicEnv = envOf(db, { BOOKS: stubBucket(booksFiles), PUBLIC_BOOK_PUBLISH_CPU_CONFIRMED: "true" });
+  const noGlossary = await handleUpload(
+    form("/api/admin/books?id=alice&kind=public", adminCookie, formWith({ cover: false })),
+    publicEnv,
+    { now: NOW },
+  );
+  assert.equal(noGlossary.status, 400);
+  assert.equal((await noGlossary.json()).error, "no-glossary");
+
+  // public unknown id is refused
+  const unknownBook = await handleUpload(
+    form("/api/admin/books?id=nope&kind=public", adminCookie, formWith({ glossary: '{"version":2,"glossary":{"word":{"meaning":"A word."}}}' })),
+    publicEnv,
+    { now: NOW },
+  );
+  assert.equal(unknownBook.status, 404);
+
+  // public happy path: epub + glossary + cover stored, row updated
+  const okPublic = await handleUpload(
+    form("/api/admin/books?id=alice&kind=public", adminCookie, formWith({ cover: true, glossary: '{"version":2,"glossary":{"a":{"meaning":"One thing."}}}' })),
+    publicEnv,
+    { now: NOW },
+  );
+  assert.equal(okPublic.status, 200);
+  const storedCatalog = JSON.parse(new TextDecoder().decode(booksFiles.get("public-books/catalog.json")));
+  const alice = storedCatalog.packs.find((item) => item.id === "alice");
+  assert.equal(alice.epub.url, "alice/book.epub");
+  assert.equal(alice.epub.bytes, epubBytes.length);
+  assert.equal(alice.glossary.rev.length, 12);
+  assert.equal(alice.cover.url, "https://books.inputread.site/covers/public-alice.jpg");
+  assert.ok(booksFiles.has("covers/public-alice.jpg"));
+  assert.ok(booksFiles.has("public-books/alice/glossary.json"));
+
+  const medium = new FormData();
+  medium.set("epub", new File([epubBytes], "book.epub", { type: "application/epub+zip" }));
+  medium.set(
+    "glossary",
+    new File([validLargeGlossary(4_000_001)], "glossary.json", { type: "application/json" }),
+  );
+  const overOldCap = await handleUpload(
+    form("/api/admin/books?id=alice&kind=public", adminCookie, medium),
+    publicEnv,
+    { now: NOW },
+  );
+  assert.equal(overOldCap.status, 200);
+  assert.equal(booksFiles.get("public-books/alice/glossary.json").byteLength, 4_000_001);
+
+  const huge = new FormData();
+  huge.set("epub", new File([epubBytes], "book.epub", { type: "application/epub+zip" }));
+  huge.set(
+    "glossary",
+    new File([new Uint8Array(GLOSSARY_MAX + 1)], "glossary.json", { type: "application/json" }),
+  );
+  const overNewCap = await handleUpload(
+    form("/api/admin/books?id=alice&kind=public", adminCookie, huge),
+    publicEnv,
+    { now: NOW },
+  );
+  assert.equal(overNewCap.status, 413);
+  assert.equal((await overNewCap.json()).error, "too-large");
+  assert.equal(booksFiles.get("public-books/alice/glossary.json").byteLength, 4_000_001);
+
+  // missing epub
+  const noEpub = await handleUpload(form("/api/admin/books?id=alice&kind=public", adminCookie, new FormData()), publicEnv, {
+    now: NOW,
+  });
+  assert.equal(noEpub.status, 400);
+  assert.equal((await noEpub.json()).error, "no-epub");
+});
+
+test("word-list publish: isbn param sets and clears the edition number", async () => {
+  const db = openDb();
+  await signUpFully(handleRegister, envOf(db), { body: { email: "xcrunnnn@outlook.com", password: "correct horse" } });
+  const login = await call(handleLogin, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const adminCookie = cookieHeader(login);
+  const files = new Map();
+  const liveCatalog = {
+    format: 1,
+    name: "Word lists",
+    updated: "2026-10-01T00:00:00.000Z",
+    lists: [
+      {
+        id: "charlie",
+        title: "Charlie",
+        isbn: "9780000000002",
+        words: 10,
+        glossary: { url: "charlie/glossary.json", bytes: 5, sha256: "aaa" },
+        cover: { url: "charlie/cover.jpg", bytes: 12, sha256: "abc" },
+        updated: "2026-10-01T00:00:00+00:00",
+        paragraphs: 1,
+        sentences: 1,
+        phrases: 1,
+      },
+    ],
+  };
+  files.set("word-lists/catalog.json", new TextEncoder().encode(`${JSON.stringify(liveCatalog, null, 1)}\n`));
+  const env = envOf(db, { BOOKS: stubBucket(files) });
+  const glossary = JSON.stringify({ glossary: { a: {} }, count: 1 });
+
+  const set = await handlePublish(
+    raw("/api/admin/word-lists?id=charlie&isbn=9780062285768", adminCookie, glossary),
+    env,
+    { now: NOW },
+  );
+  assert.equal((await set.json()).row.isbn, "9780062285768");
+
+  const cleared = await handlePublish(
+    raw("/api/admin/word-lists?id=charlie&isbn=", adminCookie, glossary),
+    env,
+    { now: NOW },
+  );
+  const clearedRow = (await cleared.json()).row;
+  assert.equal("isbn" in clearedRow, false);
+  assert.equal(clearedRow.cover.url, "charlie/cover.jpg");
+  assert.equal(clearedRow.cover.sha256, "abc");
+});
+
+function form(path, cookie, body) {
+  const headers = new Headers();
+  if (cookie) headers.set("cookie", cookie);
+  return new Request(`http://localhost${path}`, { method: "POST", headers, body });
+}
+
+test("sync push: up to one D1 batch per request, saved all or nothing", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const created = await signUpFully(handleRegister, env, { body: { email: "reader@gmail.com", password: "correct horse" } });
+  const cookie = cookieHeader(created);
+  const items = [];
+  for (let n = 0; n < SYNC_PUSH_MAX + 1; n += 1) {
+    const itemId = `chunk-book-${n}`;
+    items.push({
+      kind: "shelf",
+      itemId,
+      updatedAt: NOW + n,
+      deleted: false,
+      data: { id: itemId, title: `Book ${n}`, author: "A", cloth: "cloth", createdAt: NOW, updatedAt: NOW },
+    });
+  }
+  // One more than a batch holds is refused: the page splits its upload (syncBatches) at this size.
+  const tooMany = await call(handleSyncPush, env, { body: { items }, cookie });
+  assert.equal(tooMany.status, 413);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM sync_items").get().n, 0);
+  const pushed = await call(handleSyncPush, env, { body: { items: items.slice(0, SYNC_PUSH_MAX) }, cookie });
+  assert.equal(pushed.status, 200);
+  assert.equal((await pushed.json()).items.length, SYNC_PUSH_MAX);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM sync_items").get().n, SYNC_PUSH_MAX);
+
+  // A failing write rolls the whole push back: nothing half-saved.
+  const failing = {
+    ...env,
+    DB: {
+      ...env.DB,
+      prepare: env.DB.prepare,
+      async batch(list) {
+        if (list.length > 1 && list.length === SYNC_PUSH_MAX) throw new Error("write failed");
+        return env.DB.batch(list);
+      },
+    },
+  };
+  const more = items.slice(0, SYNC_PUSH_MAX).map((item) => ({ ...item, itemId: `second-${item.itemId}`, data: { ...item.data, id: `second-${item.itemId}` } }));
+  const broken = await call(handleSyncPush, failing, { body: { items: more }, cookie });
+  assert.equal(broken.status, 500);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM sync_items WHERE item_id LIKE 'second-%'").get().n, 0);
+});
+
+function putJson(path, cookie, body) {
+  const headers = new Headers();
+  if (cookie) headers.set("cookie", cookie);
+  headers.set("content-type", "application/json");
+  return new Request(`http://localhost${path}`, { method: "PUT", headers, body: JSON.stringify(body) });
+}
+
+/** Sign a reader in once per test database; word feedback needs a session. */
+const readerSessions = new WeakMap();
+async function readerCookie(env) {
+  const cached = readerSessions.get(env.DB);
+  if (cached) return cached;
+  const made = await signUpFully(handleRegister, env, { body: { email: "feedback-reader@gmail.com", password: "correct horse" } });
+  const cookie = cookieHeader(made);
+  readerSessions.set(env.DB, cookie);
+  return cookie;
+}
+
+function postJson(path, cookie, body, ip) {
+  const headers = new Headers();
+  if (cookie) headers.set("cookie", cookie);
+  if (ip) headers.set("cf-connecting-ip", ip);
+  headers.set("content-type", "application/json");
+  return new Request(`http://localhost${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+}
+
+test("in-progress marks stay until that book's glossary is published", async () => {
+  const db = openDb();
+  await signUpFully(handleRegister, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const login = await call(handleLogin, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const adminCookie = cookieHeader(login);
+  const files = new Map();
+  const liveCatalog = {
+    format: 1,
+    name: "Word lists",
+    updated: "2026-10-01T00:00:00.000Z",
+    lists: [
+      {
+        id: "charlie",
+        title: "Charlie",
+        words: 10,
+        glossary: { url: "charlie/glossary.json", bytes: 5, sha256: "aaa" },
+        updated: "2026-10-01T00:00:00.000Z",
+      },
+      {
+        id: "george",
+        title: "George",
+        words: 20,
+        glossary: { url: "george/glossary.json", bytes: 6, sha256: "bbb" },
+        updated: "2026-10-02T00:00:00.000Z",
+      },
+    ],
+  };
+  const publicCatalog = {
+    format: 1,
+    packs: [
+      {
+        id: "alice",
+        title: "Alice",
+        rev: "oldrevoldrev",
+        words: 4,
+        epub: { url: "alice/book.epub", bytes: 4, sha256: "abc" },
+        glossary: { url: "alice/glossary.json", bytes: 2, sha256: "dd", rev: "dd" },
+      },
+    ],
+  };
+  files.set("word-lists/catalog.json", new TextEncoder().encode(`${JSON.stringify(liveCatalog, null, 1)}\n`));
+  files.set("public-books/catalog.json", new TextEncoder().encode(`${JSON.stringify(publicCatalog, null, 1)}\n`));
+  const env = envOf(db, { BOOKS: stubBucket(files), PUBLIC_BOOK_PUBLISH_CPU_CONFIRMED: "true" });
+  const catalogBefore = files.get("word-lists/catalog.json");
+
+  const empty = await handleGlossaryWorkGet(new Request("http://localhost/api/admin/glossary-work", { headers: { cookie: adminCookie } }), env, { now: NOW });
+  assert.equal(empty.status, 200);
+  assert.deepEqual((await empty.json()).items, []);
+
+  const rejected = await handleGlossaryWorkPut(putJson("/api/admin/glossary-work", adminCookie, { kind: "shelf", id: "charlie", making: true }), env, { now: NOW });
+  assert.equal(rejected.status, 400);
+  assert.equal(files.has("word-lists/glossary-work.json"), false);
+
+  const marked = await handleGlossaryWorkPut(putJson("/api/admin/glossary-work", adminCookie, { kind: "lists", id: "charlie", making: true }), env, { now: NOW });
+  assert.equal(marked.status, 200);
+  const first = await marked.json();
+  const again = await handleGlossaryWorkPut(putJson("/api/admin/glossary-work", adminCookie, { kind: "lists", id: "charlie", making: true }), env, { now: NOW });
+  assert.equal((await again.json()).items[0].since, first.items[0].since);
+  await handleGlossaryWorkPut(putJson("/api/admin/glossary-work", adminCookie, { kind: "lists", id: "george", making: true }), env, { now: NOW });
+  await handleGlossaryWorkPut(putJson("/api/admin/glossary-work", adminCookie, { kind: "public", id: "alice", making: true }), env, { now: NOW });
+  assert.deepEqual(files.get("word-lists/catalog.json"), catalogBefore);
+
+  const glossary = JSON.stringify({ glossary: { a: {}, b: {} }, count: 2 });
+  const published = await handlePublish(raw("/api/admin/word-lists?id=charlie", adminCookie, glossary), env, { now: NOW });
+  assert.equal(published.status, 200);
+  const storedWork = JSON.parse(new TextDecoder().decode(files.get("word-lists/glossary-work.json")));
+  assert.deepEqual(
+    storedWork.items.map((item) => `${item.kind}:${item.id}`).sort(),
+    ["lists:george", "public:alice"],
+  );
+  const storedCatalog = JSON.parse(new TextDecoder().decode(files.get("word-lists/catalog.json")));
+  assert.equal(storedCatalog.lists.find((item) => item.id === "george").glossary.sha256, "bbb");
+
+  const publicGlossary = JSON.stringify({ version: 2, title: "Alice", glossary: { tea: { meaning: "A hot drink." } }, count: 1 });
+  const publicPublished = await handlePublish(
+    raw("/api/admin/word-lists?id=alice&catalog=public", adminCookie, publicGlossary),
+    env,
+    { now: NOW },
+  );
+  assert.equal(publicPublished.status, 200);
+  const afterPublic = JSON.parse(new TextDecoder().decode(files.get("word-lists/glossary-work.json")));
+  assert.deepEqual(
+    afterPublic.items.map((item) => `${item.kind}:${item.id}`),
+    ["lists:george"],
+  );
+  const cleared = await handleGlossaryWorkPut(putJson("/api/admin/glossary-work", adminCookie, { kind: "lists", id: "george", making: false }), env, { now: NOW });
+  assert.equal(cleared.status, 200);
+  assert.deepEqual((await cleared.json()).items, []);
+});
+
+test("QQ groups stay out of the catalog until an admin saves them", async () => {
+  const db = openDb();
+  await signUpFully(handleRegister, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const login = await call(handleLogin, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const adminCookie = cookieHeader(login);
+  const files = new Map();
+  files.set("word-lists/catalog.json", new TextEncoder().encode('{"format":1,"lists":[]}\n'));
+  const env = envOf(db, { BOOKS: stubBucket(files) });
+  const catalogBefore = files.get("word-lists/catalog.json");
+
+  const missing = await handleQqGroupsGet(new Request("http://localhost/api/qq-groups"), env);
+  assert.equal(missing.status, 200);
+  assert.deepEqual(await missing.json(), { format: 1, saved: false, groups: [] });
+
+  const rejected = await handleQqGroupsPut(putJson("/api/admin/qq-groups", adminCookie, { groups: ["12"] }), env, { now: NOW });
+  assert.equal(rejected.status, 400);
+  assert.equal(files.has("word-lists/qq-groups.json"), false);
+
+  const saved = await handleQqGroupsPut(
+    putJson("/api/admin/qq-groups", adminCookie, { groups: ["656911882", "10001"] }),
+    env,
+    { now: NOW },
+  );
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await saved.json()).groups, ["656911882", "10001"]);
+  assert.deepEqual(files.get("word-lists/catalog.json"), catalogBefore);
+
+  const listed = await handleQqGroupsGet(new Request("http://localhost/api/qq-groups"), env);
+  assert.deepEqual((await listed.json()).groups, ["656911882", "10001"]);
+
+  const cleared = await handleQqGroupsPut(putJson("/api/admin/qq-groups", adminCookie, { groups: [] }), env, { now: NOW });
+  assert.equal(cleared.status, 200);
+  const after = await handleQqGroupsGet(new Request("http://localhost/api/qq-groups"), env);
+  const body = await after.json();
+  assert.equal(body.saved, true);
+  assert.deepEqual(body.groups, []);
+});
+
+test("reading word taps: batch ingestion, accumulation, rate limit, and admin query", async () => {
+  const db = openDb();
+  const env = envOf(db);
+
+  // Ingestion: batch with 1 covered word and 1 missing word with location metadata.
+  // The covered word is skipped: only words with no meaning in the book are kept.
+  const resp1 = await handleWordTapsPost(
+    postJson("/api/analytics/word-taps", null, {
+      bookId: "charlie",
+      bookTitle: "Charlie and the Chocolate Factory",
+      taps: [
+        {
+          word: "eavesdrop",
+          form: "eavesdropping",
+          chapter: 2,
+          occurrence: 1,
+          paragraph: 5,
+          context: "he was eavesdropping outside the small room",
+          sentence: "Charlie realized he was eavesdropping outside the small room without making a sound.",
+          count: 2,
+          inGlossary: false,
+        },
+        {
+          word: "chocolate",
+          form: "chocolate",
+          chapter: 0,
+          occurrence: 1,
+          paragraph: 1,
+          context: "the great chocolate palace had melted away",
+          sentence: "The great chocolate palace had melted away in the hot sun.",
+          count: 1,
+          inGlossary: true,
+        },
+      ],
+    }),
+    env,
+    { now: NOW },
+  );
+  assert.equal(resp1.status, 200);
+  assert.deepEqual(await resp1.json(), { ok: true, saved: 1 });
+
+  // Ingestion: second batch accumulating counts for "eavesdrop" and adding "veruca"
+  const resp2 = await handleWordTapsPost(
+    postJson("/api/analytics/word-taps", null, {
+      bookId: "charlie",
+      bookTitle: "Charlie and the Chocolate Factory",
+      taps: [
+        {
+          word: "eavesdrop",
+          form: "eavesdropping",
+          chapter: 2,
+          occurrence: 1,
+          paragraph: 5,
+          context: "he was eavesdropping outside the small room",
+          sentence: "Charlie realized he was eavesdropping outside the small room without making a sound.",
+          count: 3,
+          inGlossary: false,
+          glossaryRev: "rev-charlie-v1",
+        },
+        {
+          word: "veruca",
+          form: "veruca",
+          chapter: 3,
+          occurrence: 1,
+          paragraph: 2,
+          context: "screamed veruca salt in a loud voice",
+          sentence: "Then screamed Veruca Salt in a loud voice to her father.",
+          count: 4,
+          inGlossary: false,
+          glossaryRev: "rev-charlie-v1",
+        },
+      ],
+    }),
+    env,
+    { now: NOW + 1000 },
+  );
+  assert.equal(resp2.status, 200);
+  assert.deepEqual(await resp2.json(), { ok: true, saved: 2 });
+
+  // Gate admin query
+  const unauthorized = await handleAdminWordTapsGet(
+    raw("/api/admin/word-taps", "mw_session=fake"),
+    env,
+    { now: NOW },
+  );
+  assert.equal(unauthorized.status, 401);
+
+  // Set up admin session
+  await signUpFully(handleRegister, env, {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const adminCookie = cookieHeader(
+    await call(handleLogin, env, {
+      body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+    }),
+  );
+
+  // Admin query: default missing filter
+  const missingOnly = await handleAdminWordTapsGet(
+    raw("/api/admin/word-taps?filter=missing", adminCookie),
+    env,
+    { now: NOW },
+  );
+  assert.equal(missingOnly.status, 200);
+  const missingBody = await missingOnly.json();
+  assert.equal(missingBody.total, 2); // eavesdrop and veruca
+  assert.equal(missingBody.summary.missingWords, 2);
+  assert.equal(missingBody.summary.totalWords, 2); // "chocolate" has a meaning and was not stored
+  assert.equal(missingBody.summary.totalTaps, 9); // 2+3 + 4
+  assert.equal(missingBody.items[0].word, "eavesdrop");
+  assert.equal(missingBody.items[0].tapCount, 5); // 2 + 3
+  assert.equal(missingBody.items[0].inGlossary, false);
+  assert.equal(missingBody.items[0].glossaryRev, "rev-charlie-v1");
+  assert.equal(missingBody.items[0].status, "pending");
+  assert.equal(missingBody.items[0].bookTitle, "Charlie and the Chocolate Factory");
+  assert.deepEqual(missingBody.items[0].anchor, {
+    chapter: 2,
+    occurrence: 1,
+    form: "eavesdropping",
+    context: "he was eavesdropping outside the small room",
+  });
+  assert.equal(missingBody.items[0].sentence, "Charlie realized he was eavesdropping outside the small room without making a sound.");
+  assert.equal(missingBody.items[1].word, "veruca");
+  assert.equal(missingBody.items[1].tapCount, 4);
+
+  // Mark eavesdrop as resolved by admin
+  const resolveResp = await handleAdminWordTapsPost(
+    postJson("/api/admin/word-taps", adminCookie, {
+      action: "resolve",
+      bookId: "charlie",
+      word: "eavesdrop",
+      chapter: 2,
+      occurrence: 1,
+      rev: "rev-charlie-v2",
+    }),
+    env,
+    { now: NOW + 1500 },
+  );
+  assert.equal(resolveResp.status, 200);
+  assert.deepEqual(await resolveResp.json(), { ok: true, resolved: true, resolvedRev: "rev-charlie-v2" });
+
+  // Wrapped request format from legacy client also unwraps and resolves
+  const resolveWrappedResp = await handleAdminWordTapsPost(
+    postJson("/api/admin/word-taps", adminCookie, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "resolve",
+        bookId: "charlie",
+        word: "veruca",
+        chapter: 2,
+        occurrence: 1,
+        rev: "rev-charlie-v2",
+      }),
+    }),
+    env,
+    { now: NOW + 1550 },
+  );
+  assert.equal(resolveWrappedResp.status, 200);
+
+  // Now missing query excludes eavesdrop
+  const afterResolveMissing = await handleAdminWordTapsGet(
+    raw("/api/admin/word-taps?filter=missing", adminCookie),
+    env,
+    { now: NOW + 1600 },
+  );
+  const afterResolveBody = await afterResolveMissing.json();
+  assert.equal(afterResolveBody.total, 1);
+  assert.equal(afterResolveBody.items[0].word, "veruca");
+
+  // Resolved filter includes eavesdrop
+  const resolvedFilter = await handleAdminWordTapsGet(
+    raw("/api/admin/word-taps?filter=resolved", adminCookie),
+    env,
+    { now: NOW + 1600 },
+  );
+  const resolvedBody = await resolvedFilter.json();
+  assert.equal(resolvedBody.total, 1);
+  assert.equal(resolvedBody.items[0].word, "eavesdrop");
+  assert.equal(resolvedBody.items[0].status, "resolved");
+  assert.equal(resolvedBody.items[0].resolvedRev, "rev-charlie-v2");
+
+  // Admin query: all words
+  const allWords = await handleAdminWordTapsGet(
+    raw("/api/admin/word-taps?filter=all", adminCookie),
+    env,
+    { now: NOW },
+  );
+  const allBody = await allWords.json();
+  assert.equal(allBody.total, 2);
+  assert.ok(!allBody.items.some((item) => item.word === "chocolate"), "a word with a meaning is never stored");
+});
+
+test("word feedback: submit too_hard / wrong_meaning, deduplicate, and admin query", async () => {
+  const db = openDb();
+  const env = envOf(db);
+
+  // Submit feedback from IP A: too_hard for "eavesdrop"
+  const resp1 = await handleWordFeedbackPost(
+    postJson(
+      "/api/feedback/word",
+      await readerCookie(env),
+      {
+        bookId: "charlie",
+        bookTitle: "Charlie and the Chocolate Factory",
+        word: "eavesdrop",
+        form: "eavesdropping",
+        chapter: 2,
+        occurrence: 1,
+        paragraph: 5,
+        context: "he was eavesdropping outside the small room",
+        sentence: "Charlie realized he was eavesdropping outside the small room without making a sound.",
+        senseIndex: 0,
+        senseMeaning: "to listen secretly to what other people are saying",
+        reason: "too_hard",
+      },
+      "1.2.3.4",
+    ),
+    env,
+    { now: NOW },
+  );
+  assert.equal(resp1.status, 200);
+  assert.deepEqual(await resp1.json(), { ok: true, saved: true });
+
+  // Duplicate submit from same IP within 24h: accepted quietly without duplicate insert
+  const dup = await handleWordFeedbackPost(
+    postJson(
+      "/api/feedback/word",
+      await readerCookie(env),
+      {
+        bookId: "charlie",
+        bookTitle: "Charlie and the Chocolate Factory",
+        word: "eavesdrop",
+        form: "eavesdropping",
+        chapter: 2,
+        occurrence: 1,
+        paragraph: 5,
+        context: "he was eavesdropping outside the small room",
+        sentence: "Charlie realized he was eavesdropping outside the small room without making a sound.",
+        senseIndex: 0,
+        senseMeaning: "to listen secretly to what other people are saying",
+        reason: "too_hard",
+      },
+      "1.2.3.4",
+    ),
+    env,
+    { now: NOW + 1000 },
+  );
+  assert.equal(dup.status, 200);
+  assert.deepEqual(await dup.json(), { ok: true, duplicate: true });
+
+  // Submit from IP B: too_hard for "eavesdrop" (increases report count to 2)
+  const resp2 = await handleWordFeedbackPost(
+    postJson(
+      "/api/feedback/word",
+      await readerCookie(env),
+      {
+        bookId: "charlie",
+        bookTitle: "Charlie and the Chocolate Factory",
+        word: "eavesdrop",
+        form: "eavesdropping",
+        chapter: 2,
+        occurrence: 1,
+        paragraph: 5,
+        context: "he was eavesdropping outside the small room",
+        sentence: "Charlie realized he was eavesdropping outside the small room without making a sound.",
+        senseIndex: 0,
+        senseMeaning: "to listen secretly to what other people are saying",
+        reason: "too_hard",
+      },
+      "5.6.7.8",
+    ),
+    env,
+    { now: NOW + 2000 },
+  );
+  assert.equal(resp2.status, 200);
+
+  // Submit from IP C: wrong_meaning for "cricket" in wonder
+  const resp3 = await handleWordFeedbackPost(
+    postJson(
+      "/api/feedback/word",
+      await readerCookie(env),
+      {
+        bookId: "wonder",
+        bookTitle: "Wonder",
+        word: "cricket",
+        form: "cricket",
+        chapter: 1,
+        occurrence: 1,
+        paragraph: 2,
+        context: "the chirping of a cricket in the dark",
+        sentence: "He heard the chirping of a cricket in the dark corner.",
+        senseIndex: 1,
+        senseMeaning: "an open-air game played with a ball, bats, and wickets",
+        reason: "wrong_meaning",
+        glossaryRev: "wonder-rev-v1",
+      },
+      "9.10.11.12",
+    ),
+    env,
+    { now: NOW + 3000 },
+  );
+  assert.equal(resp3.status, 200);
+
+  // Reject invalid payload
+  const badReason = await handleWordFeedbackPost(
+    postJson("/api/feedback/word", await readerCookie(env), {
+      bookId: "wonder",
+      word: "cricket",
+      reason: "other_bad",
+    }),
+    env,
+    { now: NOW + 4000 },
+  );
+  assert.equal(badReason.status, 400);
+
+  // Non-admin blocked from admin query
+  const unauthorized = await handleAdminWordFeedbackGet(
+    raw("/api/admin/word-feedback", "mw_session=fake"),
+    env,
+    { now: NOW },
+  );
+  assert.equal(unauthorized.status, 401);
+
+  // Set up admin session
+  await signUpFully(handleRegister, env, {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const adminCookie = cookieHeader(
+    await call(handleLogin, env, {
+      body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+    }),
+  );
+
+  // Admin query: all feedback
+  const adminList = await handleAdminWordFeedbackGet(
+    raw("/api/admin/word-feedback", adminCookie),
+    env,
+    { now: NOW },
+  );
+  assert.equal(adminList.status, 200);
+  const body = await adminList.json();
+  assert.equal(body.total, 2); // 2 distinct (book, word, chapter, occurrence, reason) groups
+  assert.equal(body.summary.totalReports, 3);
+  assert.equal(body.summary.tooHardReports, 2);
+  assert.equal(body.summary.wrongMeaningReports, 1);
+  assert.equal(body.summary.distinctWords, 2);
+
+  // Most reported group is eavesdrop too_hard with count 2
+  assert.equal(body.items[0].word, "eavesdrop");
+  assert.equal(body.items[0].bookTitle, "Charlie and the Chocolate Factory");
+  assert.equal(body.items[0].reason, "too_hard");
+  assert.equal(body.items[0].count, 2);
+  assert.equal(body.items[0].senseIndex, 0);
+  assert.equal(body.items[0].senseMeaning, "to listen secretly to what other people are saying");
+  assert.deepEqual(body.items[0].anchor, {
+    chapter: 2,
+    occurrence: 1,
+    form: "eavesdropping",
+    context: "he was eavesdropping outside the small room",
+  });
+  assert.equal(body.items[0].sentence, "Charlie realized he was eavesdropping outside the small room without making a sound.");
+
+  // Filter by reason=wrong_meaning
+  const filtered = await handleAdminWordFeedbackGet(
+    raw("/api/admin/word-feedback?reason=wrong_meaning", adminCookie),
+    env,
+    { now: NOW },
+  );
+  const filteredBody = await filtered.json();
+  assert.equal(filteredBody.total, 1);
+  assert.equal(filteredBody.items[0].word, "cricket");
+  assert.equal(filteredBody.items[0].reason, "wrong_meaning");
+  assert.equal(filteredBody.items[0].status, "pending");
+
+  // Admin marks cricket wrong_meaning as resolved
+  // Admin marks cricket wrong_meaning as resolved without passing rev explicitly:
+  // It automatically looks up the current catalog revision from BOOKS bucket ("wonder-rev-v2")
+  const mockCatalog = {
+    lists: [
+      {
+        id: "wonder",
+        glossary: { url: "wonder/glossary.json", bytes: 1000, sha256: "wonder-rev-v200000000000000000000000000000000000000000000000000" },
+      },
+    ],
+  };
+  const booksMap = new Map();
+  booksMap.set("word-lists/catalog.json", new TextEncoder().encode(JSON.stringify(mockCatalog)));
+  env.BOOKS = {
+    async get(key) {
+      const data = booksMap.get(key);
+      if (!data) return null;
+      return { body: new ReadableStream({ start(c) { c.enqueue(data); c.close(); } }) };
+    },
+  };
+
+  const resolveFeedback = await handleAdminWordFeedbackPost(
+    postJson("/api/admin/word-feedback", adminCookie, {
+      action: "resolve",
+      bookId: "wonder",
+      word: "cricket",
+      chapter: 1,
+      occurrence: 1,
+      reason: "wrong_meaning",
+    }),
+    env,
+    { now: NOW + 5000 },
+  );
+  assert.equal(resolveFeedback.status, 200);
+  const resolveJson = await resolveFeedback.json();
+  assert.equal(resolveJson.ok, true);
+  assert.equal(resolveJson.resolved, true);
+  assert.equal(resolveJson.resolvedRev, "wonder-rev-v");
+
+  // Query resolved status
+  const resolvedList = await handleAdminWordFeedbackGet(
+    raw("/api/admin/word-feedback?status=resolved", adminCookie),
+    env,
+    { now: NOW + 5100 },
+  );
+  const resolvedListBody = await resolvedList.json();
+  assert.equal(resolvedListBody.total, 1);
+  assert.equal(resolvedListBody.items[0].word, "cricket");
+  assert.equal(resolvedListBody.items[0].status, "resolved");
+  assert.equal(resolvedListBody.items[0].resolvedRev, "wonder-rev-v");
+
+  // A reader on an outdated version (wonder-rev-v1) reports cricket wrong_meaning:
+  // Since wonder-rev-v1 != resolvedRev (wonder-rev-v), it should NOT be marked as reopened (stays resolved)
+  const outdatedClientResp = await handleWordFeedbackPost(
+    postJson(
+      "/api/feedback/word",
+      await readerCookie(env),
+      {
+        bookId: "wonder",
+        bookTitle: "Wonder",
+        word: "cricket",
+        form: "cricket",
+        chapter: 1,
+        occurrence: 1,
+        paragraph: 2,
+        context: "the chirping of a cricket in the dark",
+        sentence: "He heard the chirping of a cricket in the dark corner.",
+        senseIndex: 1,
+        senseMeaning: "wrong meaning from old v1 version",
+        reason: "wrong_meaning",
+        glossaryRev: "wonder-rev-v1",
+      },
+      "17.18.19.20",
+    ),
+    env,
+    { now: NOW + 5500 },
+  );
+  assert.equal(outdatedClientResp.status, 200);
+
+  // Still 0 reopened items
+  const noReopenedYet = await handleAdminWordFeedbackGet(
+    raw("/api/admin/word-feedback?status=reopened", adminCookie),
+    env,
+    { now: NOW + 5600 },
+  );
+  assert.equal((await noReopenedYet.json()).total, 0);
+
+  // A reader reports cricket wrong_meaning again on the new resolved version (wonder-rev-v) -> automatically marked as 'reopened'
+  const reopenResp = await handleWordFeedbackPost(
+    postJson(
+      "/api/feedback/word",
+      await readerCookie(env),
+      {
+        bookId: "wonder",
+        bookTitle: "Wonder",
+        word: "cricket",
+        form: "cricket",
+        chapter: 1,
+        occurrence: 1,
+        paragraph: 2,
+        context: "the chirping of a cricket in the dark",
+        sentence: "He heard the chirping of a cricket in the dark corner.",
+        senseIndex: 1,
+        senseMeaning: "still a wrong meaning in new version",
+        reason: "wrong_meaning",
+        glossaryRev: "wonder-rev-v",
+      },
+      "13.14.15.16",
+    ),
+    env,
+    { now: NOW + 6000 },
+  );
+  assert.equal(reopenResp.status, 200);
+
+  // Query reopened status
+  const reopenedList = await handleAdminWordFeedbackGet(
+    raw("/api/admin/word-feedback?status=reopened", adminCookie),
+    env,
+    { now: NOW + 6100 },
+  );
+  const reopenedListBody = await reopenedList.json();
+  assert.equal(reopenedListBody.total, 1);
+  assert.equal(reopenedListBody.items[0].word, "cricket");
+  assert.equal(reopenedListBody.items[0].status, "reopened");
+  assert.equal(reopenedListBody.items[0].glossaryRev, "wonder-rev-v");
+
+  // In the 'all' view, the group status must be 'reopened' (not masked by earlier 'resolved' reports)
+  const allFeedbackList = await handleAdminWordFeedbackGet(
+    raw("/api/admin/word-feedback?status=all", adminCookie),
+    env,
+    { now: NOW + 6200 },
+  );
+  const allFeedbackBody = await allFeedbackList.json();
+  const cricketRow = allFeedbackBody.items.find((it) => it.word === "cricket" && it.reason === "wrong_meaning");
+  assert.ok(cricketRow);
+  assert.equal(cricketRow.status, "reopened");
+
+  // Admin resolves again. Even if an old client sends a stale rev in payload,
+  // the backend prioritizes the catalog revision.
+  const resolveWithStaleClientRev = await handleAdminWordFeedbackPost(
+    postJson("/api/admin/word-feedback", adminCookie, {
+      action: "resolve",
+      bookId: "wonder",
+      word: "cricket",
+      chapter: 1,
+      occurrence: 1,
+      reason: "wrong_meaning",
+      rev: "stale-client-rev",
+    }),
+    env,
+    { now: NOW + 6300 },
+  );
+  assert.equal(resolveWithStaleClientRev.status, 200);
+  assert.equal((await resolveWithStaleClientRev.json()).resolvedRev, "wonder-rev-v");
+
+  // Update catalog to v3 (within 60s). BypassCache guarantees resolve immediately picks up v3
+  const v3Catalog = {
+    lists: [
+      {
+        id: "wonder",
+        glossary: { url: "wonder/glossary.json", bytes: 1000, sha256: "wonder-v3-000000000000000000000000000000000000000000000000000" },
+      },
+    ],
+  };
+  booksMap.set("word-lists/catalog.json", new TextEncoder().encode(JSON.stringify(v3Catalog)));
+
+  const resolveV3 = await handleAdminWordFeedbackPost(
+    postJson("/api/admin/word-feedback", adminCookie, {
+      action: "resolve",
+      bookId: "wonder",
+      word: "cricket",
+      chapter: 1,
+      occurrence: 1,
+      reason: "wrong_meaning",
+    }),
+    env,
+    { now: NOW + 6400 },
+  );
+  assert.equal(resolveV3.status, 200);
+  assert.equal((await resolveV3.json()).resolvedRev, "wonder-v3-00");
+
+  // Wrapped request format from legacy client also unwraps and resolves
+  const resolveWrappedFeedback = await handleAdminWordFeedbackPost(
+    postJson("/api/admin/word-feedback", adminCookie, {
+      method: "POST",
+      body: JSON.stringify({
+        action: "resolve",
+        bookId: "wonder",
+        word: "cricket",
+        chapter: 1,
+        occurrence: 1,
+        reason: "wrong_meaning",
+      }),
+    }),
+    env,
+    { now: NOW + 6450 },
+  );
+  assert.equal(resolveWrappedFeedback.status, 200);
+
+  // Outdated client on v1 reports -> stays resolved (suppressed)
+  const legacyReport = await handleWordFeedbackPost(
+    postJson(
+      "/api/feedback/word",
+      await readerCookie(env),
+      {
+        bookId: "wonder",
+        bookTitle: "Wonder",
+        word: "cricket",
+        form: "cricket",
+        chapter: 1,
+        occurrence: 1,
+        paragraph: 2,
+        context: "the chirping of a cricket in the dark",
+        sentence: "He heard the chirping of a cricket in the dark corner.",
+        senseIndex: 1,
+        senseMeaning: "wrong meaning from old v1",
+        reason: "wrong_meaning",
+        glossaryRev: "wonder-rev-v1",
+      },
+      "21.22.23.24",
+    ),
+    env,
+    { now: NOW + 6500 },
+  );
+  assert.equal(legacyReport.status, 200);
+
+  const checkNoReopened = await handleAdminWordFeedbackGet(
+    raw("/api/admin/word-feedback?status=reopened", adminCookie),
+    env,
+    { now: NOW + 6600 },
+  );
+  assert.equal((await checkNoReopened.json()).total, 0);
+
+  // Client on current v3 reports -> genuine regression, correctly marked reopened
+  const v3Regression = await handleWordFeedbackPost(
+    postJson(
+      "/api/feedback/word",
+      await readerCookie(env),
+      {
+        bookId: "wonder",
+        bookTitle: "Wonder",
+        word: "cricket",
+        form: "cricket",
+        chapter: 1,
+        occurrence: 1,
+        paragraph: 2,
+        context: "the chirping of a cricket in the dark",
+        sentence: "He heard the chirping of a cricket in the dark corner.",
+        senseIndex: 1,
+        senseMeaning: "still broken in v3",
+        reason: "wrong_meaning",
+        glossaryRev: "wonder-v3-00",
+      },
+      "25.26.27.28",
+    ),
+    env,
+    { now: NOW + 6700 },
+  );
+  assert.equal(v3Regression.status, 200);
+
+  const checkReopenedV3 = await handleAdminWordFeedbackGet(
+    raw("/api/admin/word-feedback?status=reopened", adminCookie),
+    env,
+    { now: NOW + 6800 },
+  );
+  assert.equal((await checkReopenedV3.json()).total, 1);
+
+  // Same IP on the same revision within 24h is deduplicated
+  const dupResp = await handleWordFeedbackPost(
+    postJson(
+      "/api/feedback/word",
+      await readerCookie(env),
+      {
+        bookId: "wonder",
+        word: "cricket",
+        chapter: 1,
+        occurrence: 1,
+        reason: "wrong_meaning",
+        glossaryRev: "wonder-v3-00",
+      },
+      "25.26.27.28",
+    ),
+    env,
+    { now: NOW + 6900 },
+  );
+  assert.equal(dupResp.status, 200);
+  assert.equal((await dupResp.json()).duplicate, true);
+
+  // But if the same IP updates to a new version (v4) within 24h, it is NOT blocked
+  const upgradedResp = await handleWordFeedbackPost(
+    postJson(
+      "/api/feedback/word",
+      await readerCookie(env),
+      {
+        bookId: "wonder",
+        word: "cricket",
+        chapter: 1,
+        occurrence: 1,
+        reason: "wrong_meaning",
+        glossaryRev: "wonder-v4-00",
+      },
+      "25.26.27.28",
+    ),
+    env,
+    { now: NOW + 7000 },
+  );
+  assert.equal(upgradedResp.status, 200);
+  assert.equal((await upgradedResp.json()).saved, true);
+});
+
+test("word feedback: a reader's own meaning is cleaned, capped and kept for review", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const base = { bookId: "wonder", word: "dive", form: "dive", chapter: 2, occurrence: 1, reason: "missing_meaning" };
+  const long = `To jump in <b>head first</b>\u0007 ${"x".repeat(400)}`;
+  const first = await handleWordFeedbackPost(postJson("/api/feedback/word", await readerCookie(env), { ...base, suggestion: long }, "41.42.43.44"), env, { now: NOW });
+  assert.equal(first.status, 200);
+  const stored = db.raw.prepare("SELECT suggestion FROM word_feedback").get().suggestion;
+  assert.equal([...stored].length, 200, "at most 200 characters");
+  assert.ok(stored.startsWith("To jump in b head first /b x"), "markup brackets and control characters become single spaces");
+  assert.ok([...stored].every((char) => char !== "<" && char !== ">" && char.charCodeAt(0) >= 32));
+
+  // The same place again from the same address: without a meaning it is a duplicate, with one it is kept.
+  const plain = await handleWordFeedbackPost(postJson("/api/feedback/word", await readerCookie(env), base, "41.42.43.44"), env, { now: NOW + 1000 });
+  assert.equal((await plain.json()).duplicate, true);
+  const withMeaning = await handleWordFeedbackPost(
+    postJson("/api/feedback/word", await readerCookie(env), { ...base, suggestion: "  To jump into water,\n head first.  " }, "41.42.43.44"),
+    env,
+    { now: NOW + 2000 },
+  );
+  assert.equal((await withMeaning.json()).saved, true);
+  const rows = db.raw.prepare("SELECT suggestion FROM word_feedback ORDER BY created_at").all();
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1].suggestion, "To jump into water, head first.", "spaces and line breaks are folded");
+
+  await signUpFully(handleRegister, env, { body: { email: "xcrunnnn@outlook.com", password: "correct horse" } });
+  const adminCookie = cookieHeader(
+    await call(handleLogin, env, { body: { email: "xcrunnnn@outlook.com", password: "correct horse" } }),
+  );
+  const listed = await (await handleAdminWordFeedbackGet(raw("/api/admin/word-feedback", adminCookie), env, { now: NOW })).json();
+  assert.equal(listed.items[0].suggestions.length, 2, "the admin list shows every reader meaning for the place");
+});
+
+test("word feedback: a word with no meaning in the book can be reported as missing", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const sent = await handleWordFeedbackPost(
+    postJson(
+      "/api/feedback/word",
+      await readerCookie(env),
+      { bookId: "wonder", word: "slept", form: "slept", chapter: 3, occurrence: 1, reason: "missing_meaning" },
+      "31.32.33.34",
+    ),
+    env,
+    { now: NOW },
+  );
+  assert.equal(sent.status, 200);
+  assert.deepEqual(await sent.json(), { ok: true, saved: true });
+
+  await signUpFully(handleRegister, env, { body: { email: "xcrunnnn@outlook.com", password: "correct horse" } });
+  const adminCookie = cookieHeader(
+    await call(handleLogin, env, { body: { email: "xcrunnnn@outlook.com", password: "correct horse" } }),
+  );
+  const listed = await (
+    await handleAdminWordFeedbackGet(raw("/api/admin/word-feedback?reason=missing_meaning", adminCookie), env, {
+      now: NOW,
+    })
+  ).json();
+  assert.equal(listed.total, 1);
+  assert.equal(listed.items[0].word, "slept");
+  assert.equal(listed.items[0].reason, "missing_meaning");
+  // Not counted as either of the two meaning complaints.
+  assert.equal(listed.summary.tooHardReports, 0);
+  assert.equal(listed.summary.wrongMeaningReports, 0);
+});
+
+test("a hash from the 100k era still signs in, and is rewritten at the current count", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  // Both this provider and the expensive password hash predate the sign-up policy.
+  await seedExistingUser(db, "reader@example.com", { iterations: 100_000 });
+
+  const ok = await call(handleLogin, env, { body: { email: "reader@example.com", password: "correct horse" } });
+  assert.equal(ok.status, 200, "the old hash must still be accepted");
+  const after = db.raw.prepare("SELECT password_iters FROM users WHERE email = ?").get("reader@example.com");
+  assert.equal(after.password_iters, PBKDF2_ITERATIONS, "the next sign-in rewrites it at the current count");
+});
+
+test("one request may only carry a batch the CPU budget can pay for", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const tap = (word) => ({ word, chapter: 1, occurrence: 1, paragraph: 0, context: "", sentence: "" });
+
+  const tooManyTaps = await handleWordTapsPost(
+    postJson("/api/analytics/word-taps", null, {
+      bookId: "charlie",
+      taps: Array.from({ length: 21 }, (_, i) => tap(`word${"abcdefghij"[i % 10]}${i}`)),
+    }),
+    env,
+    { now: NOW },
+  );
+  assert.equal(tooManyTaps.status, 400);
+  assert.equal((await tooManyTaps.json()).error, "bad-taps");
+
+  const cookie = cookieHeader(await signUpFully(handleRegister, env, { body: { email: "reader@gmail.com", password: "correct horse" } }));
+  const item = { kind: "settings", itemId: "main", updatedAt: NOW, deleted: false, data: {} };
+  const tooManyItems = await call(handleSyncPush, env, {
+    cookie,
+    body: { items: Array.from({ length: 201 }, () => item) },
+  });
+  assert.equal(tooManyItems.status, 413);
+  assert.equal((await tooManyItems.json()).error, "too-large");
+});
+
+test("the day's telemetry budget is a hard fuse, and a spent one writes nothing", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const day = 24 * 60 * 60 * 1000;
+  const dayStart = Math.floor(NOW / day) * day;
+  db.raw
+    .prepare("INSERT INTO rate_limits (bucket, window_start, hits) VALUES (?, ?, ?)")
+    .run(`budget:taps:${dayStart}`, dayStart, DAILY_WRITE_BUDGET.taps);
+
+  const response = await handleWordTapsPost(
+    postJson("/api/analytics/word-taps", null, {
+      bookId: "charlie",
+      taps: [{ word: "eavesdrop", chapter: 1, occurrence: 1, paragraph: 0, context: "", sentence: "" }],
+    }),
+    env,
+    { now: NOW },
+  );
+  assert.equal(response.status, 429);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM book_word_taps").get().n, 0, "nothing is written");
+});
+
+test("old rate-limit rows are still cleared, but at most once per PRUNE_EVERY_MS per instance", async () => {
+  const db = openDb();
+  const before = setPruneRoll(() => 0); // the 1-in-PRUNE_ONE_IN draw always wins here
+  const day = 24 * 60 * 60 * 1000;
+  // Far after every other test's clock, so this instance's last prune is not in the way.
+  const T = NOW + 400 * day;
+  const today = Math.floor(T / day) * day;
+  const put = (bucket, at) => db.raw.prepare("INSERT INTO rate_limits (bucket, window_start, hits) VALUES (?, ?, 1)").run(bucket, at);
+  const has = (bucket) => db.raw.prepare("SELECT COUNT(*) AS n FROM rate_limits WHERE bucket = ?").get(bucket).n > 0;
+  put("login:ip:old", T - 5 * RATE_WINDOW_MS);
+  put(`budget:taps:${today}`, today);
+  put("budget:taps:old", today - 3 * day);
+
+  await assertIpRateLimit(db, "taps", "1.2.3.4", T);
+  assert.equal(has("login:ip:old"), false, "an expired window is cleared");
+  assert.equal(has("budget:taps:old"), false, "a daily row from before yesterday is cleared");
+  assert.equal(has(`budget:taps:${today}`), true, "today's daily row stays");
+
+  put("login:ip:later", T - 5 * RATE_WINDOW_MS);
+  await assertIpRateLimit(db, "taps", "1.2.3.4", T + 60_000);
+  assert.equal(has("login:ip:later"), true, "no second clear within PRUNE_EVERY_MS");
+  setPruneRoll(() => 0.5);
+  await assertIpRateLimit(db, "taps", "1.2.3.4", T + 2 * PRUNE_EVERY_MS);
+  assert.equal(has("login:ip:later"), true, "a lost draw does not clear");
+  setPruneRoll(() => 0);
+  await assertIpRateLimit(db, "taps", "1.2.3.4", T + 3 * PRUNE_EVERY_MS);
+  assert.equal(has("login:ip:later"), false, "cleared again once it has passed and the draw wins");
+  setPruneRoll(before);
+});
+
+test("sync and word-list limits are counted in batches, and still stop a loop", async () => {
+  resetUserTallies();
+  const db = openDb();
+  const before = setPruneRoll(() => 0.99);
+  const hits = (bucket) => db.raw.prepare("SELECT hits FROM rate_limits WHERE bucket = ?").get(bucket)?.hits ?? 0;
+  const windowStart = Math.floor(NOW / RATE_WINDOW_MS) * RATE_WINDOW_MS;
+  for (let i = 1; i < USER_BATCH; i += 1) await assertUserRateLimit(db, "sync", "u1", NOW);
+  assert.equal(hits("sync:user:u1"), 0, "nothing written before a full batch");
+  await assertUserRateLimit(db, "sync", "u1", NOW);
+  assert.equal(hits("sync:user:u1"), USER_BATCH, "one write adds the whole batch");
+  // Another account already at its limit (counted by other instances) is refused on its first call here.
+  db.raw.prepare("INSERT INTO rate_limits (bucket, window_start, hits) VALUES (?, ?, ?)").run("sync:user:u2", windowStart, 300);
+  await assert.rejects(assertUserRateLimit(db, "sync", "u2", NOW), (error) => error.status === 429);
+  // A loop in one instance is stopped by the local count, before D1 hears about all of it.
+  resetUserTallies();
+  let refused = 0;
+  for (let i = 0; i < 130; i += 1) {
+    try { await assertUserRateLimit(db, "glossary", "u3", NOW); } catch (error) { if (error.status === 429) refused += 1; else throw error; }
+  }
+  assert.equal(refused, 10, "the 121st to 130th call are refused");
+  // Codes are still counted one by one.
+  await assertUserRateLimit(db, "code-send", "u4", NOW);
+  assert.equal(hits("code-send:user:u4"), 1);
+  setPruneRoll(before);
+  resetUserTallies();
+});
+
+test("a signed-in account cannot loop the word-list endpoint", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const created = await signUpFully(handleRegister, env, { body: { email: "reader@gmail.com", password: "correct horse" } });
+  const cookie = cookieHeader(created);
+  const userId = db.raw.prepare("SELECT id FROM users WHERE email = ?").get("reader@gmail.com").id;
+  const windowStart = Math.floor(NOW / (15 * 60 * 1000)) * (15 * 60 * 1000);
+  db.raw
+    .prepare("INSERT INTO rate_limits (bucket, window_start, hits) VALUES (?, ?, ?)")
+    .run(`glossary:user:${userId}`, windowStart, 120);
+
+  const response = await handleGlossary(raw("/api/glossary/book-1", cookie), env, "book-1", { now: NOW });
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).error, "rate");
+});
+
+test("a story summary is saved only by the admin, only for a book in the catalog, in the right language", async () => {
+  const db = openDb();
+  const register = (email) => signUpFully(handleRegister, envOf(db), { body: { email, password: "correct horse" } });
+  await register("xcrunnnn@outlook.com");
+  const reader = await register("reader-blurb@gmail.com");
+  const adminCookie = cookieHeader(await call(handleLogin, envOf(db), { body: { email: "xcrunnnn@outlook.com", password: "correct horse" } }));
+  const readerCookie = cookieHeader(reader);
+  const files = new Map();
+  const catalog = new TextEncoder().encode(`${JSON.stringify({ format: 1, lists: [{ id: "wonder", title: "Wonder" }] })}\n`);
+  files.set("word-lists/catalog.json", catalog);
+  files.set("public-books/catalog.json", new TextEncoder().encode(JSON.stringify({ format: 1, packs: [{ id: "alice", title: "Alice" }] })));
+  const env = envOf(db, { BOOKS: stubBucket(files) });
+  const put = (cookie, query, body) => handleBlurbPut(putJson(`/api/admin/blurb?${query}`, cookie, body), env, { now: NOW });
+  const stored = (key) => JSON.parse(new TextDecoder().decode(files.get(key)));
+  const zh = "\u4e00\u4e2a\u7537\u5b69\u7b2c\u4e00\u6b21\u53bb\u5b66\u6821\u3002";
+
+  assert.equal((await put(readerCookie, "kind=lists&id=wonder", { zh })).status, 403, "only the admin");
+  assert.equal((await put("", "kind=lists&id=wonder", { zh })).status, 401);
+  assert.equal((await put(adminCookie, "kind=lists&id=wondr", { zh })).status, 404, "a mistyped id is refused");
+  assert.equal((await put(adminCookie, "kind=public&id=wonder", { zh })).status, 404, "a list book is not a public book");
+  assert.equal((await put(adminCookie, "kind=lists&id=../x", { zh })).status, 400);
+
+  const wrong = await put(adminCookie, "kind=lists&id=wonder", { zh: "A boy goes to school.", en: zh });
+  assert.equal(wrong.status, 400);
+  assert.deepEqual((await wrong.json()).problems, ["zh:no-chinese", "en:has-chinese"]);
+  assert.equal((await put(adminCookie, "kind=lists&id=wonder", { en: "A <b>boy</b>." })).status, 400, "no markup");
+  assert.equal(files.has("word-lists/wonder/blurb.json"), false, "nothing is written when a check fails");
+
+  const saved = await put(adminCookie, "kind=lists&id=wonder", { zh, en: "  A boy goes to school\n for the first time.  " });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(stored("word-lists/wonder/blurb.json"), { format: 1, zh, en: "A boy goes to school\nfor the first time." });
+  assert.deepEqual(files.get("word-lists/catalog.json"), catalog, "the catalog is not touched");
+
+  const read = await handleBlurbGet(
+    new Request("http://localhost/api/admin/blurb?kind=lists&id=wonder", { headers: { cookie: adminCookie } }),
+    env,
+    { now: NOW },
+  );
+  assert.deepEqual(await read.json(), { kind: "lists", id: "wonder", zh, en: "A boy goes to school\nfor the first time." });
+
+  // The body is the whole summary: saving one language clears the other.
+  await put(adminCookie, "kind=lists&id=wonder", { zh });
+  assert.deepEqual(stored("word-lists/wonder/blurb.json"), { format: 1, zh });
+
+  assert.equal((await put(adminCookie, "kind=public&id=alice", { en: "A girl falls down a rabbit hole." })).status, 200);
+  assert.ok(files.has("public-books/alice/blurb.json"), "a public book keeps its summary in public-books/");
+});
+
+test("Send again gives a sign-up a new code without a new human check", async () => {
+  const tickets = {};
+  const db = openDb();
+  const env = envOf(db, { TURNSTILE_SECRET_KEY: "secret" });
+  const sent = [];
+  const sendCode = async (message) => {
+    sent.push(message);
+    return { sent: true };
+  };
+  const post = (path, body) => new Request(`http://localhost${path}`, { method: "POST", body: JSON.stringify(body) });
+  const human = async () => new Response(JSON.stringify({ success: true, action: "signup", hostname: "inputread.site" }), { status: 200 });
+  const started = await handleRegister(post("/api/auth/register", { email: "again@gmail.com", password: "correct horse", turnstileToken: "token-token-token" }), env, { now: NOW, sendCode, fetch: human });
+  if (started.status === 202) tickets["again@gmail.com"] = (await started.clone().json()).ticket;
+  assert.equal(started.status, 202);
+
+  const tooSoon = await handleRegisterResend(post("/api/auth/register/resend", { email: "again@gmail.com", ticket: tickets["again@gmail.com"] }), env, { now: NOW + 5_000, sendCode });
+  assert.equal((await tooSoon.json()).error, "code-wait");
+  const nothing = await handleRegisterResend(post("/api/auth/register/resend", { email: "nobody@gmail.com", ticket: tickets["nobody@gmail.com"] }), env, { now: NOW + 61_000, sendCode });
+  assert.equal((await nothing.json()).error, "code-expired", "only a sign-up in progress gets a code");
+
+  const resent = await handleRegisterResend(post("/api/auth/register/resend", { email: "again@gmail.com", ticket: tickets["again@gmail.com"] }), env, { now: NOW + 61_000, sendCode });
+  assert.equal(resent.status, 200);
+  assert.equal(sent.length, 2);
+  if (sent[0].code !== sent[1].code) {
+    const old = await handleRegisterConfirm(post("/api/auth/register/confirm", { email: "again@gmail.com", code: sent[0].code, ticket: tickets["again@gmail.com"] }), env, { now: NOW + 62_000 });
+    assert.equal((await old.json()).error, "code", "the first code stopped working");
+  }
+  const done = await handleRegisterConfirm(post("/api/auth/register/confirm", { email: "again@gmail.com", code: sent[1].code, ticket: tickets["again@gmail.com"] }), env, { now: NOW + 62_000 });
+  assert.equal(done.status, 201);
+  const login = await call(handleLogin, env, { body: { email: "again@gmail.com", password: "correct horse" } });
+  assert.equal(login.status, 200, "the password from the first step is kept");
+});
+
+test("word lists and private EPUBs: requests at the same moment cannot pass the limits", async () => {
+  const db = openDb();
+  const reader = await signUpFully(handleRegister, envOf(db), { body: { email: "race@gmail.com", password: "correct horse" } });
+  const cookie = cookieHeader(reader);
+  const readerId = (await reader.json()).user.id;
+  const files = new Map();
+  const text = (id) => new TextEncoder().encode(`{"glossary":{"${id}":{}}}`);
+  for (let n = 1; n <= 10; n += 1) files.set(`word-lists/race-${n}/glossary.json`, text(`race-${n}`));
+  // A slow bucket: every request is between its checks and its writes at the same time.
+  const slow = stubBucket(files);
+  const env = envOf(db, { BOOKS: { ...slow, get: async (key) => { await new Promise((r) => setTimeout(r, 5)); return slow.get(key); } } });
+  const opened = await Promise.all(
+    Array.from({ length: 10 }, (_, i) => handleGlossary(raw(`/api/glossary/race-${i + 1}`, cookie), env, `race-${i + 1}`, { now: NOW })),
+  );
+  const ok = opened.filter((r) => r.status === 200).length;
+  assert.equal(ok, GLOSSARY_WEEK_BOOKS, "only seven new books, however the requests overlap");
+  assert.equal(opened.filter((r) => r.status === 429).length, 10 - GLOSSARY_WEEK_BOOKS);
+  assert.equal(db.raw.prepare("SELECT COUNT(DISTINCT book_id) AS n FROM glossary_reads WHERE user_id = ?").get(readerId).n, GLOSSARY_WEEK_BOOKS);
+  // The same new book twice at once is one place, not two.
+  db.raw.prepare("DELETE FROM glossary_reads").run();
+  const twice = await Promise.all([1, 2].map(() => handleGlossary(raw("/api/glossary/race-1", cookie), env, "race-1", { now: NOW })));
+  assert.deepEqual(twice.map((r) => r.status), [200, 200]);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n, 1);
+
+  // Private EPUB: 30 a day, also when 35 requests overlap.
+  db.raw.prepare("UPDATE users SET role = 'trusted' WHERE id = ?").run(readerId);
+  const epubs = stubBucket(new Map([["great-book/book.epub", new Uint8Array([1, 2, 3])]]));
+  const privateEnv = envOf(db, { PRIVATE: { ...epubs, get: async (key) => { await new Promise((r) => setTimeout(r, 5)); return epubs.get(key); } } });
+  const relogin = cookieHeader(await call(handleLogin, envOf(db), { body: { email: "race@gmail.com", password: "correct horse" } }));
+  const downloads = await Promise.all(
+    Array.from({ length: 35 }, () => handleEpub(raw("/api/book/great-book/epub", relogin), privateEnv, "great-book", { now: NOW })),
+  );
+  assert.equal(downloads.filter((r) => r.status === 200).length, 30);
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM book_downloads").get().n, 30);
+});
+
+test("only the browser that started a sign-up can resend or finish it", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const sent = [];
+  const sendCode = async (message) => {
+    sent.push(message);
+    return { sent: true };
+  };
+  const post = (path, body) => new Request(`http://localhost${path}`, { method: "POST", body: JSON.stringify(body) });
+  const started = await handleRegister(post("/api/auth/register", { email: "mine@gmail.com", password: "correct horse" }), env, { now: NOW, sendCode });
+  const { ticket } = await started.json();
+  assert.match(ticket, /^[A-Za-z0-9_-]{40,}$/);
+  assert.notEqual(db.raw.prepare("SELECT ticket_hash FROM pending_signups").get().ticket_hash, ticket, "only a hash of the ticket is kept");
+
+  // Someone who knows the address but not the ticket: no new code, no account, attempts not reset.
+  const strangerResend = await handleRegisterResend(post("/api/auth/register/resend", { email: "mine@gmail.com", ticket: "x".repeat(43) }), env, { now: NOW + 61_000, sendCode });
+  assert.equal((await strangerResend.json()).error, "code-expired");
+  assert.equal(sent.length, 1);
+  const strangerConfirm = await handleRegisterConfirm(post("/api/auth/register/confirm", { email: "mine@gmail.com", code: sent[0].code }), env, { now: NOW });
+  assert.equal((await strangerConfirm.json()).error, "code-expired", "the right code without the ticket does not make the account");
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM users").get().n, 0);
+
+  const done = await handleRegisterConfirm(post("/api/auth/register/confirm", { email: "mine@gmail.com", code: sent[0].code, ticket }), env, { now: NOW });
+  assert.equal(done.status, 201);
+});
+
+test("a trusted month or year ends on the same day, or the last day of a short month", () => {
+  const at = (iso) => Date.parse(iso);
+  const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+  assert.equal(day(trustedUntil("month", at("2026-01-31T10:00:00Z"))), "2026-02-28");
+  assert.equal(day(trustedUntil("month", at("2028-01-31T10:00:00Z"))), "2028-02-29");
+  assert.equal(day(trustedUntil("month", at("2026-03-15T10:00:00Z"))), "2026-04-15");
+  assert.equal(day(trustedUntil("quarter", at("2026-11-30T10:00:00Z"))), "2027-02-28");
+  assert.equal(day(trustedUntil("year", at("2028-02-29T10:00:00Z"))), "2029-02-28");
+  assert.equal(day(trustedUntil("month", at("2026-12-31T10:00:00Z"))), "2027-01-31");
+  assert.equal(new Date(trustedUntil("month", at("2026-01-31T10:00:00Z"))).toISOString().slice(11, 19), "10:00:00", "the time of day stays");
+});
+
+function validLargeGlossary(length) {
+  const glossary = {};
+  for (let at = 0; at < 7000; at += 1) glossary[`word${at}`] = {
+    meaning: "A clear English explanation of one word. ".repeat(12),
+    whyHard: "An uncommon word in this story.",
+  };
+  const head = JSON.stringify({ version: 2, glossary, note: "" }).slice(0, -2);
+  const tail = String.fromCharCode(34, 125);
+  return head + "x".repeat(length - head.length - tail.length) + tail;
+}
+
+const publishText = (value) => new TextEncoder().encode(value);
+const readPublished = (files, key) => JSON.parse(new TextDecoder().decode(files.get(key)));
+const validPublicGlossary = (extra = {}) => JSON.stringify({
+  version: 2, title: "Great Book",
+  glossary: { word: { meaning: "A word.", futureEntry: { retain: true } } }, ...extra,
+});
+const hashPublished = async (bytes) => Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex");
+
+async function publicPublishFixture() {
+  const db = openDb();
+  const admin = await signUpFully(handleRegister, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const cookie = cookieHeader(admin);
+  const epub = publishText("ORIGINAL-EPUB");
+  const glossary = publishText(validPublicGlossary());
+  const epubHash = await hashPublished(epub);
+  const glossaryHash = await hashPublished(glossary);
+  const row = {
+    id: "great-book", title: "Great Book", rev: "legacyrowrev", version: 7, chapters: 8, coined: 3,
+    added: "2020-01-01", updated: "2026-10-01T00:00:00.000Z", previousUpdated: "2026-09-01",
+    isbn: "old-isbn", words: 999, paragraphs: 999, sentences: 999, phrases: 999,
+    futureRow: { keep: [1, 2, 3] },
+    epub: { url: "great-book/book.epub", bytes: epub.length, sha256: epubHash, futureEpub: "keep" },
+    glossary: { url: "great-book/glossary.json", bytes: glossary.length, sha256: glossaryHash, rev: glossaryHash.slice(0, 12), futureGlossary: "keep" },
+    cover: { url: "old-cover", bytes: 3, sha256: "oldcover", futureCover: "keep" },
+  };
+  const other = { id: "other", rev: "otherrev", futureOther: [1, { two: true }], glossary: { sha256: "otherhash", secret: "keep" } };
+  const catalog = { format: 1, updated: row.updated, futureTop: { keep: "yes" }, packs: [row, other] };
+  const files = new Map([
+    ["public-books/catalog.json", publishText(JSON.stringify(catalog))],
+    ["public-books/great-book/book.epub", epub],
+    ["public-books/great-book/glossary.json", glossary],
+    ["covers/public-great-book.jpg", publishText("OLD")],
+  ]);
+  const writes = [];
+  const backing = stubBucket(files);
+  const bucket = {
+    async get(key) {
+      if (key === "public-books/catalog.json") assert.ok(db.raw.prepare("SELECT owner FROM catalog_locks WHERE name = ?").get(key), "read fresh catalog under lock");
+      return backing.get(key);
+    },
+    async put(key, value, options) { writes.push(key); return backing.put(key, value, options); },
+  };
+  const env = envOf(db, { BOOKS: bucket, PUBLIC_BOOK_PUBLISH_CPU_CONFIRMED: "true" });
+  const upload = (book = epub, gloss = glossary, cover, params = "") => {
+    const body = new FormData();
+    body.set("epub", new File([book], "source.epub"));
+    body.set("glossary", new File([gloss], "source.json"));
+    if (cover) body.set("cover", new File([cover], "source.jpg"));
+    return handleUpload(form(`/api/admin/books?id=great-book&kind=public${params}`, cookie, body), env, { now: NOW });
+  };
+  const publish = (gloss = glossary, params = "") => handlePublish(raw(`/api/admin/word-lists?id=great-book&catalog=public${params}`, cookie, gloss), env, { now: NOW });
+  return { db, files, writes, bucket, backing, row, other, epub, glossary, upload, publish };
+}
+
+for (const mode of ["epub-only", "glossary-only", "both", "identical"]) {
+  test(`public multipart ${mode}: raw bytes, exact revisions, counts and unknown fields survive`, async () => {
+    const f = await publicPublishFixture();
+    const epub = mode === "epub-only" || mode === "both" ? publishText("CHANGED-EPUB") : f.epub;
+    const glossary = mode === "glossary-only" || mode === "both" ? publishText(validPublicGlossary({ count: 900, futureTop: { keep: "raw" } }) + "\n  ") : f.glossary;
+    const response = await f.upload(epub, glossary, publishText("NEW-COVER"), "&isbn=&series=Full+Series&seriesNumber=2&category=speech");
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    const stored = readPublished(f.files, "public-books/catalog.json");
+    const row = stored.packs[0];
+    const epubHash = await hashPublished(epub);
+    const glossHash = await hashPublished(glossary);
+    const expectedRev = mode === "epub-only" || mode === "both"
+      ? (await hashPublished(publishText(`${epubHash}\n${glossHash}`))).slice(0, 12)
+      : mode === "glossary-only" ? glossHash.slice(0, 12) : f.row.rev;
+    assert.equal(row.rev, expectedRev);
+    assert.equal(result.rev, expectedRev);
+    assert.deepEqual(result.row, row);
+    assert.equal(row.glossary.rev, glossHash.slice(0, 12));
+    assert.equal(row.epub.sha256, epubHash);
+    assert.equal(row.glossary.sha256, glossHash);
+    assert.equal(row.words, 1, "stale declared count does not override real words");
+    assert.deepEqual([row.paragraphs, row.sentences, row.phrases], [0, 0, 0]);
+    assert.equal(row.previousUpdated, mode === "glossary-only" || mode === "both" ? f.row.updated : f.row.previousUpdated);
+    assert.equal(stored.updated, row.updated);
+    assert.equal(row.added, f.row.added);
+    for (const field of ["version", "chapters", "coined", "futureRow"]) assert.deepEqual(row[field], f.row[field]);
+    assert.equal(row.epub.futureEpub, "keep");
+    assert.equal(row.glossary.futureGlossary, "keep");
+    assert.equal(row.cover.futureCover, "keep");
+    assert.deepEqual(stored.packs[1], f.other);
+    assert.deepEqual(stored.futureTop, { keep: "yes" });
+    assert.equal("isbn" in row, false);
+    assert.equal(row.series, "Full Series");
+    assert.equal(row.seriesNumber, 2);
+    assert.equal(row.category, "speech");
+    assert.deepEqual(f.files.get("public-books/great-book/book.epub"), epub);
+    assert.deepEqual(f.files.get("public-books/great-book/glossary.json"), glossary);
+    assert.equal(f.writes.at(-1), "public-books/catalog.json", "content and optional cover publish before catalog");
+    const retry = await f.upload(epub, glossary);
+    assert.equal((await retry.json()).row.rev, expectedRev, "same-byte retry never resets a combined revision");
+    assert.equal(f.db.raw.prepare("SELECT COUNT(*) AS n FROM catalog_locks").get().n, 0);
+  });
+}
+
+test("public raw glossary uses strict counts, legacy no-title and no-op preserve combined row rev", async () => {
+  const f = await publicPublishFixture();
+  const text = validPublicGlossary({
+    title: undefined, count: 999, futureTop: "raw",
+    paragraphs: [{ chapter: 0, paragraph: 0, context: "One thing stood beside the door.", mainIdea: "Something is near a door.", simple: "One thing was by the door." }],
+    sentences: [{ chapter: 0, context: "One thing stood beside the door.", simple: "One thing was by the door." }],
+    phrases: { "one thing": { pos: "phrase", meaning: "A single thing." } },
+  }) + String.fromCharCode(13, 10);
+  const response = await f.publish(text, "&isbn=9780062285768");
+  assert.equal(response.status, 200);
+  const { row } = await response.json();
+  assert.equal(row.words, 1);
+  assert.deepEqual([row.paragraphs, row.sentences, row.phrases], [1, 1, 1]);
+  assert.equal(row.rev, row.glossary.sha256.slice(0, 12));
+  assert.equal(row.isbn, "9780062285768");
+  assert.equal(row.previousUpdated, f.row.updated);
+  assert.deepEqual(f.files.get("public-books/great-book/book.epub"), f.epub);
+  assert.equal(new TextDecoder().decode(f.files.get("public-books/great-book/glossary.json")), text);
+  assert.equal(row.glossary.futureGlossary, "keep");
+  const stored = readPublished(f.files, "public-books/catalog.json");
+  stored.packs[0].rev = "combined-legacy";
+  f.files.set("public-books/catalog.json", publishText(JSON.stringify(stored)));
+  const noop = await f.publish(text);
+  assert.equal((await noop.json()).row.rev, "combined-legacy");
+});
+
+test("public validation and same-book refusals write no content or catalogs, both routes", async () => {
+  const f = await publicPublishFixture();
+  const cases = [
+    [validPublicGlossary({ title: "Wrong Book" }), 409, "different-book"],
+    [validPublicGlossary({ title: "Great Book: Catching Fire" }), 409, "different-book"],
+    [validPublicGlossary({ glossary: {} }), 400, "bad-glossary"],
+    [validPublicGlossary({ glossary: { word: {} } }), 400, "bad-glossary"],
+    [validPublicGlossary({ paragraphs: [{ chapter: 0 }] }), 400, "bad-glossary"],
+    [validPublicGlossary({ phrases: { "one thing": {} } }), 400, "bad-glossary"],
+    [validPublicGlossary({ glossary: { word: { meaning: "A word.", credit: "bad" } } }), 400, "bad-glossary"],
+    ["not json", 400, "bad-json"],
+  ];
+  const before = new Map([...f.files].map(([key, value]) => [key, value.slice()]));
+  for (const [text, status, error] of cases) {
+    for (const response of [await f.upload(f.epub, text, publishText("COVER")), await f.publish(text)]) {
+      assert.equal(response.status, status, text);
+      assert.equal((await response.json()).error, error);
+    }
+    assert.deepEqual(f.files, before);
+    assert.deepEqual(f.writes, []);
+    assert.equal(f.db.raw.prepare("SELECT COUNT(*) AS n FROM catalog_locks").get().n, 0);
+  }
+  assert.equal((await f.upload(f.epub, validPublicGlossary({ title: "Great Book: A Novel" }))).status, 200);
+});
+
+test("public multipart catalog failure compensates EPUB, glossary and cover; restore failures remain best effort", async () => {
+  for (const failRestore of [false, true]) {
+    const f = await publicPublishFixture();
+    const before = new Map([...f.files].map(([key, value]) => [key, value.slice()]));
+    let catalogFailed = false;
+    f.bucket.put = async (key, value, options) => {
+      f.writes.push(key);
+      if (key === "public-books/catalog.json") { catalogFailed = true; throw new Error("catalog unavailable"); }
+      if (catalogFailed && failRestore && key.endsWith("book.epub")) throw new Error("EPUB restore unavailable");
+      return f.backing.put(key, value, options);
+    };
+    const response = await f.upload(publishText("NEW-EPUB"), validPublicGlossary({ future: "new" }), publishText("NEW-COVER"));
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).error, "server");
+    for (const [key, bytes] of before) {
+      if (failRestore && key.endsWith("book.epub")) assert.notDeepEqual(f.files.get(key), bytes);
+      else assert.deepEqual(f.files.get(key), bytes, key);
+    }
+    assert.equal(f.db.raw.prepare("SELECT COUNT(*) AS n FROM catalog_locks").get().n, 0, "failures always release lock");
+  }
+});
+
+test("word-list merge preserves unknown top, row and reference fields while metadata clearing works", async () => {
+  const { mergeWordListCatalog } = await import("../functions/lib/word-list-publish.ts");
+  const prior = { id: "one", future: { keep: true }, series: "Old", glossary: { sha256: "old", futureRef: 5 }, updated: "2026-01-01" };
+  const other = { id: "two", future: [1], glossary: { sha256: "other", futureRef: 6 } };
+  const live = { updated: "2026-01-01", futureTop: { keep: true }, lists: [prior, other] };
+  const next = mergeWordListCatalog(live, { id: "one", glossary: { sha256: "new" } }, "2026-10-01");
+  assert.deepEqual(next.futureTop, live.futureTop);
+  assert.deepEqual(next.lists[0].future, prior.future);
+  assert.equal(next.lists[0].glossary.futureRef, 5);
+  assert.equal("series" in next.lists[0], false);
+  assert.deepEqual(next.lists[1], other);
+});
+
+test("public publish budget is fail-closed after auth, before body parsing or storage access", async () => {
+  const db = openDb();
+  const admin = await signUpFully(handleRegister, envOf(db), {
+    body: { email: "xcrunnnn@outlook.com", password: "correct horse" },
+  });
+  const cookie = cookieHeader(admin);
+  const bucket = {
+    async get() { assert.fail("budget denial must not read storage"); },
+    async put() { assert.fail("budget denial must not write storage"); },
+  };
+  for (const setting of [undefined, "false", "TRUE", "1"]) {
+    const env = envOf(db, { BOOKS: bucket, PUBLIC_BOOK_PUBLISH_CPU_CONFIRMED: setting });
+    const multipart = raw("/api/admin/books?id=book&kind=public", cookie);
+    multipart.formData = async () => assert.fail("budget denial must not parse multipart");
+    const body = raw("/api/admin/word-lists?id=book&catalog=public", cookie);
+    body.arrayBuffer = async () => assert.fail("budget denial must not read raw glossary body");
+    for (const response of [await handleUpload(multipart, env, { now: NOW }), await handlePublish(body, env, { now: NOW })]) {
+      assert.equal(response.status, 503);
+      assert.equal((await response.json()).error, "publish-budget-unconfirmed");
+    }
+    assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM catalog_locks").get().n, 0);
+  }
+  for (const [handler, path] of [[handleUpload, "/api/admin/books?id=book&kind=public"], [handlePublish, "/api/admin/word-lists?id=book&catalog=public"]]) {
+    const unauthenticated = await handler(raw(path, ""), envOf(db, { BOOKS: bucket }), { now: NOW });
+    assert.equal(unauthenticated.status, 401, "auth precedes budget gate");
+  }
+});

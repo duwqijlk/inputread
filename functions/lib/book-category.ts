@@ -1,0 +1,74 @@
+import type { R2BucketLike } from "./db.ts";
+
+const CATALOG_MS = 60_000;
+
+type Cache = { at: number; speeches: Set<string> };
+
+const catalogs = new WeakMap<object, Cache>();
+
+function addSpeeches(set: Set<string>, list: unknown): void {
+  if (!Array.isArray(list)) return;
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as { id?: unknown; category?: unknown };
+    if (typeof row.id === "string" && row.category === "speech") set.add(row.id);
+  }
+}
+
+async function loadSpeeches(bucket: R2BucketLike): Promise<Set<string>> {
+  const set = new Set<string>();
+  for (const key of ["word-lists/catalog.json", "public-books/catalog.json"]) {
+    try {
+      const object = await bucket.get(key);
+      if (!object) continue;
+      const catalog = JSON.parse(await new Response(object.body).text()) as { lists?: unknown; packs?: unknown };
+      addSpeeches(set, catalog?.lists);
+      addSpeeches(set, catalog?.packs);
+    } catch {
+      // One catalog can be missing. The other may still mark its speeches.
+    }
+  }
+  return set;
+}
+
+/** Ids the live catalogs mark as speeches. Every other book counts as a novel. */
+export async function speechIds(bucket: R2BucketLike | undefined): Promise<Set<string>> {
+  if (!bucket) return new Set();
+  const now = Date.now();
+  let entry = catalogs.get(bucket);
+  if (!entry || now - entry.at > CATALOG_MS) {
+    entry = { at: now, speeches: await loadSpeeches(bucket) };
+    catalogs.set(bucket, entry);
+  }
+  return entry.speeches;
+}
+
+/**
+ * ?category= on an admin upload: "speech" or "novel" sets the row, anything else leaves it.
+ * A novel has no field, the same as every older row.
+ */
+export function applyCategory(row: Record<string, unknown>, value: string | null): void {
+  if (value === "speech") row.category = "speech";
+  else if (value === "novel") delete row.category;
+}
+
+/**
+ * ?series= and ?seriesNumber= on an admin upload. A name sets the series (and the number, when it is
+ * a whole number from 1 to 99); an empty name removes both. No ?series= leaves the row as it is.
+ * Discover groups a tab's books by this name, so speeches can have series too (a TED row).
+ * The range is the one the app reads (`seriesNumber` in src/lib/book-meta.ts): a number outside it
+ * would sit in the catalog and be ignored on every card, so it is not stored.
+ */
+export function applySeries(row: Record<string, unknown>, params: URLSearchParams): void {
+  if (!params.has("series")) return;
+  const name = (params.get("series") ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!name) {
+    delete row.series;
+    delete row.seriesNumber;
+    return;
+  }
+  row.series = name;
+  const number = Number(params.get("seriesNumber"));
+  if (Number.isInteger(number) && number >= 1 && number <= 99) row.seriesNumber = number;
+  else delete row.seriesNumber;
+}

@@ -1,0 +1,594 @@
+{
+ "format": 1,
+ "name": "Margin Words book packs",
+ "updated": "2026-10-07T01:41:21.132Z",
+ "packs": [
+  {
+   "id": "alice",
+   "title": "Alice's Adventures in Wonderland",
+   "author": "Lewis Carroll",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA (Project Gutenberg).",
+   "lexile": "880L",
+   "series": "Alice",
+   "seriesNumber": 1,
+   "updated": "2026-10-05T04:47:03+00:00",
+   "rev": "512a05865c22",
+   "version": 2,
+   "chapters": 13,
+   "words": 1019,
+   "paragraphs": 50,
+   "sentences": 16,
+   "phrases": 56,
+   "coined": 4,
+   "epub": {
+    "url": "alice/book.epub",
+    "bytes": 136756,
+    "sha256": "08a2de3a58226311915bd87056e59ed4ee49a284dcb5e722fef415bca4032a4b"
+   },
+   "glossary": {
+    "url": "alice/glossary.json",
+    "bytes": 224038,
+    "sha256": "e5346d9ff6ddde97c8aeba8950149810ae7ac70e342b427f0f324ee86490dcf9",
+    "rev": "e5346d9ff6dd"
+   },
+   "cover": {
+    "url": "alice/cover.jpg",
+    "bytes": 53578,
+    "sha256": "efd8384ea5b1f430102ea4a9b7fcb75eaac5626a49c22b00b848f104cfb7a571"
+   },
+   "zip": {
+    "url": "alice.zip",
+    "bytes": 242426,
+    "sha256": "e9ffdfbbded2d80b7662ef771e4f38f37130668e0cf73abdcbbd7b26de2ceb13"
+   }
+  },
+  {
+   "id": "treasure-island",
+   "title": "Treasure Island",
+   "author": "Robert Louis Stevenson",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA (Project Gutenberg).",
+   "lexile": "980L",
+   "updated": "2026-10-05T03:05:33+00:00",
+   "rev": "e7f66cb0d326",
+   "version": 2,
+   "chapters": 36,
+   "words": 1818,
+   "paragraphs": 46,
+   "sentences": 10,
+   "phrases": 78,
+   "coined": 0,
+   "epub": {
+    "url": "treasure-island/book.epub",
+    "bytes": 274139,
+    "sha256": "6d6781328ac1f559053b88e46a0881d69bf228d08e5d0b0e81ca39bd89b94edd"
+   },
+   "glossary": {
+    "url": "treasure-island/glossary.json",
+    "bytes": 360493,
+    "sha256": "c3ef93885145b55042ceaa72b765d994f9f424dfafef81cb20329304b1441c87",
+    "rev": "c3ef93885145"
+   },
+   "cover": {
+    "url": "treasure-island/cover.jpg",
+    "bytes": 63211,
+    "sha256": "fa1e52a15c1eb6eaa3f5d07de6e1fbb9979233526fc374f241097d676a5815f9"
+   },
+   "zip": {
+    "url": "treasure-island.zip",
+    "bytes": 415192,
+    "sha256": "894780b431b736be94c891f07d516a91ffa22a85db35f10271c8a1f09d60e748"
+   }
+  },
+  {
+   "id": "anne",
+   "title": "Anne of Green Gables",
+   "author": "L. M. Montgomery",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA (Project Gutenberg).",
+   "lexile": "970L",
+   "updated": "2026-10-05T03:05:33+00:00",
+   "rev": "03ab0105b79f",
+   "version": 2,
+   "chapters": 39,
+   "words": 2487,
+   "paragraphs": 41,
+   "sentences": 9,
+   "phrases": 72,
+   "coined": 0,
+   "epub": {
+    "url": "anne/book.epub",
+    "bytes": 331188,
+    "sha256": "e001df19fc1ae88ca6aa4131e56a51625c50257b95fff1ff3c2dbeb58b4a8bfe"
+   },
+   "glossary": {
+    "url": "anne/glossary.json",
+    "bytes": 430019,
+    "sha256": "80bf7f011ee34e88cb9baf828990ad6cd4b8a49749aaf4abcc40dbfbc4baa6fc",
+    "rev": "80bf7f011ee3"
+   },
+   "cover": {
+    "url": "anne/cover.jpg",
+    "bytes": 40923,
+    "sha256": "dbdf68a0056a5083314d9d49b187d2d86824bff4ce2667bc0318a1ea1146b994"
+   },
+   "zip": {
+    "url": "anne.zip",
+    "bytes": 458574,
+    "sha256": "6c043348ca4e44b181ad06d81b097f8f3a8de5b2448e1911452d5b63a661d8ba"
+   }
+  },
+  {
+   "id": "peter-pan",
+   "title": "Peter and Wendy",
+   "author": "J. M. Barrie",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA.",
+   "lexile": "900L",
+   "oldFashioned": true,
+   "oldFashionedReason": "Barrie uses words like anon, fain and ofttimes.",
+   "updated": "2026-10-05T03:05:33+00:00",
+   "rev": "ccec696591db",
+   "version": 2,
+   "chapters": 21,
+   "words": 734,
+   "paragraphs": 41,
+   "sentences": 66,
+   "phrases": 178,
+   "coined": 1,
+   "epub": {
+    "url": "peter-pan/book.epub",
+    "bytes": 773297,
+    "sha256": "606cf8f640dfb5f4031fd319972f239b13600625c173f1d94f3b0e30e4f5e70e"
+   },
+   "glossary": {
+    "url": "peter-pan/glossary.json",
+    "bytes": 225010,
+    "sha256": "9621deea84ea932cb90163e3f5e67899a9101606c9ca1511c6a3522d531aedb0",
+    "rev": "9621deea84ea"
+   },
+   "cover": {
+    "url": "peter-pan/cover.jpg",
+    "bytes": 70831,
+    "sha256": "0279f42debf140d384d0f0ee44dd4055d5b04df501926ac7647b17ac86600bbd"
+   },
+   "zip": {
+    "url": "peter-pan.zip",
+    "bytes": 895181,
+    "sha256": "1f2524fd2b45edda3e12792ad3deb75e339e1d567723cdce3b518f582f27e023"
+   }
+  },
+  {
+   "id": "tom-sawyer",
+   "title": "The Adventures of Tom Sawyer",
+   "author": "Mark Twain",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA.",
+   "lexile": "930L",
+   "updated": "2026-10-05T03:05:33+00:00",
+   "rev": "46eb78820744",
+   "version": 2,
+   "chapters": 42,
+   "words": 597,
+   "paragraphs": 51,
+   "sentences": 60,
+   "phrases": 77,
+   "coined": 0,
+   "epub": {
+    "url": "tom-sawyer/book.epub",
+    "bytes": 697383,
+    "sha256": "5819605c2b1f5714ba5c1273827422f60ebd18e3d46c939bcec9e2613c37f2a7"
+   },
+   "glossary": {
+    "url": "tom-sawyer/glossary.json",
+    "bytes": 234563,
+    "sha256": "4bfee3aceb18e1fe410a3181dda022cd156392ee24f88f8d1458c892371ff897",
+    "rev": "4bfee3aceb18"
+   },
+   "cover": {
+    "url": "tom-sawyer/cover.jpg",
+    "bytes": 65710,
+    "sha256": "cf7257f8a7b4eeaa60098819434d95efa25a88d9bcc43c352e918d04ad48d52c"
+   },
+   "zip": {
+    "url": "tom-sawyer.zip",
+    "bytes": 822656,
+    "sha256": "04a9fa736aaa2c0a21930366621d0193cef807efe4aedc9fec9198bfd4ec0e4a"
+   }
+  },
+  {
+   "id": "wind-in-the-willows",
+   "title": "The Wind in the Willows",
+   "author": "Kenneth Grahame",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA.",
+   "lexile": "1060L",
+   "oldFashioned": true,
+   "oldFashionedReason": "Long, old-fashioned sentences. Lexile 1060L, with thee, thy and anon.",
+   "updated": "2026-10-05T03:05:33+00:00",
+   "rev": "0341a4da5550",
+   "version": 2,
+   "chapters": 16,
+   "words": 868,
+   "paragraphs": 46,
+   "sentences": 54,
+   "phrases": 147,
+   "coined": 1,
+   "epub": {
+    "url": "wind-in-the-willows/book.epub",
+    "bytes": 848274,
+    "sha256": "d874ac24670373ea53c0a0d7a52601ca191e95d02270c7571bbd7ccf29cc6b1c"
+   },
+   "glossary": {
+    "url": "wind-in-the-willows/glossary.json",
+    "bytes": 257447,
+    "sha256": "a940e90cff16fdb753ece8a882abce29c27ad2573f75a04eccddb622decd6cea",
+    "rev": "a940e90cff16"
+   },
+   "cover": {
+    "url": "wind-in-the-willows/cover.jpg",
+    "bytes": 90341,
+    "sha256": "e07769df6f57b789ddb51aecb844128a49da672e894baa5dadc600a7b5ba3ee3"
+   },
+   "zip": {
+    "url": "wind-in-the-willows.zip",
+    "bytes": 1002829,
+    "sha256": "005b102a7dc11fcf57325f17c1ba92af847291fe44bed9e02766d04e73cc13ba"
+   }
+  },
+  {
+   "id": "little-women",
+   "title": "Little Women",
+   "author": "Louisa May Alcott",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA.",
+   "lexile": "1090L",
+   "updated": "2026-10-05T03:05:33+00:00",
+   "rev": "6773bdfbd344",
+   "version": 2,
+   "chapters": 52,
+   "words": 702,
+   "paragraphs": 68,
+   "sentences": 69,
+   "phrases": 81,
+   "coined": 0,
+   "epub": {
+    "url": "little-women/book.epub",
+    "bytes": 998915,
+    "sha256": "095392183d24a7cf84a7333f55a861f79642df2fb52114462c4d35cf73873d3e"
+   },
+   "glossary": {
+    "url": "little-women/glossary.json",
+    "bytes": 321438,
+    "sha256": "61ab795b55a9fe161d012d03aa9728a154a478d64e1dbd729cbcc2c7f18901a4",
+    "rev": "61ab795b55a9"
+   },
+   "cover": {
+    "url": "little-women/cover.jpg",
+    "bytes": 80776,
+    "sha256": "b59ab47acdcff0a75e0fc9ec52e84a96d6f4a58b9f341318eac3edc8d7dbba8d"
+   },
+   "zip": {
+    "url": "little-women.zip",
+    "bytes": 1158746,
+    "sha256": "3c269ed6ad120e4c5cdec333de425e210640c44ab9a230efb99dda57a451fe0d"
+   }
+  },
+  {
+   "id": "secret-garden",
+   "title": "The Secret Garden",
+   "author": "Frances Hodgson Burnett",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA.",
+   "lexile": "970L",
+   "updated": "2026-10-05T03:05:33+00:00",
+   "rev": "8b5d8159104d",
+   "version": 2,
+   "chapters": 31,
+   "words": 786,
+   "paragraphs": 44,
+   "sentences": 43,
+   "phrases": 78,
+   "coined": 0,
+   "epub": {
+    "url": "secret-garden/book.epub",
+    "bytes": 623513,
+    "sha256": "7ec06b87caff764e298733a0c38821d3838666082bddbfffe1a3cdacd1f36c12"
+   },
+   "glossary": {
+    "url": "secret-garden/glossary.json",
+    "bytes": 223648,
+    "sha256": "f412bdcf3fb71c35ef909c91c4215e8286d78b0589a76c18067613d3e50b0cbc",
+    "rev": "f412bdcf3fb7"
+   },
+   "cover": {
+    "url": "secret-garden/cover.jpg",
+    "bytes": 76963,
+    "sha256": "2a8ec33d39b054754c6b727e2842859d818f89750acc8da5c0e81650252e33d2"
+   },
+   "zip": {
+    "url": "secret-garden.zip",
+    "bytes": 752658,
+    "sha256": "e5bd63648bed2e804ef63bd5c7deabc0f68f9450063755a270e73e5f0e430a5d"
+   }
+  },
+  {
+   "id": "black-beauty",
+   "title": "Black Beauty",
+   "author": "Anna Sewell",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA.",
+   "lexile": "1020L",
+   "updated": "2026-10-05T03:05:33+00:00",
+   "rev": "5236ec8b3f0f",
+   "version": 2,
+   "chapters": 54,
+   "words": 926,
+   "paragraphs": 53,
+   "sentences": 50,
+   "phrases": 85,
+   "coined": 0,
+   "epub": {
+    "url": "black-beauty/book.epub",
+    "bytes": 483404,
+    "sha256": "6966a8c6669e36854d50d9d6a489c6e9a9d13d90e633c5765d4e67a0bef47b5a"
+   },
+   "glossary": {
+    "url": "black-beauty/glossary.json",
+    "bytes": 284652,
+    "sha256": "3a4206b159573734796d6ad284bd301dbb84fe3682cf5f9e561d2df041a79864",
+    "rev": "3a4206b15957"
+   },
+   "cover": {
+    "url": "black-beauty/cover.jpg",
+    "bytes": 41314,
+    "sha256": "1396d36d4bac6858d913eb140f6c350cf8b69125228f6499cab50e07e0e425d6"
+   },
+   "zip": {
+    "url": "black-beauty.zip",
+    "bytes": 592416,
+    "sha256": "9d868ae295bf8fb2eaf60c2b0c02c950e8db1645045b844240bf6c4d61fd397c"
+   }
+  },
+  {
+   "id": "looking-glass",
+   "title": "Through the Looking-Glass",
+   "author": "Lewis Carroll",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA.",
+   "lexile": "840L",
+   "series": "Alice",
+   "seriesNumber": 2,
+   "oldFashioned": true,
+   "oldFashionedReason": "Poems and talk use thou, quoth and hast. More old-fashioned than Alice.",
+   "updated": "2026-10-04T09:48:48+00:00",
+   "rev": "bce368d203bd",
+   "version": 2,
+   "chapters": 19,
+   "words": 717,
+   "paragraphs": 38,
+   "sentences": 40,
+   "phrases": 51,
+   "coined": 25,
+   "epub": {
+    "url": "looking-glass/book.epub",
+    "bytes": 3379309,
+    "sha256": "acf39ea2ab997e5ce2a2e908c50c71d0684ab4bd4891032c4435ebf8c19abc96"
+   },
+   "glossary": {
+    "url": "looking-glass/glossary.json",
+    "bytes": 139456,
+    "sha256": "5d61122e7ab21504dbdd6beeb070821f1591d2cb1ddbd920eb97e05b5d3a951c",
+    "rev": "5d61122e7ab2"
+   },
+   "cover": {
+    "url": "looking-glass/cover.jpg",
+    "bytes": 53350,
+    "sha256": "86e3071bc30d0597fcc7ebccd6b45966311751e0b718d50f42e0e1b6dd54732d"
+   },
+   "zip": {
+    "url": "looking-glass.zip",
+    "bytes": 3467602,
+    "sha256": "ef536cfc561b2a40f9a46a5842cd306d32bdc751ac0460019ba59f6692c1ecec"
+   }
+  },
+  {
+   "id": "jungle-book",
+   "title": "The Jungle Book",
+   "author": "Rudyard Kipling",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA.",
+   "lexile": "1100L",
+   "oldFashioned": true,
+   "oldFashionedReason": "Kipling's stories use thou, thee and hath. The language is old and the Lexile is 1100L.",
+   "updated": "2026-10-05T03:05:33+00:00",
+   "rev": "dc9f66e862d8",
+   "version": 2,
+   "chapters": 12,
+   "words": 400,
+   "paragraphs": 50,
+   "sentences": 46,
+   "phrases": 70,
+   "coined": 0,
+   "epub": {
+    "url": "jungle-book/book.epub",
+    "bytes": 599568,
+    "sha256": "df99cc727f88a339b3ec026a4459ff88793e7d25fed792b1475d2a17d42c005b"
+   },
+   "glossary": {
+    "url": "jungle-book/glossary.json",
+    "bytes": 193578,
+    "sha256": "7c1464ba8bb039e9d842208d70b5b6fc5ad7d3c5dc9d69f4ab170eede016e85e",
+    "rev": "7c1464ba8bb0"
+   },
+   "cover": {
+    "url": "jungle-book/cover.jpg",
+    "bytes": 67502,
+    "sha256": "92119e83fa0dd2779c8b30c03f67ed6d2b632cf69859f122c3201d50936c7b16"
+   },
+   "zip": {
+    "url": "jungle-book.zip",
+    "bytes": 711794,
+    "sha256": "702dea599c7039c00f278db358a51dcb7bbd0a995d8480f510462fd4c3e4a327"
+   }
+  },
+  {
+   "id": "wizard-of-oz",
+   "title": "The Wonderful Wizard of Oz",
+   "author": "L. Frank Baum",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA.",
+   "lexile": "1030L",
+   "updated": "2026-10-05T03:05:33+00:00",
+   "rev": "a7a6b4072ae9",
+   "version": 2,
+   "chapters": 29,
+   "words": 701,
+   "paragraphs": 43,
+   "sentences": 37,
+   "phrases": 76,
+   "coined": 1,
+   "epub": {
+    "url": "wizard-of-oz/book.epub",
+    "bytes": 681182,
+    "sha256": "be8f7802b737cf2f402960d4c691238ccd51b67de0cd69b909e35a2108da47a3"
+   },
+   "glossary": {
+    "url": "wizard-of-oz/glossary.json",
+    "bytes": 216719,
+    "sha256": "85a621f95a1ac2ad8179d99c02a9b4f10f5ede2f29f312e6e020963fe9af7cb6",
+    "rev": "85a621f95a1a"
+   },
+   "cover": {
+    "url": "wizard-of-oz/cover.jpg",
+    "bytes": 55751,
+    "sha256": "87e294fa378ac1a353e61d51c56866895b0cbc120750203ab87383a09abeb00a"
+   },
+   "zip": {
+    "url": "wizard-of-oz.zip",
+    "bytes": 785228,
+    "sha256": "f83e4afdf104901f3120448da95aec8b0969ec5e5fa1fce2deae1dcc45b4aac0"
+   }
+  },
+  {
+   "id": "back-to-school",
+   "title": "Back to School",
+   "author": "Barack Obama",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA. A work of the United States government (17 USC 105), delivered September 8, 2009. The cover is an original study cover, not an official publication.",
+   "category": "speech",
+   "updated": "2026-10-06T02:02:45+00:00",
+   "rev": "29cf93ea6e79",
+   "version": 2,
+   "chapters": 7,
+   "words": 159,
+   "paragraphs": 0,
+   "sentences": 5,
+   "phrases": 52,
+   "coined": 0,
+   "epub": {
+    "url": "back-to-school/book.epub",
+    "bytes": 359654,
+    "sha256": "d4724e7d4be7ddb001d2d7b91337d00a198f6bd7e6de39d149860fe78d8f44ad"
+   },
+   "glossary": {
+    "url": "back-to-school/glossary.json",
+    "bytes": 68523,
+    "sha256": "4ee7750bebf79a4fd4a88d511bd72123505dc52ffe97b2f221a026901036b8ff",
+    "rev": "4ee7750bebf7"
+   },
+   "cover": {
+    "url": "back-to-school/cover.jpg",
+    "bytes": 29916,
+    "sha256": "93c289e56ddc7fe66fb4540865875cea35add158c996d4d01b5bb4ee6aaee107"
+   },
+   "zip": {
+    "url": "back-to-school.zip",
+    "bytes": 405564,
+    "sha256": "10a4429c2ac75b29936ace7eb8b4f2a1e061d255cc1d189eb18f63b9d6a6220f"
+   }
+  },
+  {
+   "id": "joint-session",
+   "title": "Address to a Joint Session",
+   "author": "George W. Bush",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA. A work of the United States government (17 USC 105), delivered September 20, 2001. The cover is an original study cover, not an official publication.",
+   "category": "speech",
+   "updated": "2026-10-05T07:26:22+00:00",
+   "rev": "8631e7b57c65",
+   "version": 2,
+   "chapters": 8,
+   "words": 324,
+   "paragraphs": 0,
+   "sentences": 8,
+   "phrases": 47,
+   "coined": 0,
+   "epub": {
+    "url": "joint-session/book.epub",
+    "bytes": 398531,
+    "sha256": "e4998e2e5efed6ff6ecbbd82212784758353df3cd086f71168037922564db976"
+   },
+   "glossary": {
+    "url": "joint-session/glossary.json",
+    "bytes": 63180,
+    "sha256": "65159a459cf81a7b63643a6ba37391cab29975a1692abcdf7c198c98ccebe2a4",
+    "rev": "65159a459cf8"
+   },
+   "cover": {
+    "url": "joint-session/cover.jpg",
+    "bytes": 32336,
+    "sha256": "74917a89c23e295118ab3c53aff8cf8c188cc7bbcd499c6040b250b8c2a19958"
+   },
+   "zip": {
+    "url": "joint-session.zip",
+    "bytes": 444330,
+    "sha256": "1dae50bc436721f223d709b85b3ebe755d036f706abde7e488d826c9f4ff68cb"
+   }
+  },
+  {
+   "id": "obama-inaugural-2009",
+   "title": "Inaugural Address",
+   "author": "Barack Obama",
+   "level": "Chinese junior-high (CEFR A2-B1). Simple English meanings.",
+   "notes": "Public domain in the USA. A work of the United States government (17 USC 105), delivered January 20, 2009. The cover is the photograph supplied with this reading text.",
+   "category": "speech",
+   "updated": "2026-10-06T04:54:13+00:00",
+   "rev": "e2e29b7ccd2d",
+   "version": 2,
+   "chapters": 2,
+   "words": 321,
+   "paragraphs": 0,
+   "sentences": 5,
+   "phrases": 44,
+   "coined": 0,
+   "epub": {
+    "url": "obama-inaugural-2009/book.epub",
+    "bytes": 210903,
+    "sha256": "5acfb8c7f07eaae8b691c5dcb95c45eb6a525d5337ff57baa76b7ca063d72a1d"
+   },
+   "glossary": {
+    "url": "obama-inaugural-2009/glossary.json",
+    "bytes": 60586,
+    "sha256": "24eadb849c883abef16bc88fd5db855b86a3166fa5bdae0ed0b5f17e03325bfc",
+    "rev": "24eadb849c88"
+   },
+   "cover": {
+    "url": "obama-inaugural-2009/cover.jpg",
+    "bytes": 192089,
+    "sha256": "5d3338d38b068fbd1b3b3b1a5ea199206bd348f27aee3605115410755dd70e98"
+   },
+   "zip": {
+    "url": "obama-inaugural-2009.zip",
+    "bytes": 416796,
+    "sha256": "1c64b8c0ecf363920ad86b0b4128c9895744961089b6d372c50acf78c5d0e7f6"
+   }
+  }
+ ],
+ "allPacks": {
+  "url": "all-packs.zip",
+  "bytes": 12577673,
+  "sha256": "e9062b9f872fdcb13db9f9222a8f4b61a6891202febdce942d553f25fdd464bd"
+ }
+}

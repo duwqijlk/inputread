@@ -1,0 +1,2040 @@
+import {
+  ArrowLeft,
+  BookOpen,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Focus,
+  List,
+  X,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  loadBookExtras,
+  loadBookMeta,
+  loadPackRecord,
+  loadStoredBook,
+  type Gloss,
+  type StoredBook,
+} from "@/lib/book-db";
+import { celebrateSave } from "@/lib/motion";
+import { readingSlots } from "@/lib/epub";
+import { phrasePoint, pointFromEntry } from "@/lib/gloss-ref";
+import { linkChapterHtml, peekChapterHtml, rememberChapterHtml } from "@/lib/chapter-link";
+import {
+  countSurface,
+  entryAppliesAt,
+  hasTrickySense,
+  leafReadingBlocks,
+  pickSense,
+  plainSurface,
+  TAP_WORD_PATTERN,
+  type OtherMeaning,
+} from "@/lib/glossary-format";
+import type { PhraseEntry } from "@/lib/glossary-extras";
+import { pickPhrase, phraseWordMarks } from "@/lib/help-match";
+import { findPhrase, shareStoredBook } from "@/lib/help-lookup";
+import { loadParagraphHelpView } from "@/lib/help-flow";
+import { useT, type Key } from "@/lib/i18n";
+import { useJump } from "@/lib/jump-store";
+import {
+  findSentence,
+  makeAnchor,
+  QUOTE_MAX,
+  resolveAnchor,
+  restoreReadingPlace,
+  type TextAnchor,
+} from "@/lib/position";
+import { legacyChapter, overallProgress, samePlace, useProgress } from "@/lib/progress-store";
+import { bookSyncKey } from "@/lib/sync-merge";
+import type { WordSource } from "@/lib/vocab-model";
+import { hasSourceFrom, savedFromCard } from "@/lib/wordbook";
+import { extractAnchorContext, flushWordTaps, recordWordTap } from "@/lib/word-taps-collector";
+import { readerVars, usePrefs } from "@/lib/reader-prefs";
+import {
+  contextPos,
+  isEasyKey,
+  resolveGlossKey,
+  sentenceAround,
+  surfaceOffset,
+} from "@/lib/text";
+import { useVocab } from "@/lib/vocab-store";
+import { flowCutOffsets, flowPoint, flowText, flowTextBefore } from "@/lib/flow-text";
+import { MissingBook } from "@/components/missing-book";
+import { READER_GUTTER, SIDE_PANEL } from "@/components/side-panel";
+import { btn, cn, ProgressBar, speakEnglish } from "@/components/ui";
+import {
+  ParagraphMarks,
+  ParagraphPanel,
+  type ParagraphPanelState,
+} from "@/components/help-panels";
+import { desktopPanel, phoneSheet } from "@/components/floating-card";
+import { readingPageTap } from "@/lib/phone-gestures";
+import { anchorOffscreen } from "@/lib/floating-panel";
+import { ReaderSettings } from "@/components/reader-settings";
+import { ReaderContents } from "@/components/reader-contents";
+import {
+  WordCard,
+  type CardState,
+  type PhraseHit,
+  locateSentence,
+  wholeSentence,
+} from "@/components/word-card";
+import { warmIpaFor } from "@/components/word-ipa";
+import { firstReadingChapter } from "@/lib/first-chapter";
+import { bookCatalogRef } from "@/lib/catalog-id";
+import { catalogOfId } from "@/lib/catalog-index";
+import {
+  calculatePageStep,
+  isEinkScreen,
+  MIN_TURN_MS,
+  pagingProbeOn,
+  readerLineHeight,
+  readerPageDirection,
+  topBarHeight,
+} from "@/lib/reader-paging";
+import { preloadContributors } from "@/lib/contributors";
+import { holdSyncPushes } from "@/lib/sync-engine";
+import { PassageFeedback } from "@/components/passage-feedback";
+import { QuoteTools, type QuoteToolsHandle } from "@/components/quote-tools";
+import { SaveMenu } from "@/components/save-menu";
+import { flashSpan, locateQuote } from "@/lib/quote-marks";
+import { useQuotes } from "@/lib/quote-store";
+import { FinishBook } from "@/components/finish-book";
+import { watchPageMoves, type PageMove } from "@/lib/page-guard";
+import { AUTO_HIDE_QUERY, barStart, nextBarState } from "@/lib/reader-bar";
+import {
+  PLACE_TOP,
+  RESTORE_BOTTOM,
+  readerParagraphBlocks,
+  topAnchor,
+  tallBlock,
+  lineTopAt,
+} from "@/lib/reader-anchor";
+
+/* ------------------------------------------------------------------ reader */
+
+export function ReaderScreen({
+  bookId,
+  onBack,
+  onNotebook,
+  onQuotes,
+  onAddEpub,
+  onDiscover,
+}: {
+  bookId: string;
+  onBack: () => void;
+  onNotebook: () => void;
+  /** The notebook, on its quotes tab. */
+  onQuotes: () => void;
+  onAddEpub: () => void;
+  onDiscover: () => void;
+}) {
+  const { t } = useT();
+  // The first word card with a credit should not wait for contributors.json and the picture.
+  useEffect(() => preloadContributors(), []);
+  // While a book is open its reading place uploads at most once a minute, not on every scroll pause;
+  // leaving the book, hiding the tab or closing the page uploads at once (sync-pace.ts).
+  useEffect(() => holdSyncPushes({ reading: true }), []);
+  const words = useVocab((state) => state.words);
+  const quoteCount = useQuotes((state) => state.quotes.length);
+  // Pick mode (design system SelectionBar): a tap picks a sentence to keep, not a word to look up.
+  const [picking, setPicking] = useState(false);
+  const quoteTools = useRef<QuoteToolsHandle | null>(null);
+  const shelfBook = useVocab((state) => state.books.find((item) => item.id === bookId));
+  const saveWord = useVocab((state) => state.saveWord);
+  const removeWordFromBook = useVocab((state) => state.removeWordFromBook);
+  const setSourcePlaces = useVocab((state) => state.setSourcePlaces);
+  const fillPrepared = useVocab((state) => state.fillPrepared);
+  const prefs = usePrefs();
+  const storeSave = useProgress((state) => state.save);
+  // True while this screen writes its own place, so the store listener below can tell those
+  // writes from a place that arrived from elsewhere (an account sync, a shelf merge).
+  const savingOwn = useRef(false);
+  const saveProgress = useCallback(
+    (id: string, patch: Parameters<typeof storeSave>[1], touch?: boolean) => {
+      savingOwn.current = true;
+      // A real move (not a write-back of the same place) makes today a reading day.
+      if (touch !== false) useVocab.getState().markReadDay();
+      try {
+        storeSave(id, patch, touch);
+      } finally {
+        savingOwn.current = false;
+      }
+    },
+    [storeSave],
+  );
+
+  const [book, setBook] = useState<StoredBook | null>(null);
+  const bookChaptersRaw = book?.chapters;
+  const [missing, setMissing] = useState(false);
+  const [chapterIndex, setChapterIndex] = useState(() => {
+    const saved = useProgress.getState().items[bookId];
+    return saved ? saved.chapter : (legacyChapter(bookId) ?? -1);
+  });
+  const [extraId, setExtraId] = useState(() => useProgress.getState().items[bookId]?.extraId ?? "");
+  // Selecting the current contents entry is still a navigation, without remounting its text.
+  const [navigationRevision, setNavigationRevision] = useState(0);
+  const [scrolled, setScrolled] = useState(0);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const selectionSequence = useRef(0);
+  const [picked, setPicked] = useState<{
+    selectionId: number;
+    targetMode: "phrase" | "word";
+    surface: string;
+    paragraph: string;
+    index: string;
+    /** which time this word form appears in the chapter (1-based) */
+    nth: number;
+    /** the paragraph text before the word */
+    before: string;
+    /** which paragraph of the chapter this is, counted the way the word list counts them */
+    block: number;
+  } | null>(null);
+  // Paragraph help (overlay). `index` is the paragraph number from paragraphBlocks().
+  // `sentence`: the sentence a word card was opened on, so its note starts selected.
+  const [help, setHelp] = useState<{ index: number; sentence?: string } | null>(null);
+  const [helpState, setHelpState] = useState<ParagraphPanelState>({ status: "loading" });
+  const helpToken = useRef(0);
+  const [phraseHit, setPhraseHit] = useState<{ at: string; hit: PhraseHit } | null>(null);
+  // True from the tap until the phrase lookup answers, so an easy word like "in" is not saved first.
+  const [phrasePending, setPhrasePending] = useState(false);
+  // Phrases live beside the word list. Empty until that record loads, then the dotted line appears.
+  const [phraseList, setPhraseList] = useState<Record<string, PhraseEntry>>({});
+  const [listSource, setListSource] = useState("");
+  // The catalog book this list is, as `<catalog>:<id>`, sent with every report so the patrol and
+  // the per-book credits find the book without matching titles. Only the list in use counts: a
+  // list the reader added ("custom") names no catalog book, even on a book that came from one.
+  const [catalogId, setCatalogId] = useState("");
+  // The book whose phrase list has answered. The chapter is linked only after that: linking it
+  // first without phrases and again with them built and laid out the whole chapter twice.
+  const [phrasesFor, setPhrasesFor] = useState("");
+  const [glossaryRev, setGlossaryRev] = useState("");
+  const articleRef = useRef<HTMLElement | null>(null);
+  /** The sticky top bar. Its height is what a page turn must not hide. */
+  const headerRef = useRef<HTMLElement | null>(null);
+  // On a phone the bar slides away while the reader scrolls down and returns on a scroll up.
+  const [barHidden, setBarHidden] = useState(false);
+  const barHiddenRef = useRef(false);
+  barHiddenRef.current = barHidden;
+  // Where the reader's own page turn is scrolling to. A turn leaves the bar as it is: its step was
+  // worked out with the bar as it stands, so showing the bar after a turn back would cover lines.
+  const turnTarget = useRef<number | null>(null);
+  // Mouse only: a one-line meaning shown while the pointer rests on a marked word.
+  const [hover, setHover] = useState<{ word: string; meaning: string; left: number; top: number } | null>(null);
+  /** What the last tap said out loud, so the phrase lookup does not say it a second time. */
+  const spoken = useRef("");
+  const restore = useRef<number | null>(useProgress.getState().items[bookId]?.scroll ?? null);
+  // A place found through the file-independent anchor (saved position, or "go to the sentence" from the wordbook).
+  // `text`: a kept quote opened from the notebook; its own words light up, not the whole paragraph.
+  const restoreAt = useRef<{ paragraph: number; offset: number; flash: boolean; text?: string } | null>(null);
+  // The page that was last placed, and the spot still held while late text (phrases, a list update) redraws it.
+  const placed = useRef<{
+    page: string;
+    paragraph: number | null;
+    offset: number;
+    target: number | null;
+    until: number;
+  } | null>(null);
+  // The last scroll position not yet written to the progress store.
+  const pendingSave = useRef<(() => void) | null>(null);
+  // Bumped synchronously before navigation: callbacks for the old DOM must never save
+  // into the new chapter, even before React has cleaned up their effects.
+  const positionGeneration = useRef(0);
+  // Holds every page turn to one page, whoever scrolled (see page-guard.ts). The reader's own
+  // placing (restore, a new chapter) tells it with `quiet()` so it is never undone.
+  const pageGuard = useRef<ReturnType<typeof watchPageMoves> | null>(null);
+
+  const waitingFile = useRef(false);
+  // True once a full read is on screen. A word-list event before that must re-read the book:
+  // patching an empty screen would drop the new list.
+  const bookShown = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // A full-book read keeps the IndexedDB snapshot from the moment it started. The word list
+    // can be replaced while that read is still going (Alice's chapter text is large). Adopting
+    // the snapshot afterwards would put the old list back on screen, after the refresh had
+    // already shown the new one. Each newer request bumps this, and the older read is dropped.
+    let generation = 0;
+    waitingFile.current = false;
+    bookShown.current = false;
+    const adopt = (next: StoredBook, seen: number) => {
+      if (!alive || seen !== generation) return;
+      waitingFile.current = false;
+      bookShown.current = true;
+      const jump = useJump.getState().take(bookId);
+      pendingSave.current?.();
+      const saved = useProgress.getState().items[bookId];
+      if (jump?.at && next.chapters.length > 0) {
+        // A jump from the wordbook names a numbered chapter. It leaves an extra page.
+        const hit = resolveAnchor(
+          jump.at,
+          next.chapters.map((item) => item.paragraphs),
+        );
+        restoreAt.current = {
+          paragraph: hit.paragraph,
+          offset: hit.offset,
+          flash: hit.via !== "nearest",
+          ...(jump.text ? { text: jump.text } : {}),
+        };
+        setChapterIndex(hit.chapter);
+        setExtraId("");
+      } else if (saved) {
+        // extraId keeps the reader on that extra; the anchor is then a paragraph of the extra.
+        const place = restoreReadingPlace(saved, {
+          chapters: next.chapters.map((item) => item.paragraphs),
+          extras: next.extras,
+        });
+        if (place.paragraph !== null)
+          restoreAt.current = { paragraph: place.paragraph, offset: place.offset, flash: false };
+        setExtraId(place.extraId);
+        if (!place.extraId && place.paragraph !== null) setChapterIndex(place.chapter);
+      }
+      setMissing(false);
+      shareStoredBook(bookId, next);
+      setBook(next);
+      fillPrepared(bookId, next.glossary);
+    };
+    const readWhole = (seen: number) => {
+      void loadStoredBook(bookId)
+        .then((next) => {
+          if (!alive || seen !== generation) return;
+          if (!next) {
+            waitingFile.current = true;
+            setMissing(true);
+          } else adopt(next, seen);
+        })
+        .catch(() => {
+          if (alive && seen === generation) {
+            waitingFile.current = true;
+            setMissing(true);
+          }
+        });
+    };
+    // First open: read the whole book once (chapter text is big).
+    readWhole(generation);
+    // A word list added or updated while the book is open (the "cibian-progress" event): merge it in.
+    // The same event fires when the missing file has just been downloaded or paired.
+    const refresh = (seen: number) => {
+      timer = null;
+      if (!alive || seen !== generation) return;
+      // Still loading, or the file just arrived: the light glossary read cannot draw the chapter.
+      if (waitingFile.current || !bookShown.current) {
+        readWhole(seen);
+        return;
+      }
+      void loadBookMeta(bookId)
+        .then((meta) => {
+          if (!alive || seen !== generation || !meta) return;
+          setBook((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  glossary: meta.glossary,
+                  pending: meta.pending,
+                  totalHard: meta.totalHard,
+                  ...(meta.bundled ? { bundled: meta.bundled } : {}),
+                }
+              : prev,
+          );
+          fillPrepared(bookId, meta.glossary);
+        })
+        .catch(() => undefined);
+    };
+    const onProgress = (event: Event) => {
+      const detail = (event as CustomEvent<{ bookId?: string }>).detail;
+      if (detail?.bookId !== bookId || timer) return;
+      // Drop any full-book read that started before this write, before it can paint the old list.
+      generation += 1;
+      const seen = generation;
+      timer = setTimeout(() => refresh(seen), 400);
+    };
+    window.addEventListener("cibian-progress", onProgress);
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+      window.removeEventListener("cibian-progress", onProgress);
+    };
+  }, [bookId, fillPrepared]);
+
+  useEffect(() => {
+    return () => {
+      void flushWordTaps();
+    };
+  }, [bookId]);
+
+  useEffect(() => {
+    let alive = true;
+    setListSource("");
+    setCatalogId("");
+    const pull = () => {
+      void loadBookExtras(bookId)
+        .then(async (extras) => {
+          if (!alive) return;
+          setPhraseList(extras?.phrases ?? {});
+          setPhrasesFor(bookId);
+          setListSource(extras?.source ?? "");
+          const pack = await loadPackRecord(bookId).catch(() => null);
+          if (!alive) return;
+          setGlossaryRev(extras?.rev || pack?.rev || "");
+          // The catalog book reports name. Older installs did not record the catalog; the install
+          // record still names the book, and the catalogs the app has read say which one holds it.
+          const ref = await bookCatalogRef({
+            source: extras?.source,
+            recorded: extras?.catalog,
+            packId: pack?.packId,
+            catalogOf: catalogOfId,
+          });
+          if (alive) setCatalogId(ref);
+        })
+        .catch(() => {
+          if (alive) setPhrasesFor(bookId);
+        });
+    };
+    pull();
+    const onProgress = (event: Event) => {
+      const detail = (event as CustomEvent<{ bookId?: string }>).detail;
+      if (detail?.bookId === bookId) pull();
+    };
+    window.addEventListener("cibian-progress", onProgress);
+    return () => {
+      alive = false;
+      window.removeEventListener("cibian-progress", onProgress);
+    };
+  }, [bookId]);
+
+  const lastChapter = book ? Math.max(book.chapters.length - 1, 0) : 0;
+  // A book opened for the first time starts at the first chapter that is not front matter
+  // (cover, title page, copyright, contents); see first-chapter.ts.
+  const firstReal = useMemo(
+    () => (bookChaptersRaw ? firstReadingChapter(bookChaptersRaw, book?.title ?? "") : 0),
+    [bookChaptersRaw, book?.title],
+  );
+  const safeIndex = Math.min(chapterIndex < 0 ? firstReal : chapterIndex, lastChapter);
+  const chapter = book?.chapters[safeIndex];
+  const activeExtra = book?.extras?.find((item) => item.id === extraId) ?? null;
+  const chapterHtml = activeExtra ? (activeExtra.html ?? "") : (chapter?.html ?? "");
+  const viewChapter = activeExtra ? -1 : safeIndex;
+  const slots = useMemo(
+    () => (book?.extras && book.extras.length > 0 ? readingSlots(book) : null),
+    [book],
+  );
+
+  const marked = useMemo(() => {
+    const ready = new Set<string>();
+    // Entries that hold only position-based senses: underlined at their anchors, not everywhere.
+    const sparse = new Map<string, Gloss>();
+    // Entries with a sense flagged trickyMeaning: marked at the anchors where that sense resolves.
+    const tricky = new Map<string, Gloss>();
+    // Word lists may name extra forms ("sawn" -> "saw"); the book's own list decides.
+    const forms = new Map<string, string>();
+    // Stored key for each straightened spelling, so a curly apostrophe still finds the entry.
+    const keys = new Map<string, string>();
+    if (book) {
+      for (const [key, gloss] of Object.entries(book.glossary)) {
+        ready.add(key);
+        if (!keys.has(key)) keys.set(key, key);
+        const straight = plainSurface(key);
+        if (!keys.has(straight)) keys.set(straight, key);
+        // `A.M` and `a.m.` are the same listed token. The period is part of the key.
+        const bare = straight.replace(/\.+$/g, "");
+        if (bare && !keys.has(bare)) keys.set(bare, key);
+        if (gloss.senseOnly === true) sparse.set(key, gloss);
+        if (hasTrickySense(gloss)) tricky.set(key, gloss);
+        for (const form of gloss.forms ?? []) {
+          const name = plainSurface(form);
+          if (name && !forms.has(name)) forms.set(name, key);
+        }
+      }
+    }
+    return { ready, forms, sparse, tricky, keys };
+  }, [book]);
+  const resolveKey = useCallback(
+    (surface: string) => resolveGlossKey(surface, marked.keys, marked.forms),
+    [marked],
+  );
+  const chapterKey = `${bookId}|${viewChapter}|${extraId}`;
+  const phrasesReady = phrasesFor === bookId;
+  // A chapter the reader just left is already linked. Coming back does not build it again.
+  const linkedHtml = useMemo(() => {
+    if (!book || !chapterHtml || !phrasesReady) return "";
+    const cached = peekChapterHtml(book, phraseList, chapterKey);
+    if (cached !== undefined) return cached;
+    try {
+      const html = linkChapterHtml(
+        chapterHtml,
+        marked.ready,
+        resolveKey,
+        viewChapter,
+        marked.sparse,
+        marked.tricky,
+        phraseList,
+      );
+      rememberChapterHtml(book, phraseList, chapterKey, html);
+      return html;
+    } catch (error) {
+      console.error("Failed to link chapter HTML", error);
+      return chapterHtml;
+    }
+  }, [book, chapterHtml, chapterKey, phraseList, marked, resolveKey, viewChapter, phrasesReady]);
+
+  const bookKey = shelfBook ? bookSyncKey(shelfBook) : "";
+  const savedKeys = useMemo(
+    () =>
+      new Set(
+        words
+          .filter((word) => bookKey !== "" && hasSourceFrom(word, bookKey))
+          .map((word) => word.lemma.toLowerCase()),
+      ),
+    [words, bookKey],
+  );
+
+  // Paint saved words straight onto the page, without rebuilding its HTML.
+  // Selection is separate: tapping a word must not repeat every saved-phrase match.
+  const pickedIndex = picked?.index ?? "";
+  useLayoutEffect(() => {
+    const root = articleRef.current;
+    if (!root) return;
+    for (const button of root.querySelectorAll<HTMLElement>("[role=button][data-word]")) {
+      const key = resolveKey(button.dataset.word ?? "");
+      const sparseOff =
+        marked.sparse.has(key) &&
+        !button.classList.contains("book-hard") &&
+        !button.classList.contains("book-tricky");
+      button.classList.toggle("book-saved", savedKeys.has(key) && !sparseOff);
+    }
+    // A saved phrase marks its own words, not the single easy word that was tapped.
+    const savedPhrases = Object.fromEntries(
+      Object.entries(phraseList).filter(([key]) => savedKeys.has(key.toLowerCase())),
+    );
+    if (Object.keys(savedPhrases).length > 0) {
+      const sel = "p, h1, h2, h3, h4, li, blockquote, div[data-para]";
+      const blocks = leafReadingBlocks(root);
+      for (const block of blocks) {
+        const marks = phraseWordMarks(savedPhrases, flowText(block));
+        if (marks.length === 0) continue;
+        const starts = flowCutOffsets(
+          block,
+          (el) => el.localName === "span" && el.getAttribute?.("role") === "button" && el.getAttribute?.("data-word") != null,
+        );
+        for (const button of block.querySelectorAll<HTMLElement>("[role=button][data-word]")) {
+          if (button.closest(sel) !== block) continue;
+          const word = button.getAttribute("data-word") ?? "";
+          const start = starts.get(button);
+          if (start === undefined || !word) continue;
+          const end = start + word.length;
+          if (marks.some((mark) => start >= mark.start && end <= mark.end))
+            button.classList.add("book-saved");
+        }
+      }
+    }
+  }, [linkedHtml, savedKeys, resolveKey, marked, phraseList]);
+
+  const selectedButton = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    selectedButton.current?.classList.remove("book-on");
+    const root = articleRef.current;
+    // data-i is the linker's numeric token order, not a word supplied by the book.
+    const next = root && /^\d+$/.test(pickedIndex)
+      ? root.querySelector<HTMLElement>(`[role=button][data-i="${pickedIndex}"]`)
+      : null;
+    next?.classList.add("book-on");
+    selectedButton.current = next;
+  }, [linkedHtml, pickedIndex]);
+
+  // Fetch the pronunciation shards this chapter's words need while the reader starts reading,
+  // so a word card shows its IPA on the first frame instead of a second later.
+  useEffect(() => {
+    if (!linkedHtml) return;
+    const root = articleRef.current;
+    if (!root) return;
+    const timer = window.setTimeout(() => warmIpaFor(root.textContent ?? ""), 50);
+    return () => window.clearTimeout(timer);
+  }, [linkedHtml]);
+
+  // Restore the saved reading position once per chapter, after its text is on screen.
+  useLayoutEffect(() => {
+    const root = articleRef.current;
+    if (!root || !book || !phrasesReady) return;
+    const page = `${bookId}|${safeIndex}|${extraId}`;
+    let target = restore.current;
+    restore.current = null;
+    let mark = restoreAt.current;
+    restoreAt.current = null;
+    const now = Date.now();
+    // A turn backwards lands on the LAST line of the previous page, which is the end of the
+    // document, not the end of the article (the buttons and padding sit below the article).
+    let bottom = target !== null && target < 0;
+    if (bottom) target = 1;
+    if (!mark && target === null) {
+      const held = placed.current;
+      // The same page drawn again (phrases loaded, the list changed): it must not jump to the top.
+      if (held?.page === page) {
+        if (now >= held.until) return;
+        target = held.target;
+        if (target !== null && target < 0) {
+          bottom = true;
+          target = 1;
+        }
+        mark =
+          held.paragraph === null
+            ? null
+            : { paragraph: held.paragraph, offset: held.offset, flash: false };
+      }
+    }
+    if (!mark && (target === null || target <= 0)) {
+      placed.current = { page, paragraph: null, offset: 0, target: null, until: 0 };
+      pageGuard.current?.quiet();
+      window.scrollTo({ top: 0 });
+      setScrolled(0);
+      return;
+    }
+    const until =
+      placed.current?.page === page && placed.current.until > now
+        ? placed.current.until
+        : now + 2500;
+    placed.current = {
+      page,
+      paragraph: mark?.paragraph ?? null,
+      offset: mark?.offset ?? 0,
+      target: bottom ? RESTORE_BOTTOM : target,
+      until,
+    };
+    const block = mark ? readerParagraphBlocks(root)[mark.paragraph] : undefined;
+    let place: () => void;
+    let flashTimer: ReturnType<typeof setTimeout> | null = null;
+    if (block) {
+      const inside = mark?.offset ?? 0;
+      place = () => {
+        const rect = block.getBoundingClientRect();
+        const line = inside > 0 && tallBlock(rect) ? lineTopAt(block, inside) : null;
+        const top = (line === null ? rect.top - PLACE_TOP : line - PLACE_TOP - 2) + window.scrollY;
+        pageGuard.current?.quiet();
+        window.scrollTo({ top: Math.max(0, top) });
+      };
+      const quoteAt = mark?.flash && mark.text ? locateQuote(flowText(block), mark.text, mark.offset) : null;
+      if (quoteAt) {
+        // A kept quote: its own words light up once the page has settled under them.
+        const paragraph = mark?.paragraph ?? 0;
+        flashTimer = setTimeout(() => flashSpan(root, { paragraph, ...quoteAt }, 2600), 450);
+      } else if (mark?.flash) {
+        block.classList.add("book-flash");
+        flashTimer = setTimeout(() => block.classList.remove("book-flash"), 3000);
+      }
+    } else if (target === null || target <= 0) {
+      pageGuard.current?.quiet();
+      window.scrollTo({ top: 0 });
+      setScrolled(0);
+      return;
+    } else if (bottom) {
+      place = () => {
+        pageGuard.current?.quiet();
+        window.scrollTo({
+          top: Math.max(0, document.documentElement.scrollHeight - window.innerHeight),
+        });
+      };
+    } else {
+      place = () => {
+        const top = root.getBoundingClientRect().top + window.scrollY;
+        const span = Math.max(1, root.offsetHeight - window.innerHeight);
+        pageGuard.current?.quiet();
+        window.scrollTo({ top: top + target * span });
+      };
+    }
+    place();
+    if (!block && target !== null) setScrolled(bottom ? 1 : target);
+    // Fonts, pictures and banners change the page height right after load; keep the
+    // saved spot until the reader scrolls on their own (or a few seconds pass).
+    let cancelled = false;
+    let observer: ResizeObserver | null = null;
+    try {
+      observer = new ResizeObserver(() => {
+        if (!cancelled) place();
+      });
+      observer.observe(root);
+      if (document.body) observer.observe(document.body);
+    } catch {
+      // ResizeObserver may fail or not support observing document.body in older engines.
+    }
+    const release = () => {
+      cancelled = true;
+      try {
+        observer?.disconnect();
+      } catch {}
+      window.removeEventListener("wheel", stop);
+      window.removeEventListener("touchmove", stop);
+      window.removeEventListener("keydown", stop, true);
+    };
+    function stop() {
+      release();
+      if (placed.current?.page === page) placed.current.until = 0;
+    }
+    window.addEventListener("wheel", stop, { passive: true });
+    window.addEventListener("touchmove", stop, { passive: true });
+    // Capture: the page keys stop propagating at the window's capture phase (onKey below), so a
+    // bubbling listener never heard them and the hold dragged the first turn back to the saved spot.
+    window.addEventListener("keydown", stop, true);
+    const timer = setTimeout(stop, Math.max(0, until - now));
+    return () => {
+      clearTimeout(timer);
+      if (flashTimer) clearTimeout(flashTimer);
+      release();
+    };
+  }, [linkedHtml, book, phrasesReady, bookId, safeIndex, extraId, navigationRevision]);
+
+  // Layout cleanup still has the reading DOM. Passive cleanup runs after it has been
+  // removed, when even a previously measured scroll would acquire the wrong anchor.
+  useLayoutEffect(() => {
+    const root = articleRef.current;
+    if (!book || !phrasesReady || !root) return;
+    const generation = positionGeneration.current;
+    const current = () => positionGeneration.current === generation;
+    let frame = 0;
+    let saver: ReturnType<typeof setTimeout> | null = null;
+    const measure = () => {
+      frame = 0;
+      if (!current()) return;
+      const rect = root.getBoundingClientRect();
+      const span = Math.max(1, rect.height - window.innerHeight);
+      // The end of the chapter on screen means the chapter is read, also when it fits on one screen.
+      const value =
+        rect.bottom <= window.innerHeight ? 1 : Math.min(1, Math.max(0, -rect.top / span));
+      // The bar shows whole percent. Setting the exact fraction re-rendered this whole screen on
+      // every animation frame of a scroll (a long chapter, dozens of times a second) for a number
+      // nobody can see change.
+      setScrolled((held) => (Math.round(held * 100) === Math.round(value * 100) ? held : value));
+      if (saver) clearTimeout(saver);
+      const write = () => {
+        if (saver) clearTimeout(saver);
+        saver = null;
+        if (!current()) return;
+        pendingSave.current = null;
+        // Read the anchor when the scrolling has stopped, not on every frame: `topAnchor` walks
+        // every paragraph of the chapter and reads a rectangle for each, which forced a layout
+        // on every animation frame.
+        const anchor = topAnchor(root, activeExtra ? 0 : safeIndex);
+        const place = {
+          chapter: safeIndex,
+          chapters: book.chapters.length,
+          extraId: activeExtra?.id ?? "",
+          scroll: value,
+          // No paragraph on screen: an older anchor would reopen somewhere else, so the scroll fraction is used.
+          anchor: anchor ?? undefined,
+        };
+        // The first measure after a page is drawn reads where the restore put it. Only a real
+        // change of place is a move with a new time (see `touch` in progress-store.ts).
+        const saved = useProgress.getState().items[bookId];
+        saveProgress(bookId, place, !saved || !samePlace(saved, place));
+      };
+      pendingSave.current = write;
+      saver = setTimeout(write, 400);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    const onHide = () => {
+      if (!current()) return;
+      // A fast exit can precede both the scroll event and its scheduled frame.
+      if (frame) cancelAnimationFrame(frame);
+      measure();
+      pendingSave.current?.();
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("pagehide", onHide);
+    frame = requestAnimationFrame(measure);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pagehide", onHide);
+      if (frame) cancelAnimationFrame(frame);
+      if (saver) clearTimeout(saver);
+      // Old callbacks are invalidated before a chapter selection. Only a genuine exit
+      // (or a redraw of this page) flushes the still-connected reading DOM.
+      if (root.isConnected) onHide();
+    };
+  }, [book, bookId, phrasesReady, linkedHtml, saveProgress, safeIndex, activeExtra, navigationRevision]);
+
+  useEffect(() => {
+    if (!book || !extraId) return;
+    if (!book.extras?.some((item) => item.id === extraId)) setExtraId("");
+  }, [book, extraId]);
+
+  // A newer place for this book can arrive while it is open: an account sync pulled what another
+  // device read. The screen moved only on the next open, and its own next save (scroll, leave)
+  // then wrote the old place back with a fresh time, so the account went back to it. Follow the
+  // newer place instead. A card or panel that is open keeps the page still until the next arrival.
+  useEffect(() => {
+    if (!book) return;
+    return useProgress.subscribe((state, before) => {
+      if (savingOwn.current) return;
+      const next = state.items[bookId];
+      const prior = before.items[bookId];
+      if (!next || next === prior || (prior && next.updatedAt <= prior.updatedAt)) return;
+      if (prior && samePlace(prior, next)) return;
+      if (pagingHandlers.current.cardOpen) return;
+      const place = restoreReadingPlace(next, {
+        chapters: book.chapters.map((item) => item.paragraphs),
+        extras: book.extras,
+      });
+      positionGeneration.current += 1;
+      pendingSave.current = null;
+      placed.current = null;
+      restore.current = place.paragraph === null ? next.scroll : null;
+      restoreAt.current =
+        place.paragraph === null ? null : { paragraph: place.paragraph, offset: place.offset, flash: false };
+      setExtraId(place.extraId);
+      setChapterIndex(place.extraId || place.paragraph === null ? next.chapter : place.chapter);
+      setNavigationRevision((revision) => revision + 1);
+    });
+  }, [book, bookId]);
+
+  useEffect(() => {
+    if (!book) return;
+    // Showing the saved page is not a move: keep its time, so this echo of an old place cannot beat a
+    // newer place that another device synced in the meantime. A real move (a chapter pick, a page
+    // turn into the next chapter, scrolling) saves through goChapter/goSlot/the scroll saver.
+    const saved = useProgress.getState().items[bookId];
+    saveProgress(bookId, { chapter: safeIndex, chapters: book.chapters.length, extraId }, !saved);
+  }, [book, bookId, safeIndex, extraId, saveProgress]);
+
+  // Positions saved before anchors existed get one now, from where the page actually is.
+  useEffect(() => {
+    if (!book || !phrasesReady) return;
+    const generation = positionGeneration.current;
+    const timer = setTimeout(() => {
+      if (positionGeneration.current !== generation) return;
+      const saved = useProgress.getState().items[bookId];
+      // Filling in a missing anchor describes the same place: it keeps the place's time.
+      if (extraId) {
+        if (saved?.extraId === extraId && saved.anchor) return;
+        const anchor = topAnchor(articleRef.current, 0);
+        if (anchor) saveProgress(bookId, { anchor, extraId }, false);
+        return;
+      }
+      if (saved?.anchor && saved.anchor.chapter === safeIndex) return;
+      const anchor = topAnchor(articleRef.current, safeIndex);
+      if (anchor) saveProgress(bookId, { anchor }, false);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [book, bookId, linkedHtml, phrasesReady, safeIndex, extraId, saveProgress]);
+
+  // Saved words from before places were stored: find each sentence in this device's text once.
+  useEffect(() => {
+    if (!book || !bookKey) return;
+    const timer = setTimeout(() => {
+      const open = useVocab
+        .getState()
+        .words.flatMap((card) =>
+          card.sources
+            .filter(
+              (source) => source.book === bookKey && !source.ref && !source.at && source.sentence,
+            )
+            .map((source) => ({ card, source })),
+        );
+      if (open.length === 0) return;
+      const texts = book.chapters.map((item) => item.paragraphs);
+      const updates = [];
+      for (const { card, source } of open) {
+        const sentence = source.sentence;
+        if (!sentence) continue;
+        const hit = findSentence(sentence, source.surface, texts, source.chapter);
+        if (!hit) continue;
+        updates.push({
+          lemma: card.lemma,
+          book: bookKey,
+          sentence,
+          chapter: hit.chapter,
+          chapterTitle: book.chapters[hit.chapter]?.title,
+          at: hit,
+        });
+      }
+      setSourcePlaces(updates);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [book, bookKey, setSourcePlaces]);
+
+  const goChapter = useCallback(
+    (index: number, toBottom = false) => {
+      if (!book) return;
+      const next = Math.min(Math.max(0, index), book.chapters.length - 1);
+      // The place is applied by the restore effect, after the new chapter is on screen. Scrolling
+      // here would move the page that is still showing (a flash) and the height measured would be
+      // the old chapter's.
+      restore.current = toBottom ? RESTORE_BOTTOM : 0;
+      positionGeneration.current += 1;
+      setNavigationRevision((revision) => revision + 1);
+      restoreAt.current = null;
+      pendingSave.current = null;
+      setExtraId("");
+      setChapterIndex(next);
+      setPicked(null);
+      setHelp(null);
+      setScrolled(toBottom ? 1 : 0);
+      const first = book.chapters[next]?.paragraphs[0] ?? "";
+      saveProgress(bookId, {
+        chapter: next,
+        chapters: book.chapters.length,
+        scroll: toBottom ? 1 : 0,
+        extraId: "",
+        anchor: !toBottom && first ? makeAnchor({ chapter: next, paragraph: 0, text: first, at: 0 }) : undefined,
+      });
+    },
+    [book, bookId, saveProgress],
+  );
+
+  const slotIndex = slots
+    ? Math.max(
+        0,
+        slots.findIndex((slot) =>
+          activeExtra
+            ? slot.kind === "extra" && book?.extras?.[slot.index]?.id === activeExtra.id
+            : slot.kind === "chapter" && slot.index === safeIndex,
+        ),
+      )
+    : safeIndex;
+
+  const goSlot = useCallback(
+    (at: number, toBottom = false) => {
+      if (!book || !slots) return;
+      const slot = slots[at];
+      if (!slot) return;
+      restore.current = toBottom ? RESTORE_BOTTOM : 0;
+      positionGeneration.current += 1;
+      setNavigationRevision((revision) => revision + 1);
+      restoreAt.current = null;
+      pendingSave.current = null;
+      setPicked(null);
+      setHelp(null);
+      setScrolled(toBottom ? 1 : 0);
+      if (slot.kind === "chapter") {
+        setExtraId("");
+        setChapterIndex(slot.index);
+        const first = book.chapters[slot.index]?.paragraphs[0] ?? "";
+        saveProgress(bookId, {
+          chapter: slot.index,
+          chapters: book.chapters.length,
+          scroll: toBottom ? 1 : 0,
+          extraId: "",
+          anchor: !toBottom && first
+            ? makeAnchor({ chapter: slot.index, paragraph: 0, text: first, at: 0 })
+            : undefined,
+        });
+      } else {
+        const extra = book.extras?.[slot.index];
+        if (!extra) return;
+        setExtraId(extra.id);
+        const first = extra.paragraphs[0] ?? "";
+        saveProgress(bookId, {
+          chapter: safeIndex,
+          chapters: book.chapters.length,
+          scroll: toBottom ? 1 : 0,
+          extraId: extra.id,
+          // The anchor is a paragraph of this extra. Restore searches only that extra.
+          anchor: !toBottom && first ? makeAnchor({ chapter: 0, paragraph: 0, text: first, at: 0 }) : undefined,
+        });
+      }
+      // The restore effect places the page once it is on screen (see goChapter).
+    },
+    [book, slots, bookId, saveProgress, safeIndex],
+  );
+
+  /**
+   * One page = the whole lines that fit, MINUS `PAGE_KEEP_LINES` lines of tolerance.
+   *
+   * A page must break on a line, not on an arbitrary pixel: `innerHeight - bar` is almost never
+   * a multiple of the line height, so a bare height scroll leaves the first line of the new page
+   * cut in half at the top. Counting lines gives exact pages instead.
+   *
+   * The measured height is what the engine REPORTS as visible, and on an e-ink WebView that can
+   * include a strip covered by a native bar. Trusting it exactly meant every turn lost the same
+   * three lines on the Moaan. Keeping those lines back is the tolerance: see `PAGE_KEEP_LINES`.
+   */
+  const pageStep = useCallback(() => {
+    // A bar that is hidden (focus mode, or slid away on a phone) covers no lines.
+    const bar = prefs.focus || barHiddenRef.current ? 0 : topBarHeight(headerRef.current);
+    const line = readerLineHeight(articleRef.current);
+    return calculatePageStep({
+      viewportWidth: window.innerWidth,
+      viewportHeight: Math.min(window.innerHeight, window.visualViewport?.height ?? window.innerHeight),
+      topBarHeight: bar,
+      lineHeight: line,
+    });
+  }, [prefs.focus]);
+
+  /**
+   * One turn per press. The same physical key can reach the page twice (a WebView that maps a
+   * page button to both a key event and a click, a double tap, a device that repeats keydown
+   * without setting `repeat`), and every extra event used to be another page.
+   */
+  const lastTurnAt = useRef(0);
+  const turnAllowed = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTurnAt.current < MIN_TURN_MS) return false;
+    lastTurnAt.current = now;
+    return true;
+  }, []);
+
+  const pageForward = useCallback(() => {
+    if (!book) return;
+    if (!turnAllowed()) return;
+    const step = pageStep();
+    const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    const top = window.scrollY;
+    const hasNext = slots ? slotIndex < slots.length - 1 : safeIndex < book.chapters.length - 1;
+    // Only at the end of the page does a forward turn open the next chapter: a short last
+    // strip is shown first, so no line of the chapter is ever skipped.
+    if (maxScroll - top <= 4) {
+      if (hasNext) {
+        if (slots) goSlot(slotIndex + 1);
+        else goChapter(safeIndex + 1);
+      }
+      return;
+    }
+    pageGuard.current?.turn(top);
+    turnTarget.current = Math.min(maxScroll, top + step);
+    window.scrollTo(0, turnTarget.current);
+  }, [book, slots, slotIndex, safeIndex, goSlot, goChapter, pageStep, turnAllowed]);
+
+  const pageBackward = useCallback(() => {
+    if (!book) return;
+    if (!turnAllowed()) return;
+    const step = pageStep();
+    const top = window.scrollY;
+    const hasPrev = slots ? slotIndex > 0 : safeIndex > 0;
+    if (top > 0) {
+      pageGuard.current?.turn(top);
+      turnTarget.current = Math.max(0, top - step);
+      window.scrollTo(0, turnTarget.current);
+      return;
+    }
+    // At the top of a page, a backward turn opens the previous one at its last line.
+    if (hasPrev) {
+      if (slots) goSlot(slotIndex - 1, true);
+      else goChapter(safeIndex - 1, true);
+    }
+  }, [book, slots, slotIndex, safeIndex, goSlot, goChapter, pageStep, turnAllowed]);
+
+  const pendingWordSpace = useRef<HTMLElement | null>(null);
+  const closeWordCard = (restoreFocus = false) => {
+    pendingWordSpace.current = null;
+    const target = anchor;
+    setPicked(null);
+    const focusInCard = document.querySelector("[data-word-card]")?.contains(document.activeElement);
+    if (restoreFocus && focusInCard && picked && desktopPanel() && target?.isConnected &&
+        articleRef.current?.contains(target) && !anchorOffscreen(target)) {
+      target.focus({ preventScroll: true });
+    }
+  };
+  const closeWordRef = useRef(closeWordCard);
+  closeWordRef.current = closeWordCard;
+
+  const pagingHandlers = useRef({
+    pageForward,
+    pageBackward,
+    cardOpen: false,
+    chapter: (_delta: number) => {},
+  });
+  pagingHandlers.current = {
+    pageForward,
+    pageBackward,
+    cardOpen: picked !== null || help !== null,
+    // [ and ]: the previous or next chapter (or extra page), as the buttons under the text do.
+    chapter: (delta: number) => {
+      if (!book) return;
+      if (slots) {
+        const at = slotIndex + delta;
+        if (at >= 0 && at < slots.length) goSlot(at);
+      } else {
+        const at = safeIndex + delta;
+        if (at >= 0 && at < book.chapters.length) goChapter(at);
+      }
+    },
+  };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (document.querySelector("[data-reader-contents]")) return;
+      if (event.key === "Escape") {
+        closeWordRef.current(true);
+        setHelp(null);
+        return;
+      }
+      const { pageForward: next, pageBackward: prev, cardOpen, chapter: toChapter } = pagingHandlers.current;
+      // Single-letter shortcuts never take a key the browser or the system uses with a modifier.
+      const plainKey = !event.ctrlKey && !event.metaKey && !event.altKey;
+      const typing = (() => {
+        const el = event.target as HTMLElement | null;
+        return el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.tagName === "SELECT" || Boolean(el?.isContentEditable);
+      })();
+      // In an open word card: S saves or unsaves, P plays its first pronunciation button.
+      if (cardOpen && plainKey && !typing && !event.repeat && (event.key === "s" || event.key === "S" || event.key === "p" || event.key === "P")) {
+        const card = document.querySelector<HTMLElement>("[data-word-card]");
+        const button = card?.querySelector<HTMLButtonElement>(
+          event.key.toLowerCase() === "s" ? "[data-word-save]:not(:disabled)" : "[data-speak]:not(:disabled)",
+        );
+        if (button) {
+          event.preventDefault();
+          button.click();
+        }
+        return;
+      }
+      if (!cardOpen && plainKey && !typing && (event.key === "[" || event.key === "]")) {
+        const el = event.target as HTMLElement | null;
+        if (el?.closest?.('aside, [role="dialog"], [data-radix-popper-content-wrapper], [data-para-ui]')) return;
+        event.preventDefault();
+        if (!event.repeat) toChapter(event.key === "]" ? 1 : -1);
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+      if (!cardOpen && target === document.activeElement &&
+          target?.matches('[role="button"][data-word]') && articleRef.current?.contains(target) &&
+          (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.repeat) return;
+        if (event.key === "Enter") {
+          pendingWordSpace.current = null;
+          target.click();
+        } else pendingWordSpace.current = target;
+        return;
+      }
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable)
+        return;
+      // A card or a panel is open over the text: the keys belong to it (its own list scrolls,
+      // its own buttons take Space), not to the page behind it.
+      if (cardOpen) return;
+      if (
+        target?.closest?.(
+          'aside, [role="dialog"], [data-radix-popper-content-wrapper], [data-para-ui]',
+        )
+      )
+        return;
+
+      const direction = readerPageDirection(
+        event,
+        usePrefs.getState().paging,
+        Boolean(target?.closest?.('button, a[href], summary, [role="button"], [role="link"]')),
+      );
+      if (direction !== 0) {
+        // ALWAYS prevent browser native scrolling immediately, even on key repeat.
+        event.preventDefault();
+        event.stopPropagation();
+        // Held keys would run the page away on a slow e-ink screen: one press, one page.
+        if (event.repeat) return;
+        if (direction > 0) next();
+        else prev();
+      }
+    };
+
+    // A click anywhere outside the card (and not on a word) closes it.
+    const onClickAway = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target || !target.closest) return;
+      const inside =
+        'aside[data-word-card], aside[data-para-panel], [data-para-ui], [role=button][data-word], header, [role="dialog"], [data-radix-popper-content-wrapper]';
+      // A button inside a card may remove itself when it is pressed (for example "Explain this
+      // sentence"). Look at the path the click took, so it still counts as a click inside.
+      const path = (event.composedPath?.() ?? []) as Element[];
+      if (target.closest(inside) || path.some((node) => node.matches?.(inside))) return;
+      setPicked(null);
+      setHelp(null);
+    };
+    const cancelWordSpace = () => { pendingWordSpace.current = null; };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (document.querySelector("[data-reader-contents]")) {
+        cancelWordSpace();
+        return;
+      }
+      if (event.key !== " ") return;
+      const word = pendingWordSpace.current;
+      cancelWordSpace();
+      if (!word) return;
+      event.preventDefault();
+      if (!pagingHandlers.current.cardOpen && word.isConnected &&
+          document.activeElement === word && event.target === word && articleRef.current?.contains(word)) {
+        word.click();
+      }
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    window.addEventListener("keyup", onKeyUp, { capture: true });
+    window.addEventListener("blur", cancelWordSpace);
+    document.addEventListener("focusout", cancelWordSpace);
+    document.addEventListener("click", onClickAway);
+    return () => {
+      cancelWordSpace();
+      window.removeEventListener("keydown", onKey, { capture: true });
+      window.removeEventListener("keyup", onKeyUp, { capture: true });
+      window.removeEventListener("blur", cancelWordSpace);
+      document.removeEventListener("focusout", cancelWordSpace);
+      document.removeEventListener("click", onClickAway);
+    };
+  }, []);
+
+  // A mouse resting on a marked word shows its meaning in one line, without a tap. Not on touch
+  // screens (they have no hover), not while a card or panel is open, and not with "Hide underlines":
+  // that setting means the reader asks, so the page must not point out which words have a meaning.
+  useEffect(() => {
+    const root = articleRef.current;
+    if (!root || !book || prefs.quietMarks) {
+      setHover(null);
+      return;
+    }
+    let canHover = false;
+    try {
+      canHover = window.matchMedia?.("(hover: hover) and (pointer: fine)").matches === true;
+    } catch {
+      canHover = false;
+    }
+    if (!canHover) return;
+    let timer = 0;
+    let current: Element | null = null;
+    const clear = () => {
+      window.clearTimeout(timer);
+      current = null;
+      setHover(null);
+    };
+    const onOver = (event: PointerEvent) => {
+      if (event.pointerType && event.pointerType !== "mouse") return;
+      const button = (event.target as Element | null)?.closest?.('[role="button"][data-word].book-hard, [role="button"][data-word].book-tricky');
+      if (button === current) return;
+      clear();
+      if (!button || pagingHandlers.current.cardOpen) return;
+      current = button;
+      timer = window.setTimeout(() => {
+        if (current !== button || !button.isConnected || pagingHandlers.current.cardOpen) return;
+        const surface = button.getAttribute("data-word") ?? "";
+        const key = resolveKey(surface) || surface;
+        let gloss: Gloss | undefined = book.glossary[key];
+        const blocks = readerParagraphBlocks(root);
+        const block = button.closest("p, li, blockquote, h1, h2, h3, h4, div[data-para]") ?? blocks.find((item) => item.contains(button));
+        const paragraph = block ? flowText(block) : surface;
+        const tapAt = {
+          chapter: viewChapter,
+          surface,
+          occurrence: Number(button.getAttribute("data-n")) || 1,
+          paragraph,
+          before: block ? flowTextBefore(block, button) : "",
+        };
+        if (gloss && !entryAppliesAt(key, gloss, tapAt)) gloss = undefined;
+        if (!gloss) return;
+        // The same choice the card makes, so hovering and tapping never disagree.
+        const meaning = pickSense(key, gloss, tapAt).meaning;
+        if (!meaning) return;
+        const box = button.getBoundingClientRect();
+        setHover({ word: key, meaning, left: box.left + box.width / 2, top: box.top });
+      }, 450);
+    };
+    const onScroll = () => clear();
+    root.addEventListener("pointerover", onOver);
+    root.addEventListener("pointerleave", clear);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("pointerdown", clear, true);
+    return () => {
+      root.removeEventListener("pointerover", onOver);
+      root.removeEventListener("pointerleave", clear);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pointerdown", clear, true);
+      window.clearTimeout(timer);
+    };
+  }, [book, phrasesReady, linkedHtml, prefs.quietMarks, viewChapter, resolveKey]);
+
+  // The top bar follows the scroll direction (lib/reader-bar.ts), on every screen (design system ScrollChrome).
+  useEffect(() => {
+    let query: MediaQueryList | null = null;
+    try {
+      query = window.matchMedia?.(AUTO_HIDE_QUERY) ?? null;
+    } catch {
+      query = null;
+    }
+    if (!query) return;
+    let state = barStart(window.scrollY);
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      if (!query?.matches) {
+        state = barStart(window.scrollY);
+        setBarHidden(false);
+        return;
+      }
+      const y = window.scrollY;
+      if (turnTarget.current !== null && Math.abs(y - turnTarget.current) <= 2) {
+        turnTarget.current = null;
+        state = { hidden: state.hidden, from: y, last: y };
+        return;
+      }
+      state = nextBarState(state, y);
+      setBarHidden(state.hidden);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    const onResize = () => measure();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    query.addEventListener?.("change", onResize);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      query?.removeEventListener?.("change", onResize);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  // A new chapter starts with the bar in view, and an open card or panel never leaves it out of reach.
+  useEffect(() => {
+    setBarHidden(false);
+  }, [safeIndex, extraId]);
+  useEffect(() => {
+    if (picked || help) setBarHidden(false);
+  }, [picked, help]);
+
+  // After the key handler on purpose: the guard's own keydown listener must see the page keys
+  // already default-prevented, so it can tell them from keys that move the page on purpose.
+  const pageStepRef = useRef(pageStep);
+  pageStepRef.current = pageStep;
+  const [probe] = useState(pagingProbeOn);
+  const [probeKey, setProbeKey] = useState("");
+  const [probeMove, setProbeMove] = useState<PageMove | null>(null);
+  useEffect(() => {
+    const coarse = () => {
+      try {
+        return window.matchMedia?.("(pointer: coarse)").matches === true;
+      } catch {
+        return false;
+      }
+    };
+    const watch = watchPageMoves({
+      step: () => pageStepRef.current(),
+      line: () => readerLineHeight(articleRef.current),
+      // A jump with no input is normal on a desktop (find in page). On a phone or an e-ink reader
+      // it is the browser's own page turn.
+      enabled: () => coarse() || isEinkScreen(window.innerWidth, window.innerHeight),
+      onMove: probe ? setProbeMove : undefined,
+    });
+    pageGuard.current = watch;
+    // The probe shows every key the device sends, also the ones the reader does not use.
+    const onProbeKey = (event: KeyboardEvent) =>
+      setProbeKey(`${event.key || "?"}/${event.code || "?"}/${event.keyCode}`);
+    if (probe) window.addEventListener("keydown", onProbeKey, true);
+    return () => {
+      watch.stop();
+      pageGuard.current = null;
+      if (probe) window.removeEventListener("keydown", onProbeKey, true);
+    };
+  }, [probe]);
+
+  const pickedKey = picked ? resolveKey(picked.surface) : "";
+  // A phrasal verb or idiom that contains the tapped word (from the word list).
+  const located = picked
+    ? locateSentence(picked.paragraph, picked.surface, picked.before.length)
+    : null;
+  const pickedSentence = located?.text ?? "";
+  const phraseOffset = located?.offset ?? -1;
+  const phraseAt = picked
+    ? `${bookId}|${safeIndex}|${extraId}|${picked.selectionId}|${picked.index}|${picked.surface}|${pickedSentence}|${phraseOffset}`
+    : "";
+  useEffect(() => {
+    // Phrase notes are anchored to this book's chapters. An extra (often the next
+    // book's opening) must not pick one up from the same words.
+    if (activeExtra) {
+      setPhraseHit(null);
+      setPhrasePending(false);
+      return;
+    }
+    if (!picked || !pickedSentence) {
+      setPhrasePending(false);
+      return;
+    }
+    let alive = true;
+    const at = phraseAt;
+    const surface = picked.surface;
+    const offset = phraseOffset;
+    setPhrasePending(true);
+    void findPhrase(bookId, pickedSentence, surface, offset >= 0 ? offset : undefined).then(
+      (hit) => {
+        if (!alive) return;
+        setPhraseHit(hit ? { at, hit } : null);
+        setPhrasePending(false);
+        // The tap already said the word, or the phrase when the list in memory knew it. Only a
+        // phrase found here for the first time replaces that: one voice per tap.
+        if (hit && hit.key.trim().toLowerCase() !== spoken.current.trim().toLowerCase()) {
+          spoken.current = hit.key;
+          speakEnglish(hit.key);
+        }
+      },
+    );
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, phraseAt, activeExtra]);
+
+  function paragraphElement(index: number): Element | null {
+    const root = articleRef.current;
+    return root ? (readerParagraphBlocks(root)[index] ?? null) : null;
+  }
+
+  function openHelp(index: number, sentence?: string) {
+    const el = paragraphElement(index);
+    if (!el || !book) return;
+    const root = articleRef.current;
+    const texts = root ? readerParagraphBlocks(root).map((block) => flowText(block)) : [];
+    setAnchor(el instanceof HTMLElement ? el : null);
+    setPicked(null);
+    setHelp(sentence ? { index, sentence } : { index });
+    setHelpState({ status: "loading" });
+    helpToken.current += 1;
+    const token = helpToken.current;
+    void loadParagraphHelpView({
+      bookId,
+      chapter: activeExtra ? activeExtra.id : safeIndex,
+      paragraph: index,
+      texts,
+    }).then((view) => {
+      if (helpToken.current !== token) return;
+      setHelpState(view ? { status: "ready", view } : { status: "none" });
+    });
+  }
+
+  function closeHelp() {
+    helpToken.current += 1;
+    setHelp(null);
+  }
+
+  /**
+   * A phone sheet covers the lower half of the page. Scroll so a marked sentence sits in the part
+   * that stays visible, under the top bar and above the sheet. Wide screens float the panel beside
+   * the paragraph and need no scroll.
+   */
+  const revealAboveSheet = useCallback((top: number, bottom: number) => {
+    if (!phoneSheet()) return;
+    const sheet = document.querySelector("aside[data-para-panel]")?.getBoundingClientRect();
+    const barBottom = headerRef.current?.getBoundingClientRect().bottom ?? 0;
+    const visibleTop = Math.max(0, barBottom) + 12;
+    const visibleBottom = (sheet ? sheet.top : window.innerHeight) - 12;
+    if (top >= visibleTop && bottom <= visibleBottom) return;
+    // Put the sentence's top just under the bar; a long sentence keeps its start in view.
+    const by = top - visibleTop;
+    pageGuard.current?.quiet();
+    window.scrollBy({ top: by });
+  }, []);
+
+  /** Open the word card for a word button on the page (shared by taps and the hard-word list). */
+  function pickButton(button: Element) {
+    const surface = button.getAttribute("data-word") ?? "";
+    const key = resolveKey(surface) || surface;
+    const blocks = articleRef.current ? readerParagraphBlocks(articleRef.current) : [];
+    const blockAt = blocks.findIndex((item) => item.contains(button));
+    const block = button.closest("p, li, blockquote, h1, h2, h3, h4, div[data-para]") ?? blocks[blockAt];
+    const paragraph = block ? flowText(block) : surface;
+    const before = block ? flowTextBefore(block, button) : "";
+    const nth = Number(button.getAttribute("data-n")) || 1;
+    const context = extractAnchorContext(paragraph, surface, before.length);
+    const located = locateSentence(paragraph, surface, before.length);
+    const sentence = located.text;
+    const offset = located.offset;
+    // The phrase list is already in memory, so a tapped word that belongs to a phrase can say the
+    // phrase straight away: hearing the word first and the phrase on top of it was the bug.
+    const phraseNow =
+      activeExtra || !phraseList
+        ? null
+        : pickPhrase(phraseList, sentence, surface, offset >= 0 ? offset : undefined);
+    // Only a word with no meaning of its own here is sent to be added to the word list (an entry
+    // that applies at this place, as on the card). Very common words are not sent either: the
+    // list will not explain "the". A phrase with a meaning does not count, so an unknown word
+    // inside a known phrase is still sent.
+    const gloss = book?.glossary[key];
+    const ownMeaning =
+      isEasyKey(key) ||
+      Boolean(
+        gloss &&
+          entryAppliesAt(key, gloss, {
+            chapter: viewChapter,
+            surface,
+            occurrence: nth,
+            paragraph,
+            before,
+          }),
+      );
+    if (!ownMeaning) recordWordTap(bookId, surface, false, {
+      bookTitle: book?.title,
+      form: countSurface(surface),
+      chapter: activeExtra ? 0 : safeIndex,
+      chapters: book?.chapters.length ?? 0,
+      catalogId,
+      occurrence: nth,
+      paragraph: Math.max(0, blockAt),
+      context,
+      sentence,
+      glossaryRev,
+    });
+    closeHelp();
+    setPhraseHit(null);
+    setPhrasePending(!activeExtra);
+    setAnchor(button instanceof HTMLElement ? button : null);
+    setPicked({
+      selectionId: ++selectionSequence.current,
+      targetMode: "phrase",
+      surface,
+      paragraph,
+      index: button.getAttribute("data-i") ?? "",
+      nth,
+      before,
+      block: Math.max(0, blockAt),
+    });
+    // One voice per tap. The card's own lookup (`findPhrase`) speaks later only when this list
+    // did not know the phrase, and it compares against `spoken.current` so nothing says it twice.
+    const saying = phraseNow ? phraseNow.key : resolveKey(surface) || surface;
+    spoken.current = saying;
+    speakEnglish(saying);
+  }
+
+  /** A hard word from the paragraph panel: find it in the paragraph and open its normal card. */
+  function pickFromParagraph(word: string) {
+    if (!help) return;
+    const el = paragraphElement(help.index);
+    if (!el) return;
+    const tokens = (word.match(new RegExp(TAP_WORD_PATTERN, "gu")) ?? []).map((t) =>
+      plainSurface(t),
+    );
+    if (tokens.length === 0) return;
+    const buttons = [...el.querySelectorAll<HTMLElement>("[role=button][data-word]")];
+    const same = (i: number) =>
+      tokens.every((t, k) => plainSurface(buttons[i + k]?.dataset.word ?? "") === t);
+    let at = -1;
+    for (let i = 0; i < buttons.length; i += 1) {
+      if (same(i)) {
+        at = i;
+        break;
+      }
+    }
+    if (at < 0) {
+      at = buttons.findIndex((b) => tokens.includes(plainSurface(b.dataset.word ?? "")));
+      if (at < 0) return;
+      pickButton(buttons[at] as Element);
+      return;
+    }
+    const group = buttons.slice(at, at + tokens.length);
+    const best =
+      group.find((b) => b.classList.contains("book-hard") || b.classList.contains("book-tricky")) ??
+      group.find((b) => b.classList.contains("book-phrase")) ??
+      [...group].sort((a, b) => (b.dataset.word?.length ?? 0) - (a.dataset.word?.length ?? 0))[0];
+    if (best) pickButton(best);
+  }
+
+  if (missing) {
+    return (
+      <MissingBook
+        book={
+          shelfBook ?? {
+            id: bookId,
+            title: "",
+            author: "",
+          }
+        }
+        onBack={onBack}
+        onAddEpub={onAddEpub}
+        onDiscover={onDiscover}
+      />
+    );
+  }
+
+  if (!book || !chapter || !phrasesReady) {
+    return (
+      <div className="mx-auto grid max-w-md justify-items-center gap-4 px-6 py-24" aria-busy="true">
+        <div className="size-8 animate-spin rounded-full border-2 border-line border-t-accent" />
+        <p className="text-muted">{t("reader.opening")}</p>
+      </div>
+    );
+  }
+
+  /** The example sentence written in the word list, when it is not the sentence that was tapped. */
+  function exampleOf(gloss: Gloss, sentence: string): string | undefined {
+    const raw = (gloss as Gloss & { example?: unknown }).example;
+    const example = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim() : "";
+    if (!example) return undefined;
+    const a = example.toLowerCase().replace(/[^a-z]+/g, "");
+    const b = sentence.toLowerCase().replace(/[^a-z]+/g, "");
+    return a && (b.includes(a) || a.includes(b)) ? undefined : example;
+  }
+
+  function cardFor(tap: NonNullable<typeof picked>): CardState {
+    const { surface, paragraph } = tap;
+    const key = resolveKey(surface);
+    const sentence = sentenceAround(paragraph, surface, tap.before.length);
+    const fullSentence = wholeSentence(paragraph, surface, tap.before.length);
+    const context = extractAnchorContext(paragraph, surface, tap.before.length);
+    const tapAt = {
+      chapter: viewChapter,
+      surface,
+      occurrence: tap.nth,
+      paragraph,
+      before: tap.before,
+    };
+    let gloss: Gloss | undefined = book?.glossary[key];
+    // A senseOnly entry says nothing about the places its senses do not name.
+    if (gloss && !entryAppliesAt(key, gloss, tapAt)) gloss = undefined;
+    if (gloss) {
+      // Which meaning fits this place in the book? (word list format version 2)
+      const choice = pickSense(key, gloss, tapAt);
+      return {
+        surface,
+        key,
+        pos: contextPos(surface, choice.pos),
+        meaning: choice.meaning,
+        whyHard: choice.whyHard,
+        here: choice.here,
+        ...(choice.credit ? { credit: choice.credit } : {}),
+        sentence,
+        fullSentence,
+        ready: true,
+        status: "ready",
+        others: choice.others,
+        coined: gloss.coined === true,
+        example: exampleOf(gloss, sentence),
+        senseIndex: choice.at,
+        context,
+        occurrence: tap.nth,
+        paragraph: tap.block,
+        chapter: viewChapter,
+        glossaryRev,
+      };
+    }
+    // Not in this book's word list: say so in a friendly way, the same for every such word (a
+    // common word is no exception). Nothing is looked up online.
+    return {
+      surface,
+      key,
+      pos: "",
+      meaning: "",
+      whyHard: "",
+      sentence,
+      fullSentence,
+      ready: false,
+      status: "unknown",
+      context,
+      occurrence: tap.nth,
+      paragraph: tap.block,
+      chapter: viewChapter,
+      glossaryRev,
+    };
+  }
+
+  const card = picked ? cardFor(picked) : null;
+  const shownPhrase = phraseHit && phraseHit.at === phraseAt ? phraseHit.hit : null;
+  const activePhrase = picked?.targetMode === "phrase" ? shownPhrase : null;
+  const saveAs = savedFromCard(
+    {
+      surface: picked?.surface ?? "",
+      key: pickedKey,
+      pos: card?.pos ?? "",
+      meaning: card?.meaning ?? "",
+    },
+    activePhrase
+      ? {
+          key: activePhrase.key,
+          matched: activePhrase.matched,
+          pos: activePhrase.entry.pos,
+          meaning: activePhrase.entry.meaning,
+        }
+      : null,
+  );
+  const alreadySaved = saveAs.lemma
+    ? savedKeys.has(saveAs.lemma.toLowerCase()) &&
+      (activePhrase != null || !(marked.sparse.has(pickedKey) && card?.status !== "ready"))
+    : false;
+  const noList = Object.keys(book.glossary).length === 0;
+  const fraction = overallProgress({
+    chapter: safeIndex,
+    chapters: book.chapters.length,
+    scroll: scrolled,
+    updatedAt: 1,
+  });
+  // The contents list: one row per chapter or extra page. The header dialog and the side list share it.
+  const contentsRows =
+              slots
+                ? slots.map((slot) => {
+                    if (slot.kind === "chapter") {
+                      return {
+                        key: `c${slot.index}`,
+                        mark: String(slot.index + 1),
+                        title: book.chapters[slot.index]?.title ?? "",
+                        active: !activeExtra && slot.index === safeIndex,
+                      };
+                    }
+                    const extra = book.extras?.[slot.index];
+                    return {
+                      key: `x${extra?.id ?? slot.index}`,
+                      mark: t("reader.extra"),
+                      title: extra?.title || t("reader.extra"),
+                      active: Boolean(extra && extra.id === activeExtra?.id),
+                    };
+                  })
+                : undefined;
+  const pickContentsRow = (key: string) => {
+              if (!slots) return;
+              const at = slots.findIndex((slot) =>
+                slot.kind === "chapter"
+                  ? key === `c${slot.index}`
+                  : key === `x${book.extras?.[slot.index]?.id ?? slot.index}`,
+              );
+              if (at >= 0) goSlot(at);
+            };
+  const style = readerVars(prefs) as React.CSSProperties;
+  const focus = prefs.focus;
+
+  const onReadingClick = (event: React.MouseEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest("nav, aside, [role='dialog'], [data-para-ui]")) return;
+
+    const button = target.closest("[role=button][data-word]");
+    const cardOpen = picked !== null || help !== null;
+    const selection = window.getSelection();
+    if (!cardOpen && selection && !selection.isCollapsed && selection.toString().trim().length > 1) return;
+
+    if (button || target.closest("article a")) event.preventDefault();
+    const action = readingPageTap({ phone: phoneSheet(), cardOpen, hitWord: Boolean(button) });
+    if (action === "close") {
+      if (cardOpen) {
+        closeWordCard(false);
+        closeHelp();
+      } else if (!button && !target.closest("a")) {
+        // A tap on the page itself (not a word) brings the bar back, or sends it away (ScrollChrome).
+        setBarHidden((hidden) => !hidden);
+      }
+      return;
+    }
+    if (button) pickButton(button as HTMLElement);
+  };
+
+  return (
+    <div style={style} className="min-h-dvh">
+      <header
+        ref={headerRef}
+        data-reader-bar={barHidden ? "hidden" : "shown"}
+        className={cn(
+          // Material (design system ScrollChrome): paper at 76% over the blurred page; the full-width
+          // reading progress line is the bar's lower edge. Stepping aside, the bar leaves that line in
+          // view (it moves up by its height less the line) and moves on the soft spring.
+          "chrome-bar reader-bar-move sticky top-0 z-30",
+          focus ? "-translate-y-full" : barHidden && "-translate-y-[calc(100%-2px)]",
+        )}
+      >
+        {/* Full width on purpose: tying this bar to --reader-width slides the text-width control while it is dragged. */}
+        <div className="mx-auto flex h-14 w-full items-center gap-1 px-2 sm:px-4">
+          <button
+            type="button"
+            className={btn.icon}
+            onClick={onBack}
+            aria-label={t("reader.backShelf")}
+          >
+            <ArrowLeft className="size-5" aria-hidden />
+          </button>
+          <ReaderContents
+            chapters={book.chapters}
+            current={safeIndex}
+            onPick={goChapter}
+            rows={contentsRows}
+            onPickRow={pickContentsRow}
+          />
+          <div className="min-w-0 flex-1 px-1 text-center leading-tight sm:px-2">
+            <p className="truncate font-display text-[0.95rem] font-semibold">{book.title}</p>
+            <p className="truncate text-xs text-faint" lang="en">
+              {activeExtra ? activeExtra.title || t("reader.extra") : chapter.title}
+            </p>
+          </div>
+          <ReaderSettings />
+          <SaveMenu
+            words={words.length}
+            quotes={quoteCount}
+            picking={picking}
+            canPick={viewChapter >= 0 && Boolean(shelfBook)}
+            onWords={onNotebook}
+            onQuotes={onQuotes}
+            onPick={() => {
+              if (picking) {
+                setPicking(false);
+                return;
+              }
+              closeWordCard(false);
+              closeHelp();
+              window.getSelection()?.removeAllRanges();
+              setPicking(true);
+            }}
+          />
+        </div>
+        <ProgressBar value={fraction} className="h-0.5 rounded-none" label={t("reader.progress")} />
+      </header>
+
+      {focus ? (
+        <button
+          type="button"
+          onClick={() => prefs.set({ focus: false })}
+          className="fixed top-3 right-3 z-30 inline-flex min-h-10 items-center gap-1.5 rounded border border-line bg-card/90 px-3 text-xs font-semibold text-muted opacity-60 shadow-sm transition-opacity hover:opacity-100 focus-visible:opacity-100"
+        >
+          <Focus className="size-3.5" aria-hidden />
+          {t("reader.exitFocus")}
+        </button>
+      ) : null}
+
+      {hover ? (
+        <p
+          role="tooltip"
+          data-word-hover={hover.word}
+          className="pointer-events-none fixed z-40 max-w-[min(22rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-full rounded-lg border border-float-edge bg-float px-3 py-1.5 text-sm leading-snug text-ink shadow-lift "
+          style={{ left: Math.min(Math.max(hover.left, 180), window.innerWidth - 180), top: hover.top - 8 }}
+          lang="en"
+        >
+          <span className="font-semibold">{hover.word}</span> · {hover.meaning}
+        </p>
+      ) : null}
+
+      {probe ? (
+        <p
+          data-paging-probe
+          className="pointer-events-none fixed bottom-2 left-2 z-40 max-w-[calc(100vw-1rem)] rounded border border-line bg-card px-2 py-1 font-mono text-[11px] leading-snug text-ink"
+        >
+          {t("reader.probe", {
+            key: probeKey || t("reader.probeNone"),
+            step: pageStep(),
+            visible: `${Math.round(
+              Math.min(window.innerHeight, window.visualViewport?.height ?? window.innerHeight) -
+                (focus ? 0 : topBarHeight(headerRef.current)),
+            )} (${window.innerHeight}/${Math.round(window.visualViewport?.height ?? 0)})`,
+            moved: probeMove ? Math.round(probeMove.end - probeMove.start) : 0,
+            fix: probeMove?.to != null ? t("reader.probeFix", { to: Math.round(probeMove.to) }) : "",
+          })}
+        </p>
+      ) : null}
+
+      <main
+        className={cn("px-5 pt-8 pb-12 sm:px-8 sm:pt-12", READER_GUTTER)}
+        onClick={onReadingClick}
+      >
+        {linkedHtml ? (
+          <article
+            ref={articleRef}
+            className="book-body"
+            lang="en"
+            data-segmentation={book.segmentation === 2 ? "2" : undefined}
+            data-word-hints={prefs.wordHints}
+            data-quiet-marks={prefs.quietMarks ? "" : undefined}
+            dangerouslySetInnerHTML={{ __html: linkedHtml }}
+          />
+        ) : activeExtra ? (
+          <article ref={articleRef} className="book-body" lang="en" data-reader-paragraphs>
+            {activeExtra.title ? <h2 data-merge-title="1">{activeExtra.title}</h2> : null}
+            {activeExtra.paragraphs.map((paragraph, index) => (
+              <p key={index}>{paragraph}</p>
+            ))}
+          </article>
+        ) : (
+          <article ref={articleRef} className="book-body" lang="en" data-reader-paragraphs>
+            <h2 data-merge-title="1">{chapter.title}</h2>
+            {chapter.paragraphs.map((paragraph, index) => (
+              <p key={index}>{paragraph}</p>
+            ))}
+          </article>
+        )}
+
+        <PassageFeedback
+          rootRef={articleRef}
+          bookId={bookId}
+          bookTitle={book?.title}
+          chapter={viewChapter}
+          chapters={book?.chapters.length ?? 0}
+          catalogId={catalogId}
+          glossaryRev={glossaryRev}
+          // Not in an extra (it has no fixed chapter number), over an open card, or in pick mode.
+          enabled={viewChapter >= 0 && picked === null && help === null && !picking}
+          onQuote={shelfBook ? (span) => quoteTools.current?.keep([span]) : undefined}
+          onCopied={() => quoteTools.current?.note(t("quote.copied"))}
+        />
+
+        <QuoteTools
+          ref={quoteTools}
+          rootRef={articleRef}
+          pageKey={chapterKey}
+          layoutKey={`${prefs.font}|${prefs.size}|${prefs.leading}|${prefs.width}|${prefs.column}`}
+          book={shelfBook ? { key: bookKey, title: shelfBook.title, author: shelfBook.author } : null}
+          chapter={viewChapter}
+          chapterTitle={chapter?.title ?? ""}
+          picking={picking}
+          onPickingChange={setPicking}
+        />
+
+        <nav
+          aria-label={t("reader.nav")}
+          className="mx-auto mt-12 grid w-full min-w-0 max-w-[var(--reader-width,40rem)] gap-3 border-t border-line pt-6"
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              className={cn(btn.quiet, "min-w-0 flex-1 break-words")}
+              disabled={slots ? slotIndex <= 0 : safeIndex <= 0}
+              onClick={() => (slots ? goSlot(slotIndex - 1) : goChapter(safeIndex - 1))}
+            >
+              <ChevronLeft className="size-4" aria-hidden />
+              {t("reader.prev")}
+            </button>
+            <button
+              type="button"
+              className={cn(btn.primary, "min-w-0 flex-1 break-words")}
+              disabled={
+                slots ? slotIndex >= slots.length - 1 : safeIndex >= book.chapters.length - 1
+              }
+              onClick={() => (slots ? goSlot(slotIndex + 1) : goChapter(safeIndex + 1))}
+            >
+              {t("reader.next")}
+              <ChevronRight className="size-4" aria-hidden />
+            </button>
+          </div>
+          <p className="text-center text-xs tabular-nums text-muted">
+            {activeExtra
+              ? t("reader.extraOf", { pct: Math.round(fraction * 100) })
+              : t("reader.chapterOf", {
+                  n: safeIndex + 1,
+                  total: book.chapters.length,
+                  pct: Math.round(fraction * 100),
+                })}
+          </p>
+          {/* After the last chapter: the reader's own "finished" mark (finish-book.tsx). */}
+          {(slots ? slotIndex >= slots.length - 1 : safeIndex >= book.chapters.length - 1) ? (
+            <FinishBook bookId={bookId} />
+          ) : null}
+        </nav>
+      </main>
+
+
+      {linkedHtml ? (
+        <ParagraphMarks
+          articleRef={articleRef}
+          version={linkedHtml}
+          bookId={bookId}
+          chapter={activeExtra ? activeExtra.id : safeIndex}
+          notesVersion={book?.glossary}
+          activeIndex={help ? help.index : null}
+          onOpen={openHelp}
+        />
+      ) : null}
+
+      {help ? (
+        <ParagraphPanel
+          key={help.index}
+          state={helpState}
+          anchor={anchor}
+          paragraphEl={paragraphElement(help.index)}
+          startSentence={help.sentence}
+          onRevealSentence={revealAboveSheet}
+          onClose={closeHelp}
+          onWord={pickFromParagraph}
+        />
+      ) : null}
+
+      {card ? (
+        <WordCard
+          state={card}
+          saved={!phrasePending && alreadySaved}
+          phrase={shownPhrase}
+          selectionId={picked?.selectionId ?? 0}
+          targetMode={activePhrase ? "phrase" : "word"}
+          phrasePending={phrasePending}
+          onTargetChange={(targetMode) => {
+            const selectionId = picked?.selectionId;
+            setPicked((current) => current && current.selectionId === selectionId
+              ? { ...current, targetMode }
+              : current);
+          }}
+          canSave={!phrasePending && (card.ready || activePhrase != null)}
+          bookId={bookId}
+          bookTitle={book?.title}
+          noList={noList}
+          chapter={viewChapter}
+          chapters={book?.chapters.length ?? 0}
+          catalogId={catalogId}
+          noteChapter={activeExtra?.fromToc ? activeExtra.id : viewChapter}
+          // The sentence hint opens the same panel as the ✦ of the tapped paragraph.
+          onSentenceHelp={
+            picked ? () => openHelp(picked.block, card.fullSentence || card.sentence) : undefined
+          }
+          anchor={anchor}
+          onClose={closeWordCard}
+          onToggle={() => {
+            if (!picked || !shelfBook || phrasePending) return;
+            if (!activePhrase && !card.ready) return;
+            if (alreadySaved) {
+              removeWordFromBook(bookKey, saveAs.lemma);
+              return;
+            }
+            const listId = book?.bundled || listSource;
+            const gloss =
+              book?.glossary[saveAs.lemma] ?? book?.glossary[saveAs.lemma.toLowerCase()];
+            const ref = activePhrase
+              ? phrasePoint(listId)
+              : gloss
+                ? pointFromEntry(listId, saveAs.lemma, gloss, {
+                    chapter: viewChapter,
+                    surface: picked.surface,
+                    occurrence: picked.nth,
+                    paragraph: picked.paragraph,
+                    before: picked.before,
+                  })
+                : undefined;
+            const sentence = card.fullSentence || card.sentence;
+            const source: WordSource = ref
+              ? {
+                  book: bookKey,
+                  title: shelfBook.title,
+                  author: shelfBook.author,
+                  chapter: ref.chapter ?? safeIndex,
+                  ...(chapter.title ? { chapterTitle: chapter.title } : {}),
+                  sentence,
+                  surface: saveAs.surface,
+                  savedAt: Date.now(),
+                  ref,
+                  ...(saveAs.pos ? { pos: saveAs.pos } : {}),
+                }
+              : {
+                  book: bookKey,
+                  title: shelfBook.title,
+                  author: shelfBook.author,
+                  chapter: safeIndex,
+                  ...(chapter.title ? { chapterTitle: chapter.title } : {}),
+                  sentence,
+                  surface: saveAs.surface,
+                  savedAt: Date.now(),
+                  ...(saveAs.pos ? { pos: saveAs.pos } : {}),
+                };
+            saveWord(
+              {
+                surface: saveAs.surface,
+                lemma: saveAs.lemma,
+                pos: saveAs.pos,
+                meaning: ref ? "" : saveAs.meaning,
+                whyHard: "",
+                recommend: !isEasyKey(saveAs.lemma),
+                sentence,
+              },
+              source,
+            );
+            // The heart bumps, the word gets its highlighter, and "+1" flies to the notebook icon.
+            celebrateSave({
+              heart: document.querySelector("[data-word-card] [data-word-save]"),
+              word: anchor,
+              notebook: document.querySelector("[data-reader-notebook]"),
+            });
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}

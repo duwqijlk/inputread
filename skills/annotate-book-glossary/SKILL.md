@@ -1,0 +1,195 @@
+---
+name: annotate-book-glossary
+description: Build a Margin Words word list (glossary format v2) for an EPUB book. Extracts the chapter text with the app's own numbering, picks hard words for a chosen reading level, writes context-based meanings (senses) with chapter/occurrence/context anchors, validates the JSON against the book, and publishes that one list to Discover in its category. Use when the user wants a custom glossary, word list, or per-chapter word meanings for an English book.
+---
+
+# Annotate a book with a v2 glossary
+
+You make a word list for **one EPUB book** for the Margin Words reader. The reader shows a
+meaning when the learner taps a word. The same word can mean different things in different
+places, so you write **senses** and tie each one to places in the book (**anchors**).
+
+Spec: `docs/GLOSSARY_FORMAT.md` · Schema: `docs/glossary.schema.json` · Example: `docs/glossary.example.json`.
+Run all commands in the reader project folder (run `npm install` there once).
+Short all-in-one spec for any AI agent: `docs/book-pack-spec.md` (shipped in `book-pack-kit.zip`). Worked example: `examples/sample-book/`.
+
+## Parameters (ask the user; use the default if they do not care)
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `epub` | (required) | Path to the book file. |
+| `target_level` | First year of Chinese junior high (about 12) | Reader's level. Use the tests in `skills/make-glossary/SKILL.md`. Do not use "skip the 2000 most common words" as the line. |
+| `definition_language` | English | Language of `meaning`. The app is English-only, so prefer simple English. If the user wants another language, write it, but tell the user the app shows a small notice. |
+| `definition_style` | Short, one idea, words below the target level | How to write meanings. |
+| `max_words` | 200 | How many entries at most. |
+| `output` | `<book>.glossary.json` | Where to save the file. |
+
+## Steps
+
+### 1. Get the book text, numbered like the app
+
+```
+node scripts/extract-epub-text.mjs book.epub                    # list chapters (0-based), word counts, sha256, title
+node scripts/extract-epub-text.mjs book.epub --out work/text    # work/text/ch000.txt, ch001.txt ... + book.json
+```
+
+The tool runs the app's own EPUB code, so **chapter numbers match the app**. Do not count
+chapters yourself from the EPUB files. Note `title`, `author`, `sha256` and the number of
+chapters from the summary.
+
+### 2. Choose the hard words
+
+- Read the chapters (or sample them if the book is long). Optionally get frequent candidates the app would
+  pick: `node scripts/extract-epub-text.mjs book.epub --candidates 300`.
+- Keep a word when any test in `skills/make-glossary/SKILL.md` is yes (wrong twin, old thing, old label, not the school meaning, or an unclear personal name). If you are not sure they know it, keep it. `coast` is the land beside the sea; a first-year book often has `sea` and not `coast`, and the textbook meaning still fits, so the entry is ordinary, not `senseOnly`. Before you leave a familiar word out, put each textbook meaning of that spelling into the sentence. Leave it out only when the sentence still reports the same event. When the sentence stops reporting that event, keep that place only (`senseOnly`, `trickyMeaning`, `whyHard` starting `Not the usual meaning!`). Also notice the job. A textbook may teach the spelling only as a person, a thing, or one action. A person-word used as an action, or an action-word used as a person or a thing, fails the test. `nurse` as a person who looks after sick people does not fit `a nice soft thing to nurse` or `you may nurse it a bit` (hold a baby or a soft animal). `Coming in a minute, nurse!` is that person, so it stays plain. A past shape, or a piece split by a hyphen, can be the other word: `he bit a large piece` is the past of bite, `the very middle` is exactly this one, `hardly enough` is almost not, `By-the-bye` is by the way, and `the rest waited` is the other people. Mark only those places. A meaning taken from one line stays on those lines. `minded their own business` does not become the entry for every `mind`. `lasted` is the verb "continued"; `at last` is a phrase. List a form only when that spelling has the same meaning. `burning with curiosity` does not belong on the fire entry. A familiar object is still an Old thing when the sentence uses an old way that object used to move or fit together. The textbook still names the thing, so the school-meaning test does not fire by itself. `telescope` in `shut up like a telescope` is a tube you look through, but in that book the tube is made of parts that slide shorter or longer. A telescope now changes the picture with a lens, and `shut up` in a textbook means be quiet, so those two meanings do not give "become small by folding in." Say that one fact on the object. Do not add who made it or the year. `opening out like the largest telescope` is the same tube pulled longer. Mark every use when the book only has that old way; mark only those places (`senseOnly`) when it also names the modern object. Also leave out a place name used as a label, a personal name the sentence already calls a name, and words the book itself explains. A word that appears once, including inside a letter or a label, still counts. Every word you put in a paragraph note's `hardWords` gets its own entry, unless that sentence explains it. `max_words` is only a safety stop for a huge book, not a reason to drop `hearthrug` or `struck`.
+- Use **lower-case** entries. The key is the word as the reader can tap it: nouns in the singular
+  (`monkey`, the app maps `monkeys` to it), but a verb form that is not mapped by plural rules is its own key
+  (`cried`, `shrinks` -> `shrink` only when it ends in a plural-like -s: check with `--find`). For other
+  shapes, list them in `"forms"`. The key must be letters only (an apostrophe or hyphen inside is allowed).
+
+### 3. Find where each word is used
+
+For each chosen word:
+
+```
+node scripts/extract-epub-text.mjs book.epub --find stuck
+```
+
+It prints every use: `chapter N, occurrence M: ...text around the word...`. These numbers are exactly
+what an anchor needs. `--json` gives the same as data.
+
+- If the word means the **same thing everywhere**: write only `pos`, `meaning`, `whyHard`. No senses needed. "Everywhere" means you read every use from `--find`. One line that fits is not enough.
+- If it has **two or more meanings in this book** (for example `sight` = "something you see" vs. "catch sight of" vs.
+  "out of sight"), write one **sense** per meaning, with anchors at the places where that meaning is used.
+  Read the sentence around each use before you decide. Do not invent senses a learner will not meet in this book.
+- After you choose a sense, anchor every place that uses it. One anchor does not cover the next place. The second `cross-examine` is still the questioning. Search again for the same neighbouring words. `with an important air` and `with a melancholy air` are one sense. `all her fancy` and `all his fancy` are one sense. A helper word can change job. `does` in `It does the boots and shoes` means the fish cleans the shoes. It is not the helper in `she does not`. Mark only those places. When a speaker uses a word because it sounds like another word, the card names that other word. `Mystery` there is the school subject history. `A knot!` is Alice hearing `not`. `axes` sounds like `axis`. `Soles and eels` sounds like the bottoms and the heels. A paragraph note does not replace the card. A line about one use stays off the base key when another use is a different job: `murdering the time` is singing out of time, and `dipped suddenly down` is not `dipped it into his tea`. A hyphen splits the tap, so `sweet-tempered` and `hot-tempered` are two meanings of `tempered`.
+
+### 4. Write the JSON (format v2)
+
+```json
+{
+  "version": 2,
+  "title": "<from step 1>", "author": "<from step 1>", "sha256": "<from step 1>",
+  "chapters": 29,
+  "level": "CEFR B1, simple English meanings",
+  "glossary": {
+    "stuck": {
+      "pos": "past-tense verb",
+      "meaning": "Joined firmly to something, with glue or a pin, so that it stays there.",
+      "whyHard": "This word has more than one meaning.",
+      "senses": [
+        { "pos": "past-tense verb", "meaning": "Joined firmly to something, with glue or a pin, so that it stays there.",
+          "default": true,
+          "anchors": [ { "chapter": 14, "occurrence": 1, "context": "The moment they landed on a branch, their feet stuck and that was that" } ] },
+        { "pos": "adjective", "meaning": "Not able to move or to get away.",
+          "anchors": [ { "chapter": 28, "occurrence": 2, "context": "Now we’ll never get free! We’re stuck here for ever!" } ] }
+      ]
+    }
+  }
+}
+```
+
+Rules to follow:
+
+- Only `meaning` is required (on the entry, or on each sense). `pos`, `whyHard`, `forms`, `default` are optional.
+- **`context` is the most important part.** Copy 6 to 12 words **exactly** from one paragraph (they may
+  contain curly quotes). It must contain the word. The app and the validator ignore the difference between curly and
+  straight quotes, spaces and capitals. Do not paraphrase. Do not cross a paragraph break.
+- `chapter` and `occurrence` come **only** from `--find` output (never from guessing). `occurrence` counts the
+  exact spelling (`stuck` is counted apart from `sticks`); if the entry key is not the spelling in the book, add
+  `"form": "<spelling>"` to the anchor. Always give `chapter`, `occurrence` **and** `context` together.
+- Anchor each sense in the places you read, not every place. Mark the most common meaning `"default": true`
+  so the places you did not anchor still get a sensible meaning.
+- One place may point to only one sense. At most one `default` per word.
+- Meanings: write at or below `target_level`, in `definition_language`, one idea, up to about 25 words,
+  and do not use the word itself to explain it. Explain how the word is used **in this book**.
+- Add `"chapters": <count from step 1>` so a different edition of the book falls back to `context` only.
+
+### 5. Validate (do not skip)
+
+```
+node scripts/validate-glossary.mjs book.epub book.glossary.json
+```
+
+Exit code 0 means every chapter, occurrence and context was found in the book. If it prints problems, fix each one
+(the message names the word and the anchor) and run it again until it says `OK`. If an occurrence is wrong, run
+`--find` again. If a context is not found, copy it again from the text. Do not delete an anchor just to get a pass
+unless the sense really has no clear place in the book. Warnings are not errors but read them.
+
+### 5b. Optional: paragraphs, sentences, phrases, coined words
+
+Add these only when the user asks for paragraph help, sentence help, phrases or invented words. They are optional top-level
+parts of the same file (spec: `docs/GLOSSARY_FORMAT.md` section 7). Files without them stay valid.
+
+**Get the numbers from the tool, never by guessing.**
+
+```
+node scripts/extract-epub-text.mjs book.epub --paragraphs 3            # chapter 3, every paragraph as [0] [1] [2] ...
+node scripts/extract-epub-text.mjs book.epub --paragraph-search "words from the text"   # chapter + paragraph that hold them
+```
+
+The `paragraph` index is 0-based, counted as the reader counts it (the chapter heading is paragraph 0 when it is in the chapter).
+
+**`paragraphs`** (help for hard, important paragraphs; for example 1 in 10, not all):
+
+```json
+{ "chapter": 1, "paragraph": 2, "context": "6 to 14 words copied exactly from that paragraph",
+  "mainIdea": "One or two short sentences.", "simple": "The whole paragraph in very common words.",
+  "hardWords": ["hard word or phrase from the ORIGINAL paragraph"] }
+```
+
+**`sentences`** (one tricky sentence each): `{ "chapter": 11, "context": "6 to 14 words copied exactly from the sentence", "simple": "..." }`, plus `"grammar": "ONE line: the tricky grammar and what it means."` only when the grammar is the hard part (optional).
+
+**`phrases`** (phrasal verbs and idioms that appear in the book): key = base form in lower case, `{ "meaning": "...", "pos": "phrasal verb" | "idiom" | "phrase", "forms": ["gave up"], "example": "a sentence from the book" }`.
+These are not slang. Before you leave neighbouring words out, put the textbook meaning of each word into the sentence, in order. The sentence still reports the same event: leave them out (`Come up again` is still "move to a higher place"). The sentence stops: write one phrase for the whole unit (`next to no` is almost none, not "beside no"; `make up one's mind` is to decide, not "build a mind higher"; `come to a conclusion` is to decide after thinking, and `general` there means the decision covers many places, not "what everyone already knows"). List a longer book shape in `forms` (`come to the general conclusion`). Do not define the noun with that same verb phrase. Do not shorten the key to a piece that is ordinary elsewhere (`next to the door`, `made up the story` stay plain). `shut up like a telescope` is not "be quiet, like a telescope." The object entry says how the old tube moved (parts that slide shorter or longer). The phrase is the wish to fold smaller that way. Keep the long key when this book also uses `shut up` to mean be quiet, so the quiet places stay plain. A book whose only `shut up` is this motion may use the key `shut up`. `opening out like a telescope` stays on the object entry. A paragraph note does not replace it. The same test writes `at last` (finally; the verb "continued" is the key `lasted`), `hold your tongue` (stop talking), `a narrow escape` (only just got away), `never mind` (it does not matter), and `at the end of the day` (in the end, after you think about all of it; not the end of the clock day, and not "when you look at what really matters"). Write only phrases the book really uses. The reader knows simple forms (gave, giving, gives) and phrasal verbs split by up to 3 words, so you only list odd forms. The reader draws a dotted line under the phrase's own words. Do not add a word entry only to force that line. `tuning in` is the phrase `tune in`, not a word `tuning`.
+
+**Coined words**: add `"coined": true` to the entry of a word the **author invented** (`snozzcumber`). Not for real rare words or funny spellings.
+
+**Writing rules** (all of these fields):
+
+- English only. Use very common words (the 2000 most common words; `src/lib/basic-words-data.ts`). Short sentences.
+- Write each meaning the way a learner dictionary does. Longman is the model: one everyday idea, the sense this sentence uses. If it gives two senses, use the one this sentence needs. Read it against that sentence. A 12-year-old should be able to say what the word does there. `respectable` in `one respectable person` is good enough, or big enough, to count as a real one, not "fit to be seen." `left` in `enough of me left` is the part that remains. Say what remains. "Still there" alone sounds like a place. `Keep your temper` is stay calm. `a wink of sleep` is any sleep at all. `boxed the Queen's ears` is a hit on the side of the head. A meaning taken from one line stays on those lines, and `forms` lists a spelling only when it has that same meaning.
+- A close meaning is still wrong when the reader can turn it around. Put the meaning in place of the word and read the sentence. It must report the same event, with the same sides. If the meaning has two sides, swap them. The swapped sentence must now be false for this line. If the swap still sounds right, the card did not say which side fails. `unless` in `none of it will matter unless you do your part` means the first thing happens if the second thing does not. Longman says something will happen or be true if something else does not happen or is not true. The card is `If that does not happen.` Put back: none of it will matter if that does not happen. The swap, if that does happen, is false here. `If not. The other thing happens only when this is true` fails. A reader can take it as: doing your part happens only when nothing matters. `at the end of the day` means `In the end, after you think about all of it.` It is not the end of the clock day, and it is not `when you look at what really matters.` Choosing which words to mark stays the tests in `skills/make-glossary/SKILL.md`. This test is only about the words on the card.
+- Write two layers. Do not stop at a short restatement. When you can, look the word up at `https://api.pearson.com/v2/dictionaries/ldoce5/entries?headword=` plus the word. That file is Longman. Pick the one sense that fits this sentence. Do not copy their definition or their example. `meaning` is that sense in your own words, one plain idea. `here` puts that same sense into this sentence. One or two sentences. It says what happens in this line. The card shows the book's own sentence under `here`. That sentence is the example. Do not invent another sentence. Set `example` only for a second sentence copied from this book, and only when it is not the line just tapped. A card with no `here` is not finished. `unless` has `meaning` `If that does not happen.` and `here` `None of it will matter if you do not do your part.` `at the end of the day` has `meaning` `In the end, after you think about all of it.` and `here` says what this line decides after everything is considered. If the lookup does not answer, still write both layers. A phrase uses the same two fields.
+- Only restate the original. Add no new facts, no opinions, no guesses. Do not explain more than the text says. Two short facts may sit outside the sentence: a size in centimetres or litres, and how a familiar object used to move when an Old thing comparison needs that motion. Do not add who made it, the year, or any other history.
+- Keep names and key plot words unchanged (`Willy Wonka`, `Oompa-Loompa`), even when they are not common words.
+- `context` must be copied exactly (quotes, dashes, capitals and spaces do not matter). It must sit inside ONE paragraph, and for a paragraph note inside the paragraph with that number.
+- Do not put more than a short snippet of the book in any field except `context`.
+
+The validator (step 5) checks that every `context` is in the right paragraph or chapter (errors), and that `simple`, `mainIdea`,
+`grammar` and phrase `meaning` use only common words (warnings that name the words: rewrite those parts with easier words, or leave a name or key word as it is).
+
+### 6. Hand off the validated list
+
+The app has no zip import and no file import. After the validator says OK, hand the list to the current upload
+workflow in [docs/BOOK_UPLOAD.md](../../docs/BOOK_UPLOAD.md). Do not put it in `packs/`, `public-books/`, or any
+other frozen snapshot. Do not commit book content and do not open a book-content pull request.
+
+1. Keep the validated `glossary.json` in a separate working folder. Keep the title, author, EPUB hash, chapter
+   count, and category metadata from the extraction and validation steps. Do not copy the list into the repository.
+2. Follow [docs/BOOK_UPLOAD.md](../../docs/BOOK_UPLOAD.md) for the live catalog row, R2 keys, cover, and series
+   fields. It owns those row and file steps. Use the live catalog and preserve other rows and live patrol edits.
+3. If this is a reader-driven correction to a list already online, stop and use
+   [docs/GLOSSARY_PATROL.md](../../docs/GLOSSARY_PATROL.md) instead. The patrol owns editorial fixes, credits, and
+   resolving reader reports; it uses the Cloudflare API rather than the old local publishing scripts.
+4. Read [docs/BOOK_BLURBS.md](../../docs/BOOK_BLURBS.md) only when a separate bilingual Discover summary was
+   requested. It owns summary text and its upload.
+
+Report the list's title, category, word count, multi-sense count, target level, validator result, and whether a
+matching legal EPUB was available. The upload guide owns the live handoff; this skill does not prescribe a
+catalog-first command, a pack commit, or a retired publish recipe.
+
+## Quality checklist
+
+- [ ] JSON is valid; `version` is 2; `validate-glossary.mjs` with the EPUB says OK.
+- [ ] Every familiar word was tried with its textbook meaning in the sentence, including a change of job (a person-word used as an action, or an action-word used as a person or a thing), a past shape that is another word (`bit`, `rose`), and a piece split by a hyphen (`by-the-bye`, `sweet-tempered`). A sentence that stops reporting the same event is marked at that place only. The place where the textbook job still fits stays plain.
+- [ ] A meaning taken from one line is not the card for every other use of that spelling. `forms` lists a spelling only when it has that same meaning. Every place of a sense is anchored, not only the first. The card for that sentence says what the word does there. Put each meaning back into its sentence. The event and the two sides stay the same. A swap of those sides is false for this line. `meaning` is the plain sense. `here` says what that sense does in this sentence. The book's sentence is the example.
+- [ ] Neighbouring words were tried the same way. A group whose textbook meanings stop the sentence is one phrase for the whole unit, not slang, and the key is not shortened to an ordinary piece.
+- [ ] A familiar object used for an old way it moved (a tube of parts that slide, as in `shut up like a telescope`) is an Old thing entry with that one fact. The comparison is a phrase for that motion only. A place where the short words mean something else (`shut up` = be quiet) stays plain.
+- [ ] Every `hardWords` item has a glossary entry, unless that sentence explains the word.
+- [ ] Every multi-sense word has real, different meanings seen in the book, and a `default`.
+- [ ] No meaning uses a word harder than `target_level`.
+- [ ] No copied book passages longer than a short context snippet in any field.
+- [ ] If you added paragraphs, sentences or phrases: the validator says OK with the EPUB, and its word warnings are fixed or are only names or key words.
+- [ ] `coined: true` only on words the author invented.
+- [ ] Title/author match the book; `chapters` and `sha256` come from the tool, not from memory.

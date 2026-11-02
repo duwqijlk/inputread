@@ -1,0 +1,49 @@
+# dependencies and build output
+node_modules/
+dist/
+dist-books/
+dist-private/
+dist-functions/
+site/
+.vite/
+.node_modules.lock
+*.log
+.DS_Store
+.vercel/
+.wrangler/
+.output/
+.nitro/
+
+# Regenerable zips: `node scripts/build-packs.mjs --out public-books` rebuilds them
+# from book.epub + glossary.json.
+public-books/*.zip
+
+# Word-list data must never be in git. `packs/` carried 96 frozen glossary.json - part of the paid
+# library, including copyrighted titles - in a PUBLIC repository from the first commit until here.
+# The live R2 bucket is the only source of a word list; see docs/MAINTENANCE.md.
+packs/
+
+# Book files are not stored in git. Copyrighted EPUBs belong in the private R2 bucket
+# margin-words-private. Public-domain EPUBs belong on the books host. The sample EPUB
+# under examples/ is this project's own text and stays in git.
+*.epub
+!examples/sample-book/the-lantern-seller.epub
+
+# Redundant per-book pack zips in the classics sources (rebuild: node scripts/make-pack.mjs book.epub glossary.json out.pack.zip)
+classics/**/*.pack.zip
+
+# Layout-shift test output
+layout-shift-out/
+
+# Python build junk from the book-prep scripts under classics/*/work
+__pycache__/
+*.pyc
+
+# Local pronunciation research and opt-in preview data (never published)
+local-exports/
+
+# Local secrets. .env.production holds only the public Turnstile site key.
+.env
+.env.local
+.env.*.local
+.dev.vars

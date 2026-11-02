@@ -1,0 +1,46 @@
+# Cloudflare Pages.
+#
+# Only /api/* starts a Function (see _routes.json). A file that exists is served as that file, so
+# /assets/* goes straight from the CDN: no Function call, no CPU budget, no request against the
+# daily limit. It used to be a catch-all Function just to stop a missing script from becoming the
+# app page, and that cost one Function invocation per script, stylesheet and chunk on every visit.
+#
+# The app's addresses are listed one by one rather than with `/*` for the same reason: a
+# catch-all also catches a missing /assets/<hash>.js, answers with index.html and status 200, and
+# /assets is cached for a year - the browser then keeps a page where a script should be and every
+# refresh is blank. An address that is not listed here is an honest 404.
+#
+# A new screen needs a line here as well as a case in src/lib/router.ts;
+# scripts/deploy-files.test.mjs fails when the two disagree.
+#
+# Rewrite to `/`, never to `/index.html`. Pages turns /index.html into / (pretty URLs), sees a loop
+# and silently IGNORES such a rule. Until 404.html existed that went unnoticed: with no top-level
+# 404.html, Pages answers every miss with the app page, so the screens opened anyway, and so did a
+# missing /assets/<hash>.js (status 200, cached for a year). public/404.html ends that fallback,
+# so these rules must really work. `/` itself needs no rule: it is index.html.
+/guide/book-pack-kit.zip /kit/book-pack-kit.zip 301
+/shelf /shelf/ 302
+/shelf/ / 200
+/add /discover/ 302
+/add/ / 200
+/discover /discover/ 302
+# /discover/, /discover/novels/, /discover/speeches/ and /book/<id>/ have no rewrite: the build writes
+# a page for each (scripts/seo-pages.mjs), and Pages applies a rule here even when a file exists, so a
+# rewrite would hide that page and its link preview.
+/dashboard /dashboard/ 302
+/dashboard/ / 200
+/admin /admin/ 302
+/admin/ / 200
+/guide /shelf/ 301
+/guide/ /shelf/ 301
+/about /shelf/ 301
+/about/ /shelf/ 301
+/thanks /dashboard/ 302
+/thanks/ / 200
+/words /words/ 302
+/words/ / 200
+/words/* / 200
+/review /review/ 302
+/review/ / 200
+/review/* / 200
+/read/* / 200
