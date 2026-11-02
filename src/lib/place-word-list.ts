@@ -8,6 +8,7 @@
  */
 import { listBookSummaries, listPackRecords, loadCover, saveCover, savePackRecord } from "@/lib/book-db";
 import { fetchCoverData } from "@/lib/covers";
+import { refundGlossaryPlace } from "@/lib/glossary-fetch";
 import { fetchWordList } from "@/lib/pair-epub";
 import { resolveAgainst } from "@/lib/packs";
 import { findOnShelf } from "@/lib/shelf-identity";
@@ -76,21 +77,31 @@ async function place(pack: WordListPack): Promise<string> {
     return card;
   }
 
-  await fetchWordList(pack);
-  const bookId = crypto.randomUUID();
-  addBook(pack.title, pack.author, "notes", bookId);
-  setBookDetails([{ id: bookId, ...details(pack, true) }]);
-  await savePackRecord({
-    packId: pack.id,
-    bookId,
-    rev: pack.glossary.sha256.slice(0, 12),
-    sha256: "",
-    installedAt: Date.now(),
-  });
-  await fillCover(bookId, pack).catch(() => undefined);
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("cibian-covers"));
-    window.dispatchEvent(new CustomEvent("cibian-progress", { detail: { bookId } }));
+  // The server takes the weekly place when it serves the list, before this card exists.
+  // If the card cannot be written, give the place back: otherwise the reader has a count
+  // used and no book on the shelf.
+  let onShelf = false;
+  try {
+    await fetchWordList(pack);
+    const bookId = crypto.randomUUID();
+    addBook(pack.title, pack.author, "notes", bookId);
+    onShelf = true;
+    setBookDetails([{ id: bookId, ...details(pack, true) }]);
+    await savePackRecord({
+      packId: pack.id,
+      bookId,
+      rev: pack.glossary.sha256.slice(0, 12),
+      sha256: "",
+      installedAt: Date.now(),
+    });
+    await fillCover(bookId, pack).catch(() => undefined);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("cibian-covers"));
+      window.dispatchEvent(new CustomEvent("cibian-progress", { detail: { bookId } }));
+    }
+    return bookId;
+  } catch (reason) {
+    if (!onShelf) void refundGlossaryPlace(pack.id);
+    throw reason;
   }
-  return bookId;
 }

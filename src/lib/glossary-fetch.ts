@@ -64,3 +64,27 @@ async function fetchProtectedGlossaryNow(bookId: string, fallback: string, signa
   if (code === "email-unverified") throw new Error(tr("err.emailUnverified"));
   throw new Error(fallback);
 }
+
+/**
+ * Give back a weekly place taken moments ago, when the list downloaded but the book never
+ * reached the shelf. Best effort: offline the place stays, and the next try at this same book
+ * is free anyway. The server ignores a place older than its short refund window.
+ */
+export async function refundGlossaryPlace(bookId: string): Promise<void> {
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), 8000);
+  try {
+    await fetch(`/api/glossary/${encodeURIComponent(bookId)}`, {
+      method: "DELETE",
+      credentials: "same-origin",
+      cache: "no-store",
+      keepalive: true,
+      signal: stop.signal,
+    });
+  } catch {
+    // Keep the place. A retry of the same book does not take another one.
+  } finally {
+    clearTimeout(timer);
+    void useGlossaryQuota.getState().refresh();
+  }
+}

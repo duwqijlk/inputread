@@ -29,7 +29,7 @@ import { handlePut as handleQqGroupsPut } from "../functions/api/admin/qq-groups
 import { handleGet as handleQqGroupsGet } from "../functions/api/qq-groups.ts";
 import { handleUpload } from "../functions/api/admin/books.ts";
 import { handleGet as handleBlurbGet, handlePut as handleBlurbPut } from "../functions/api/admin/blurb.ts";
-import { handleGlossary } from "../functions/api/glossary/[id].ts";
+import { handleGlossary, handleGlossaryRefund, GLOSSARY_REFUND_MS } from "../functions/api/glossary/[id].ts";
 import { GLOSSARY_MAX } from "../functions/lib/glossary-limit.ts";
 import { GLOSSARY_WEEK_BOOKS, GLOSSARY_WEEK_MS, GLOSSARY_WEEK_SPEECHES, trustedUntil } from "../functions/lib/trust.ts";
 import { SYNC_CURSOR_OVERLAP_MS, SYNC_PUSH_MAX } from "../src/lib/limits.ts";
@@ -1461,6 +1461,70 @@ test("word-list reads: seven new books a week, an old book stays free, trusted i
   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n, reads);
   const trustedMe = await handleMe(raw("/api/auth/me", readerCookie), envOf(db), { now: NOW });
   assert.deepEqual((await trustedMe.json()).glossary, { used: 0, limit: GLOSSARY_WEEK_BOOKS, resetAt: 0, unlimited: true, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
+});
+
+test("word-list reads: a place taken moments ago comes back when the book never arrived", async () => {
+  const db = openDb();
+  const reader = await signUpFully(handleRegister, envOf(db), {
+    body: { email: "refund@gmail.com", password: "correct horse" },
+  });
+  const readerCookie = cookieHeader(reader);
+  const readerId = (await reader.json()).user.id;
+  db.raw.prepare("UPDATE users SET email_verified_at = ? WHERE id = ?").run(NOW, readerId);
+  const files = new Map();
+  const text = (id) => new TextEncoder().encode(`{"glossary":{"${id}":{}}}`);
+  for (let n = 1; n <= 3; n += 1) files.set(`word-lists/refund-${n}/glossary.json`, text(`refund-${n}`));
+  const env = envOf(db, { BOOKS: stubBucket(files) });
+  const open = (id, now = NOW) => handleGlossary(raw(`/api/glossary/${id}`, readerCookie), env, id, { now });
+  const refund = (id, now = NOW, cookie = readerCookie) =>
+    handleGlossaryRefund(
+      new Request(`http://localhost/api/glossary/${id}`, {
+        method: "DELETE",
+        headers: cookie ? { cookie } : {},
+      }),
+      env,
+      id,
+      { now },
+    );
+  const held = () => db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n;
+
+  // A list that cannot be read costs nothing.
+  const good = stubBucket(files);
+  const brokenBucket = {
+    ...good,
+    get: async (key) => {
+      const object = await good.get(key);
+      return object ? { ...object, arrayBuffer: async () => { throw new Error("unreadable"); } } : null;
+    },
+  };
+  const brokenEnv = envOf(db, { BOOKS: brokenBucket });
+  assert.equal(
+    (await handleGlossary(raw("/api/glossary/refund-1", readerCookie), brokenEnv, "refund-1", { now: NOW })).status,
+    500,
+  );
+  assert.equal(held(), 0);
+
+  // The list downloads but the card is never written: the place comes back, and can be taken again.
+  assert.equal((await open("refund-1")).status, 200);
+  assert.equal(held(), 1);
+  assert.equal((await refund("refund-1", NOW + 60_000)).status, 200);
+  assert.equal(held(), 0);
+  assert.equal((await open("refund-1", NOW + 61_000)).status, 200);
+  assert.equal(held(), 1);
+
+  // A place the reader has kept longer is not returned by a late failure.
+  db.raw.prepare("UPDATE glossary_reads SET created_at = ? WHERE book_id = 'refund-1'").run(NOW - GLOSSARY_REFUND_MS - 1);
+  assert.equal((await refund("refund-1", NOW)).status, 200);
+  assert.equal(held(), 1);
+
+  // A place granted by the shelf snapshot (created_at 0) never goes back.
+  db.raw.prepare("DELETE FROM glossary_reads").run();
+  db.raw.prepare("INSERT INTO glossary_reads (user_id, book_id, created_at) VALUES (?, 'refund-2', 0)").run(readerId);
+  assert.equal((await refund("refund-2", NOW)).status, 200);
+  assert.equal(held(), 1);
+
+  // Signed out: nothing to return.
+  assert.equal((await refund("refund-2", NOW, "")).status, 401);
 });
 
 test("word-list reads: speeches have their own seven a week, apart from novels", async () => {

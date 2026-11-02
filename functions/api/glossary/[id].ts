@@ -16,9 +16,21 @@ import { glossaryWeekUsed, GLOSSARY_WEEK_BOOKS, GLOSSARY_WEEK_MS, GLOSSARY_WEEK_
  * There is no route that returns every list at once.
  *
  *   GET /api/glossary/:id
+ *   DELETE /api/glossary/:id  (give back a place when the book never reached the shelf)
  */
 export const onRequestGet = (context: { request: Request; env: Env; params: { id: string } }) =>
   handleGlossary(context.request, context.env, context.params.id);
+
+export const onRequestDelete = (context: { request: Request; env: Env; params: { id: string } }) =>
+  handleGlossaryRefund(context.request, context.env, context.params.id);
+
+/**
+ * A place is taken as soon as the list is served, before the reader's device has stored the book.
+ * If the download or the local save then fails, the reader has no book to show for the place.
+ * This gives a place taken moments ago back. A place the reader has had longer, and a book that
+ * was already on the shelf before the cap (created_at 0), stays.
+ */
+export const GLOSSARY_REFUND_MS = 15 * 60 * 1000;
 
 export async function handleGlossary(
   request: Request,
@@ -42,17 +54,33 @@ export async function handleGlossary(
       (await bucket.get(`word-lists/${id}/glossary.json`)) ??
       (await bucket.get(`public-books/${id}/glossary.json`));
     if (!object) throw new HttpError(404, "no-list");
+    let fresh = false;
     if (!open) {
-      const refused = await takePlace(env.DB, bucket, user.id, id, now);
+      const place = await takePlace(env.DB, bucket, user.id, id, now);
       // A full week also says when the next place comes back, so the page can name the day.
-      if (refused) return json(refused, 429);
+      if (place.refused) return json(place.refused, 429);
+      fresh = place.fresh;
     }
-    const body = object.body ?? (await object.arrayBuffer());
+    let body: ArrayBuffer;
+    try {
+      body = await object.arrayBuffer();
+    } catch (error) {
+      // A place was taken for a file that cannot be read. Give back only the row this request
+      // wrote: an older place for the same book, or a shelf grant (created_at 0), stays.
+      if (fresh) {
+        await env.DB.prepare(
+          "DELETE FROM glossary_reads WHERE user_id = ? AND book_id = ? AND created_at = ?",
+        )
+          .bind(user.id, id, now)
+          .run();
+      }
+      throw error;
+    }
     return new Response(body, {
       headers: {
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store",
-        "content-length": String(object.size),
+        "content-length": String(body.byteLength),
       },
     });
   } catch (error) {
@@ -60,10 +88,42 @@ export async function handleGlossary(
   }
 }
 
+export async function handleGlossaryRefund(
+  request: Request,
+  env: Env,
+  id: string,
+  options?: HandlerOptions,
+): Promise<Response> {
+  try {
+    const now = options?.now ?? Date.now();
+    const user = await requireUser(env.DB, request, now);
+    await assertUserRateLimit(env.DB, "glossary", user.id, now);
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id)) throw new HttpError(400, "bad-id");
+    // Only the oldest place taken moments ago can come back. A book kept for longer, or granted
+    // by the shelf snapshot (created_at 0), is never returned by a failed download. If a retry
+    // already took a newer place, that newer row stays.
+    await env.DB.prepare(
+      `DELETE FROM glossary_reads
+        WHERE user_id = ?1 AND book_id = ?2
+          AND created_at = (SELECT MIN(created_at) FROM glossary_reads
+                             WHERE user_id = ?1 AND book_id = ?2 AND created_at > ?3)`,
+    )
+      .bind(user.id, id, now - GLOSSARY_REFUND_MS)
+      .run();
+    return json({ ok: true });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
 type Refused = { error: "glossary-week" | "glossary-week-speech"; resetAt: number };
 
+/** Whether this request wrote the place (`fresh`), so a body that cannot be read can return it. */
+type Place = { refused: Refused | null; fresh: boolean };
+
 /**
- * Give a plain reader this book's place, or say why not. Null means the reader may have the list.
+ * Give a plain reader this book's place, or say why not. `refused` null means the reader may have
+ * the list.
  *
  * - A book opened before (on any device, in any week) is free again.
  * - A book on the shelf before the cap is free and is recorded outside the window (created_at 0),
@@ -79,12 +139,12 @@ async function takePlace(
   userId: string,
   bookId: string,
   now: number,
-): Promise<Refused | null> {
+): Promise<Place> {
   const again = await db
     .prepare("SELECT 1 AS yes FROM glossary_reads WHERE user_id = ? AND book_id = ? LIMIT 1")
     .bind(userId, bookId)
     .first<{ yes: number }>();
-  if (again) return null;
+  if (again) return { refused: null, fresh: false };
   if (await shelfGrantsBook(db, bucket, userId, bookId)) {
     await db
       .prepare(
@@ -92,33 +152,38 @@ async function takePlace(
       )
       .bind(userId, bookId)
       .run();
-    return null;
+    return { refused: null, fresh: false };
   }
   const speeches = await speechIds(bucket);
   const isSpeech = speeches.has(bookId);
   const limit = isSpeech ? GLOSSARY_WEEK_SPEECHES : GLOSSARY_WEEK_BOOKS;
   const since = now - GLOSSARY_WEEK_MS;
   // ?4 is the list of speech ids; ?5 = 1 counts speeches, 0 counts every other book.
-  await db
+  const inserted = await db
     .prepare(
       `INSERT INTO glossary_reads (user_id, book_id, created_at)
        SELECT ?1, ?2, ?3
         WHERE NOT EXISTS (SELECT 1 FROM glossary_reads WHERE user_id = ?1 AND book_id = ?2)
           AND (SELECT COUNT(DISTINCT r.book_id) FROM glossary_reads r
                 WHERE r.user_id = ?1 AND r.created_at > ?6
-                  AND ((r.book_id IN (SELECT value FROM json_each(?4))) = (?5 = 1))) < ?7`,
+                  AND ((r.book_id IN (SELECT value FROM json_each(?4))) = (?5 = 1))) < ?7
+       RETURNING created_at`,
     )
     .bind(userId, bookId, now, JSON.stringify([...speeches]), isSpeech ? 1 : 0, since, limit)
-    .run();
-  // Written by this request, or by one for the same book a moment ago: either way it is the
-  // reader's now. Not there: the week was full when the statement ran.
+    .first<{ created_at: number }>();
+  if (inserted) return { refused: null, fresh: true };
+  // Written by a request for the same book a moment ago: either way it is the reader's now.
+  // Not there: the week was full when the statement ran.
   const again2 = await db
     .prepare("SELECT 1 AS yes FROM glossary_reads WHERE user_id = ? AND book_id = ? LIMIT 1")
     .bind(userId, bookId)
     .first<{ yes: number }>();
-  if (again2) return null;
+  if (again2) return { refused: null, fresh: false };
   const used = await glossaryWeekUsed(db, userId, now, speeches);
-  return isSpeech
-    ? { error: "glossary-week-speech", resetAt: used.speeches.resetAt }
-    : { error: "glossary-week", resetAt: used.novels.resetAt };
+  return {
+    refused: isSpeech
+      ? { error: "glossary-week-speech", resetAt: used.speeches.resetAt }
+      : { error: "glossary-week", resetAt: used.novels.resetAt },
+    fresh: false,
+  };
 }

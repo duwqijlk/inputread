@@ -30,7 +30,7 @@ import { sharedJson } from "@/lib/shared-fetch";
 import { findOnShelf, type Identity } from "@/lib/shelf-identity";
 import { useVocab } from "@/lib/vocab-store";
 import { applySpineMerge, parseEpub, type ParsedEpub } from "@/lib/epub";
-import { fetchProtectedGlossary, remoteGlossaryId } from "@/lib/glossary-fetch";
+import { fetchProtectedGlossary, refundGlossaryPlace, remoteGlossaryId } from "@/lib/glossary-fetch";
 import { validateGlossary } from "@/lib/glossary-format";
 import { tr, type Key } from "@/lib/i18n";
 import { applyPackGlossary, hashBytes } from "@/lib/pack-glossary";
@@ -640,96 +640,109 @@ export async function downloadPack(
   const initialShelf = [...useVocab.getState().books];
   const targets = new Map(initialShelf.map((book) => [book.id, captureTarget(book.id)]));
   let mutation = targetBookId ? captureTarget(targetBookId) : undefined;
+  // A book already on the shelf keeps its weekly place even if this download fails: it is not new.
+  let onShelf = Boolean(targetBookId && initialShelf.some((book) => book.id === targetBookId));
   if (!targetBookId) {
     const existing = await findInstalled({ packId: pack.id, title: pack.title, author: pack.author,
       isbn: pack.isbn, catalog: catalogUrl === BUNDLED_CATALOG_URL ? "public-books" : undefined }, initialShelf);
     if (existing) {
       targetBookId = existing.bookId;
+      onShelf = true;
       mutation = targets.get(existing.bookId);
       if (!mutation || !targetIsCurrent(mutation)) throw new Error(tr("err.bookGone"));
     } else if ([...targets.values()].some((target) => !targetIsCurrent(target))) {
       throw new Error(tr("err.bookGone"));
     }
   }
-  onProgress({ stage: "book", fraction: 0 });
-  // An update of the word list does not need the book again when the book file is the same.
-  const have = targetBookId ? await loadPackRecord(targetBookId) : await packRecordFor(pack.id, catalogUrl === BUNDLED_CATALOG_URL ? "public-books" : undefined);
-  const keepBook = Boolean(have && have.sha256 && have.sha256 === pack.epub.sha256);
-  let epub: Uint8Array = new Uint8Array(0);
-  let epubSha = pack.epub.sha256;
-  if (!keepBook) {
-    epub = await fetchBytes(
-      resolveAgainst(catalogUrl, pack.epub.url),
-      pack.epub.bytes,
-      (loaded, total) =>
-        onProgress({
-          stage: "book",
-          fraction: total > 0 ? Math.min(0.9, (loaded / total) * 0.9) : 0.3,
-        }),
-    );
-    epubSha = (await hashBytes(epub)) || pack.epub.sha256;
-    if (pack.epub.sha256 && epubSha && pack.epub.sha256 !== epubSha)
-      throw new Error(tr("err.damaged"));
-  }
-
-  onProgress({ stage: "words", fraction: 0.92 });
-  let glossaryText = "";
-  if (pack.glossary.url) {
-    const glossaryUrl = resolveAgainst(catalogUrl, pack.glossary.url);
-    const remoteId = remoteGlossaryId(glossaryUrl);
-    const bytes = remoteId
-      ? await fetchProtectedGlossary(pack.id, tr("err.fileNotFound"))
-      : await fetchBytes(glossaryUrl, pack.glossary.bytes, () => undefined);
-    const sha = await hashBytes(bytes);
-    if (pack.glossary.sha256 && sha && pack.glossary.sha256 !== sha)
-      throw new Error(tr("err.damaged"));
-    glossaryText = new TextDecoder().decode(bytes);
-  }
-  // The same EPUB file is skipped above. A word list that turns blockquote
-  // splitting on or off still needs those bytes, so the stored paragraphs match.
-  if (keepBook && have && glossaryText) {
-    const segmentation = segmentationOf(glossaryText);
-    const stored = await loadStoredBook(have.bookId).catch(() => null);
-    if ((stored?.segmentation === 2) !== (segmentation === 2) && pack.epub.url) {
+  const remoteGlossary = Boolean(
+    pack.glossary.url && remoteGlossaryId(resolveAgainst(catalogUrl, pack.glossary.url)),
+  );
+  try {
+    onProgress({ stage: "book", fraction: 0 });
+    // An update of the word list does not need the book again when the book file is the same.
+    const have = targetBookId ? await loadPackRecord(targetBookId) : await packRecordFor(pack.id, catalogUrl === BUNDLED_CATALOG_URL ? "public-books" : undefined);
+    const keepBook = Boolean(have && have.sha256 && have.sha256 === pack.epub.sha256);
+    let epub: Uint8Array = new Uint8Array(0);
+    let epubSha = pack.epub.sha256;
+    if (!keepBook) {
       epub = await fetchBytes(
         resolveAgainst(catalogUrl, pack.epub.url),
         pack.epub.bytes,
-        () => undefined,
+        (loaded, total) =>
+          onProgress({
+            stage: "book",
+            fraction: total > 0 ? Math.min(0.9, (loaded / total) * 0.9) : 0.3,
+          }),
       );
       epubSha = (await hashBytes(epub)) || pack.epub.sha256;
       if (pack.epub.sha256 && epubSha && pack.epub.sha256 !== epubSha)
         throw new Error(tr("err.damaged"));
     }
+
+    onProgress({ stage: "words", fraction: 0.92 });
+    let glossaryText = "";
+    if (pack.glossary.url) {
+      const glossaryUrl = resolveAgainst(catalogUrl, pack.glossary.url);
+      const remoteId = remoteGlossaryId(glossaryUrl);
+      const bytes = remoteId
+        ? await fetchProtectedGlossary(pack.id, tr("err.fileNotFound"))
+        : await fetchBytes(glossaryUrl, pack.glossary.bytes, () => undefined);
+      const sha = await hashBytes(bytes);
+      if (pack.glossary.sha256 && sha && pack.glossary.sha256 !== sha)
+        throw new Error(tr("err.damaged"));
+      glossaryText = new TextDecoder().decode(bytes);
+    }
+    // The same EPUB file is skipped above. A word list that turns blockquote
+    // splitting on or off still needs those bytes, so the stored paragraphs match.
+    if (keepBook && have && glossaryText) {
+      const segmentation = segmentationOf(glossaryText);
+      const stored = await loadStoredBook(have.bookId).catch(() => null);
+      if ((stored?.segmentation === 2) !== (segmentation === 2) && pack.epub.url) {
+        epub = await fetchBytes(
+          resolveAgainst(catalogUrl, pack.epub.url),
+          pack.epub.bytes,
+          () => undefined,
+        );
+        epubSha = (await hashBytes(epub)) || pack.epub.sha256;
+        if (pack.epub.sha256 && epubSha && pack.epub.sha256 !== epubSha)
+          throw new Error(tr("err.damaged"));
+      }
+    }
+
+    // A missing cover is fine: the book makes its own.
+    const cover =
+      !keepBook && pack.cover?.url
+        ? await fetchCoverData(resolveAgainst(catalogUrl, pack.cover.url), pack.cover.sha256)
+        : "";
+
+    onProgress({ stage: "saving", fraction: 0.96 });
+    const result = await installPack({
+      targetBookId, mutation, initialTargets: [...targets.values()],
+      packId: pack.id,
+      // Only the site's own catalog is "public-books"; a pack from another catalog address the
+      // reader set is not a row there, and its reports must not claim one.
+      catalog: catalogUrl === BUNDLED_CATALOG_URL ? "public-books" : undefined,
+      rev: pack.rev,
+      title: pack.title,
+      author: pack.author,
+      epub,
+      epubSha256: epubSha,
+      glossaryText,
+      cover,
+      ...(cover ? { coverInfo: { source: "catalog" as const, ref: pack.cover?.sha256 ?? "" } } : {}),
+      lexile: pack.lexile,
+      isbn: pack.isbn,
+      series: pack.series,
+      seriesNumber: pack.seriesNumber,
+    });
+    onProgress({ stage: "saving", fraction: 1 });
+    return result;
+  } catch (reason) {
+    // The weekly place is taken when the word list is served, before this book is stored.
+    // A new book that failed to arrive must not leave the reader with a used place and no book.
+    if (!onShelf && remoteGlossary) void refundGlossaryPlace(pack.id);
+    throw reason;
   }
-
-  // A missing cover is fine: the book makes its own.
-  const cover =
-    !keepBook && pack.cover?.url
-      ? await fetchCoverData(resolveAgainst(catalogUrl, pack.cover.url), pack.cover.sha256)
-      : "";
-
-  onProgress({ stage: "saving", fraction: 0.96 });
-  const result = await installPack({
-    targetBookId, mutation, initialTargets: [...targets.values()],
-    packId: pack.id,
-    // Only the site's own catalog is "public-books"; a pack from another catalog address the
-    // reader set is not a row there, and its reports must not claim one.
-    catalog: catalogUrl === BUNDLED_CATALOG_URL ? "public-books" : undefined,
-    rev: pack.rev,
-    title: pack.title,
-    author: pack.author,
-    epub,
-    epubSha256: epubSha,
-    glossaryText,
-    cover,
-    ...(cover ? { coverInfo: { source: "catalog" as const, ref: pack.cover?.sha256 ?? "" } } : {}),
-    lexile: pack.lexile,
-    isbn: pack.isbn,
-    series: pack.series,
-    seriesNumber: pack.seriesNumber,
-  });
-  onProgress({ stage: "saving", fraction: 1 });
-  return result;
 }
 
 /* ------------------------------------------------------------------ what is on this device */
