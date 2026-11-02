@@ -1,6 +1,6 @@
 # Book pack format (version 1)
 
-> **Frozen.** The `packs/` and `public-books/` folders in this repository are an old snapshot and are no longer updated. The live books and word lists are in R2 and D1; upload a book with [BOOK_UPLOAD.md](BOOK_UPLOAD.md). This page still describes the pack format itself.
+> **Frozen.** The `public-books/` folder in this repository is an old snapshot and is no longer updated; `packs/` is not in this repository. The live books and word lists are in R2 and D1; upload a book with [BOOK_UPLOAD.md](BOOK_UPLOAD.md). This page still describes the pack format itself.
 
 > The short, complete spec for AI agents is [book-pack-spec.md](book-pack-spec.md) (also in the downloadable book-pack-kit.zip). Sample: `examples/sample-book/`.
 

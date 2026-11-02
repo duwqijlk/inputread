@@ -9,15 +9,15 @@ prove which DNS, cache rules, migrations or version are live in Cloudflare today
 
 | Change | Entry point | Deploy? |
 | --- | --- | --- |
-| Reader, layout, UI or browser behavior | `src/`; the [repository instructions](https://github.com/duwqijlk/margin-words/blob/main/AGENTS.md) | Yes |
-| Authentication, permissions, quotas or admin validation | `functions/`; [Accounts](https://github.com/duwqijlk/margin-words/blob/main/docs/ACCOUNTS.md) | Yes; apply required schema changes first |
+| Reader, layout, UI or browser behavior | `src/`; the [repository instructions](https://github.com/duwqijlk/inputread/blob/main/AGENTS.md) | Yes |
+| Authentication, permissions, quotas or admin validation | `functions/`; [Accounts](https://github.com/duwqijlk/inputread/blob/main/docs/ACCOUNTS.md) | Yes; apply required schema changes first |
 | New word-list book, an existing book's list/EPUB/cover/series/category | [Book upload](https://inputread.site/kit/book-upload.md) | No |
 | A public-domain EPUB replacement | API contract is implemented; CPU-budget gate defaults closed. Stop under Book upload §7 until separately confirmed | No improvised publishing path |
 | A brand-new public-domain catalog id | Not supported by the current live onboarding workflow; stop and report the gap | Do not revive a retired build pipeline |
 | Bilingual book summary | [Book blurbs](https://inputread.site/kit/book-blurbs.md) | No |
 | Reader reports, corrections, credit and accepted contributions | [Patrol](https://inputread.site/kit/patrol.md) | No |
 | Discover's saved rows | Admin → Series; [book series vs rows](https://inputread.site/kit/book-upload.md#86-a-books-series-vs-a-discover-rail) | No |
-| Accounts, roles or account troubleshooting | [Accounts](https://github.com/duwqijlk/margin-words/blob/main/docs/ACCOUNTS.md); use the supported admin controls | Data-only changes: no |
+| Accounts, roles or account troubleshooting | [Accounts](https://github.com/duwqijlk/inputread/blob/main/docs/ACCOUNTS.md); use the supported admin controls | Data-only changes: no |
 | This maintenance map or the hosted work instructions | Edit the source in `docs/`; built by `scripts/build-guide.mjs` | Yes, to update `/kit/*.md` |
 
 A change to data **contents** does not deploy code. A change to a data **format or meaning** may
@@ -36,7 +36,7 @@ routine list upload; follow [identity and naming](https://inputread.site/kit/boo
 | R2 `margin-words-private`, binding `PRIVATE` | Private EPUB objects; no public bucket access. Trusted/admin streaming uses `/api/book/<id>/epub` | `functions/api/book/[id]/epub.ts` |
 | D1 `margin-words`, binding `DB` | Accounts, sessions, signup/verification, sync, roles, quotas, download logs, feedback/taps, sponsorships, rate limits and catalog locks | `migrations/`, `functions/`; account contracts in Accounts |
 | Browser IndexedDB / localStorage | This device's installed books/lists, reading state and settings. Not a publishing source or production backup | `src/lib/book-db.ts`, stores and sync modules |
-| Git | App, Functions, scripts, docs and fixtures. `packs/` and `public-books/` book content are frozen snapshots, not live sources | Repository instructions and [retired tools](#retired) |
+| Git | App, Functions, scripts, docs and fixtures. `public-books/` book content is a frozen snapshot; `packs/` is not in this repository | Repository instructions and [retired tools](#retired) |
 
 Never rebuild or overwrite a live book from the frozen checkout. Never commit live book content or
 open a book-content PR. Read live R2 before changing a list, including when using an admin upload:
@@ -131,7 +131,7 @@ bucket policy, CORS or CDN rules; verify those separately when changing hosting.
 Implementation pointers: `src/lib/packs.ts`, `word-list-catalog.ts`, `word-list-update.ts`,
 `book-blurbs.ts`, `contributors.ts`, `covers.ts`; `functions/lib/catalog-rev.ts`, `book-category.ts`;
 `src/main.tsx`, `scripts/sw-template.js`, `public/_headers`. Paths are relative to the
-[repository root](https://github.com/duwqijlk/margin-words).
+[repository root](https://github.com/duwqijlk/inputread).
 
 <a id="publishing"></a>
 ## Shared publishing checkpoints
@@ -142,7 +142,7 @@ playbook. Authentication to R2/D1 does not supply application validation or a tr
 ### Establish who may write
 
 - Admin catalog operations cooperate through `withCatalogLock()` in
-  [catalog-lock.ts](https://github.com/duwqijlk/margin-words/blob/main/functions/lib/catalog-lock.ts).
+  [catalog-lock.ts](https://github.com/duwqijlk/inputread/blob/main/functions/lib/catalog-lock.ts).
   The lock is per catalog, leased for 60 seconds, waits up to 15 seconds, and may return
   `409 catalog-busy`. There is no lease renewal or fencing; this is not an absolute global lock.
 - Direct wrangler, S3 and Cloudflare API writes **bypass that lock**, validations and rollback.
@@ -218,7 +218,7 @@ from a live-book update. Do not deploy without authorization and do not assume a
 1. Review the intended commit and clean working tree. If merging a PR, fetch the actual merged
    commit and compare it with the reviewed tree before building. Do not build an outdated local main.
 2. Check the targeted environment and required account configuration in
-   [Accounts](https://github.com/duwqijlk/margin-words/blob/main/docs/ACCOUNTS.md). Never print secrets.
+   [Accounts](https://github.com/duwqijlk/inputread/blob/main/docs/ACCOUNTS.md). Never print secrets.
 3. For schema changes, inspect the new SQL and compatibility first. Apply required **pending**
    migrations before code that depends on them. Do not replay individual SQL files blindly: some
    migrations rebuild tables/backfill data. Inspect the migration history, take an appropriate D1
@@ -280,9 +280,9 @@ restore D1, R2, or device data; verify schema and data compatibility before sele
 | Book task commands, catalog fields, series/order/rails, cover procedure | [Book upload](https://inputread.site/kit/book-upload.md): `docs/BOOK_UPLOAD.md` |
 | Feedback decisions, accepted suggestions, per-entry credit, token-only D1 operations | [Patrol](https://inputread.site/kit/patrol.md): `docs/GLOSSARY_PATROL.md` |
 | Summary format, languages, replacement semantics, writing rules | [Book blurbs](https://inputread.site/kit/book-blurbs.md): `docs/BOOK_BLURBS.md` |
-| Account configuration/auth/sync/routes and account-specific verification | [Accounts](https://github.com/duwqijlk/margin-words/blob/main/docs/ACCOUNTS.md) |
-| Glossary representation and anchoring | [Glossary format](https://github.com/duwqijlk/margin-words/blob/main/docs/GLOSSARY_FORMAT.md) and its linked schema |
-| Mandatory coding/UI constraints | [AGENTS.md](https://github.com/duwqijlk/margin-words/blob/main/AGENTS.md) |
+| Account configuration/auth/sync/routes and account-specific verification | [Accounts](https://github.com/duwqijlk/inputread/blob/main/docs/ACCOUNTS.md) |
+| Glossary representation and anchoring | [Glossary format](https://github.com/duwqijlk/inputread/blob/main/docs/GLOSSARY_FORMAT.md) and its linked schema |
+| Mandatory coding/UI constraints | [AGENTS.md](https://github.com/duwqijlk/inputread/blob/main/AGENTS.md) |
 
 **Authority on every run:** reread the owning task playbook, this map and the required source
 specifications, not a previous summary, old copy or authoring ZIP. With a checkout, use its actual

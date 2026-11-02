@@ -1,12 +1,12 @@
 # Margin Words 迁移与兼容记录（中文）
 
-> **公开仓库。** 2026-10-04 起，旧的 Pull Request 留在私有档案 `duwqijlk/margin-words-archive`。这个仓库是公开项目。见 [ARCHIVE.zh-CN.md](ARCHIVE.zh-CN.md)。
+> **公开仓库。** 2026-10-04 起，旧的 Pull Request 留在私有档案 `duwqijlk/margin-words-archive`。现在公开项目是 `duwqijlk/inputread`；原公开仓库 `duwqijlk/margin-words` 已转为私有，不再维护。见 [ARCHIVE.zh-CN.md](ARCHIVE.zh-CN.md)。
 
 英文版本见根目录 [MIGRATION.md](../MIGRATION.md)。
 
 本文记录历史迁移和兼容行为，不是当前上传书籍、维护线上词表或部署网站的手册。当前操作从 [docs/MAINTENANCE.md](MAINTENANCE.md) 开始；按工作阅读[上传书籍](BOOK_UPLOAD.md)、[词表巡查](GLOSSARY_PATROL.md)、[书籍简介](BOOK_BLURBS.md)和[账号](ACCOUNTS.md)。
 
-> **Git 里不放书的文件。** 版权 EPUB 只在私有桶 `margin-words-private`；公版 EPUB 只在书籍站 `https://books.inputread.site`。仓库里的 `packs/` 和 `public-books/` 是冻结快照，不是线上当前来源，不要把它们部署成线上书籍数据。私有档案里的旧 Pull Request 仍有书籍文件，所以档案保持私有。
+> **Git 里不放书的文件。** 版权 EPUB 只在私有桶 `margin-words-private`；公版 EPUB 只在书籍站 `https://books.inputread.site`。`public-books/` 保留冻结快照，不是线上当前来源；`packs/` 不在这个仓库里。不要把快照部署成线上书籍数据。私有档案里的旧 Pull Request 仍有书籍文件，所以档案保持私有。
 
 ## 1. 历史概览
 
@@ -22,8 +22,8 @@
 | `src/`、`public/`、`index.html`、`vite.config.ts` | 应用 |
 | `scripts/` | 构建、检查和测试脚本；一些图书包构建器仍用于本机样本 |
 | `docs/`、`examples/`、`skills/` | 规格、示例书和辅助 skill |
-| `glossary-src/` | 手写词表的来源 |
-| `packs/<id>/` | 冻结的词表、封面和元数据快照，不是线上来源 |
+| `glossary-src/` | 手写词表的来源；不在这个仓库里 |
+| `packs/<id>/` | 旧的冻结词表、封面和元数据快照；不在这个仓库里，也不是线上来源 |
 | `public-books/<id>/` | 冻结的公版快照，不是线上来源 |
 | `classics/<id>/` | 历史工作笔记 |
 | `book-pack-kit.zip` | 制作示例图书包的兼容 kit |

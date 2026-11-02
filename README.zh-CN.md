@@ -3,7 +3,7 @@
 [![网站](https://img.shields.io/badge/site-inputread.site-1E4A3A)](https://inputread.site)
 [![PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-blue.svg)](LICENSE)
 
-> **公开仓库。** 以后的开发、推送和 Pull Request 都在这里。所有者已在 2026-10-04 归档私有档案 [duwqijlk/margin-words-archive](https://github.com/duwqijlk/margin-words-archive)。它只读，并保持私有。记录：[docs/ARCHIVE.zh-CN.md](docs/ARCHIVE.zh-CN.md)。
+> **公开仓库。** 以后的开发、推送和 Pull Request 都在 [duwqijlk/inputread](https://github.com/duwqijlk/inputread)。原公开仓库 `duwqijlk/margin-words` 已转为私有，不再维护。所有者已在 2026-10-04 归档私有档案 [duwqijlk/margin-words-archive](https://github.com/duwqijlk/margin-words-archive)。它只读，并保持私有。记录：[docs/ARCHIVE.zh-CN.md](docs/ARCHIVE.zh-CN.md)。
 
 一个英文小说阅读器，给中国初中生用。读书时点一个词，就能看到为这本书写的简单英文解释。按钮和菜单有**简体中文**和**英文**。书里的内容一直是英文。没有 AI。
 
@@ -68,7 +68,7 @@ npm run check:example
 
 Required Notice: Copyright (c) 2026 XCRUN
 
-你可以在许可证规定的允许用途内使用、复制、分发和修改这些内容，包括协议明确允许的个人用途和非商业组织用途。超出这些允许用途的商业使用，必须另行取得相关权利人的书面授权；可通过 <https://github.com/duwqijlk/margin-words/issues> 联系维护者。分发时须附带许可证（或其链接）及 Required Notice 声明。这是公开源代码的非商业许可，不是 OSI 认可的开源许可证。
+你可以在许可证规定的允许用途内使用、复制、分发和修改这些内容，包括协议明确允许的个人用途和非商业组织用途。超出这些允许用途的商业使用，必须另行取得相关权利人的书面授权；可通过 <https://github.com/duwqijlk/inputread/issues> 联系维护者。分发时须附带许可证（或其链接）及 Required Notice 声明。这是公开源代码的非商业许可，不是 OSI 认可的开源许可证。
 
 本次变更不能撤销此前版本已经授予的 MIT 权利。按 MIT 获得的旧版本仍可按原许可使用，但这不意味着之后仅按新许可发布的修改也适用 MIT。第三方代码、依赖、字体、图标、独立授权的示例，以及 XCRUN 无权重新授权的贡献，继续适用各自的许可和声明；根目录许可证不会替换这些许可。
 
@@ -84,11 +84,11 @@ Required Notice: Copyright (c) 2026 XCRUN
 | 音标数据（`src/data/ipa/`） | 经授权再分发的清洗快照（见 [docs/LOCAL_IPA_DATA.md](docs/LOCAL_IPA_DATA.md)）。快照缺的美音由 [CMUdict](https://github.com/cmusphinx/cmudict) 补充，Copyright (C) 1993-2015 Carnegie Mellon University，BSD-2-Clause；许可原文见 [public/licenses/cmudict.txt](public/licenses/cmudict.txt)。 |
 | [English Read](https://github.com/bitbw/english-read) | 另一个项目，Copyright (c) 2026 English Read contributors，[MIT](https://github.com/bitbw/english-read/blob/main/LICENSE)。Margin Words 受到它的启发，但是独立的应用。 |
 
-如果某段引文不该出现在这里，请到 <https://github.com/duwqijlk/margin-words/issues> 告诉我们。
+如果某段引文不该出现在这里，请到 <https://github.com/duwqijlk/inputread/issues> 告诉我们。
 
 ## 开发和维护
 
-书和词表不再在这个仓库里维护。这里的 `packs/` 和 `public-books/` 是冻结快照；线上 R2 存储桶和 D1 记录才是当前来源。不要把线上内容复制回 Git，不要提交书籍内容，也不要为书籍内容开 PR。当前操作地图见 [docs/MAINTENANCE.md](docs/MAINTENANCE.md)。
+书和词表不再在这个仓库里维护。`public-books/` 保留公版书快照；`packs/` 不在这个仓库里。线上 R2 存储桶和 D1 记录才是当前来源。不要把线上内容复制回 Git，不要提交书籍内容，也不要为书籍内容开 PR。当前操作地图见 [docs/MAINTENANCE.md](docs/MAINTENANCE.md)。
 
 先看[维护地图](docs/MAINTENANCE.md)，了解存储归属、版本与缓存、发布安全和恢复，再按任务进入对应指南：
 
@@ -120,7 +120,7 @@ npm run check:example
 npm test
 ```
 
-完整的词表检查需要匹配的 EPUB；本仓库没有线上书籍所需的本地 EPUB。只有在你有这本书的合法本地 EPUB 时，才运行 `node scripts/validate-glossary.mjs <book.epub> <glossary.json>`。`node scripts/build-packs.mjs --check` 只检查冻结快照，不会发布它。
+完整的词表检查需要匹配的 EPUB；本仓库没有线上书籍所需的本地 EPUB。只有在你有这本书的合法本地 EPUB 时，才运行 `node scripts/validate-glossary.mjs <book.epub> <glossary.json>`。如果本机有私有的 `packs/` 快照，`node scripts/build-packs.mjs --check` 只检查它，不会发布。
 
 ### 界面语言
 

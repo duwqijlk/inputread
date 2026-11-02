@@ -43,7 +43,7 @@ an operations source. Do not infer a local path from a machine name, title or a 
 | Term | What it means |
 | --- | --- |
 | **book** | One title a reader can add. It has files and one catalog row. |
-| **word list** (词典) | The `glossary.json` file: the words, meanings and help for one book. [Glossary format](https://github.com/duwqijlk/margin-words/blob/main/docs/GLOSSARY_FORMAT.md). |
+| **word list** (词典) | The `glossary.json` file: the words, meanings and help for one book. [Glossary format](https://github.com/duwqijlk/inputread/blob/main/docs/GLOSSARY_FORMAT.md). |
 | **catalog** | A JSON file that lists books. Discover reads only this, never a folder. |
 | **row** | One book's object inside a catalog: id, title, author, counts, series, cover address. |
 | **id** | A stable catalog row id, not a title or device id. New ids use lower-case hyphenated names; existing ids stay unchanged. See [identity and naming](#identity-and-naming). |

@@ -22,7 +22,7 @@ Deliverables, in this order of importance:
    authoring/delivery format, not a reader import option. The current app adds books from Discover, not from ZIP files.
 
 For new catalog ids, complete official display names, edition identity and exact-byte rules, follow
-[docs/BOOK_UPLOAD.md#identity-and-naming](https://github.com/duwqijlk/margin-words/blob/main/docs/BOOK_UPLOAD.md#identity-and-naming).
+[docs/BOOK_UPLOAD.md#identity-and-naming](https://github.com/duwqijlk/inputread/blob/main/docs/BOOK_UPLOAD.md#identity-and-naming).
 Legacy ids and paths stay unchanged. Do not edit or repackage the source EPUB to make it fit a name or catalog row.
 
 ## 2. Contents of this kit
@@ -290,7 +290,7 @@ the sense that holds that meaning. The card then shows "From <the reader's nickn
 an email; the validator rejects anything else.
 
 Because the patrol edits the **live** list, a list rebuilt from the book does not have its words, fixes or
-credits. The live R2 copy is the only current one; `packs/` in git is a frozen snapshot. A new or changed
+credits. The live R2 copy is the only current one; the old `packs/` snapshot is not in this repository. A new or changed
 list is uploaded to R2 (`docs/BOOK_UPLOAD.md`), never committed. `scripts/publish-word-list.mjs` compares with the live list and stops when the new file would drop
 any of them. Bring them over into the new list first, or pass `--replace-live` when losing them is intended.
 

@@ -121,20 +121,23 @@ such as TED are allowed), and preserve the source EPUB filename-independent byte
 ## Where to work
 
 - Develop, push, and open pull requests only in the public repository
-  `https://github.com/duwqijlk/margin-words`.
+  `https://github.com/duwqijlk/inputread`.
+- The former public repository `https://github.com/duwqijlk/margin-words` is retired, private and no
+  longer maintained. Do not develop, push, or open pull requests there.
 - The private archive `https://github.com/duwqijlk/margin-words-archive` was archived by the owner on
   2026-10-04. It is read-only. Pull requests #1 through #34 stay there. #1 through #32 still contain
   copyrighted EPUB files, so that archive must stay private. Do not unarchive it, and do not make it public.
   Do not develop, push, or open pull requests there.
 - The site is not connected to GitHub. The Cloudflare Pages project is `margin-words`. The domains are
   `https://inputread.site` and `https://www.inputread.site`. D1 and R2 do not follow the repository.
-  Archiving the old repository does not take the site down.
+  The retired repository is not part of the deploy path.
 - **Books and word lists are not in git any more.** The live R2 buckets and D1 are the only current source.
-  `packs/` and `public-books/` in this repository are frozen snapshots and are never updated again. Do not
-  add a book, change a word list, copy a live list into them, or open a pull request for book content.
+  `public-books/` keeps the public-domain snapshot and is never updated again; `packs/` is not in this
+  repository. Do not add a book, change a word list, copy a live list into the repository, or open a pull
+  request for book content.
   - A new book, a new word list, or a changed one goes to R2 through [docs/BOOK_UPLOAD.md](docs/BOOK_UPLOAD.md)
     or the admin page. Reader fixes go through [docs/GLOSSARY_PATROL.md](docs/GLOSSARY_PATROL.md).
-  - Never rebuild or republish a live book from `packs/`: it would erase patrol fixes and reader credits.
+  - Never rebuild or republish a live book from a local snapshot: it would erase patrol fixes and reader credits.
   Pull requests are for the app and repository documentation, not live book content.
 - The current operational ownership and safety map is [docs/MAINTENANCE.md](docs/MAINTENANCE.md). It owns
   stores, version and cache safety, direct-write and recovery rules, and deployment boundaries. Re-read
@@ -167,8 +170,9 @@ such as TED are allowed), and preserve the source EPUB filename-independent byte
   files of `src/`, `public/`, `packs/`, `examples/` or `scripts/`. `npm run check:cjk` must pass. (The Chinese
   text of the guide page in the app is in `docs/guide-chrome.json` and built into `dist/kit/`, never stored in `public/`.)
 - Never change the reading layout when a panel opens. Panels are overlays. Test with a layout-shift run.
-- The pack word lists (`packs/<id>/glossary.json`) are a frozen snapshot of book content (see "Where to
-  work"). Do not edit or add them. `node scripts/build-packs.mjs --check` must still pass on what is there.
+- A private local `packs/<id>/glossary.json` snapshot is book content, not repository content (see
+  "Where to work"). Do not edit or add it. When a private `packs/` snapshot is present,
+  `node scripts/build-packs.mjs --check` must pass on what is there.
 - No network call may depend on a server of ours except the optional account API on the same Pages
  host (`/api/*`, Pages Functions + D1). The reader may only fetch the catalog and pack files the user
  chose, plus that same-origin account API when someone is signed in. Book files stay on the books host.

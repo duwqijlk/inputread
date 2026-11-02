@@ -1,12 +1,12 @@
 # Margin Words: migration and compatibility record
 
-> **Public repository.** On 2026-10-04 the old pull requests were left in the private archive `duwqijlk/margin-words-archive`. This repository is the public project. See [docs/ARCHIVE.md](docs/ARCHIVE.md).
+> **Public repository.** On 2026-10-04 the old pull requests were left in the private archive `duwqijlk/margin-words-archive`. The public project is now `duwqijlk/inputread`; the former public repository `duwqijlk/margin-words` is retired, private and no longer maintained. See [docs/ARCHIVE.md](docs/ARCHIVE.md).
 
 Chinese version: [docs/MIGRATION.zh-CN.md](docs/MIGRATION.zh-CN.md).
 
 This page records historical moves and compatibility behavior. It is not the current manual for uploading books, maintaining live word lists, or deploying the site. Current operations start at [docs/MAINTENANCE.md](docs/MAINTENANCE.md), with task-specific guides for [book upload](docs/BOOK_UPLOAD.md), [glossary patrol](docs/GLOSSARY_PATROL.md), [book summaries](docs/BOOK_BLURBS.md), and [accounts](docs/ACCOUNTS.md).
 
-> **No book files in git.** Copyrighted EPUBs live only in the private R2 bucket `margin-words-private`; public-domain EPUBs live only on `https://books.inputread.site`. `packs/` and `public-books/` in this repository are frozen snapshots, not current stores. Do not deploy them as live book data. Old pull requests in the private archive still contain book files, so that archive stays private.
+> **No book files in git.** Copyrighted EPUBs live only in the private R2 bucket `margin-words-private`; public-domain EPUBs live only on `https://books.inputread.site`. `public-books/` in this repository is a frozen snapshot, not a current store; `packs/` is not in this repository. Do not deploy the snapshot as live book data. Old pull requests in the private archive still contain book files, so that archive stays private.
 
 ## 1. Historical overview
 
@@ -22,8 +22,8 @@ This page records historical moves and compatibility behavior. It is not the cur
 | `src/`, `public/`, `index.html`, `vite.config.ts` | The app |
 | `scripts/` | Build, check, and test scripts; some pack builders remain for local fixtures |
 | `docs/`, `examples/`, `skills/` | Specs, sample book, and helper skills |
-| `glossary-src/` | Sources of hand-written word lists |
-| `packs/<id>/` | Frozen word-list, cover, and metadata snapshots; not the live source |
+| `glossary-src/` | Sources of hand-written word lists; not in this repository |
+| `packs/<id>/` | Old frozen word-list, cover and metadata snapshot; not in this repository and not the live source |
 | `public-books/<id>/` | Frozen public-domain snapshots; not the live source |
 | `classics/<id>/` | Historical working notes |
 | `book-pack-kit.zip` | Compatibility kit for making a sample pack |

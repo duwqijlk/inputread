@@ -3,7 +3,7 @@
 Reading works with no account: books already on a device stay readable, and a signed-out visitor can browse Discover, the Guide and About. Adding new books (every add / download / "import my EPUB" action on Discover) requires sign-in. Sign-in also adds sync across devices. Book files are not synced and are not stored in D1. They stay on each device (and on `https://books.inputread.site` for the public books).
 
 This page owns account/authentication, sync, roles and account-specific setup. Its source is
-[ACCOUNTS.md on GitHub main](https://github.com/duwqijlk/margin-words/blob/main/docs/ACCOUNTS.md).
+[ACCOUNTS.md on GitHub main](https://github.com/duwqijlk/inputread/blob/main/docs/ACCOUNTS.md).
 Shared storage, publishing, recovery and deployment rules live in the
 [maintenance map](https://inputread.site/kit/maintenance.md).
 

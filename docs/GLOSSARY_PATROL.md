@@ -256,7 +256,7 @@ a public-domain book, `margin-words-books`, key `public-books/<id>/book.epub`). 
 and catalog's original exact bytes and metadata as the base snapshots **before editing** (§2).
 Use the book only to read the place the reader saw.
 
-The [glossary format](https://github.com/duwqijlk/margin-words/blob/main/docs/GLOSSARY_FORMAT.md)
+The [glossary format](https://github.com/duwqijlk/inputread/blob/main/docs/GLOSSARY_FORMAT.md)
 is the entry schema. The parts you need:
 
 ```
@@ -383,7 +383,7 @@ Reviewing a reader's `suggestion`:
 - **You fill in the rest.** A reader sends only a meaning. Every entry and new sense you write must
   also have `pos` (part of speech) for the word **as it appears in this sentence** (`drifted` ->
   `past-tense verb`, `lanterns` -> `plural noun`). Use the labels the app knows, listed in
-  [book-pack specification §4.1](https://github.com/duwqijlk/margin-words/blob/main/docs/book-pack-spec.md).
+  [book-pack specification §4.1](https://github.com/duwqijlk/inputread/blob/main/docs/book-pack-spec.md).
   Also add the anchor
   from the report, and `whyHard` when a short reason helps. Never ask the reader for these.
 - **Credit an accepted suggestion.** On the sense (or entry) whose meaning came from it, add

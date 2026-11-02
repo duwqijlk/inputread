@@ -3,7 +3,7 @@
 [![Live site](https://img.shields.io/badge/site-inputread.site-1E4A3A)](https://inputread.site)
 [![PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-blue.svg)](LICENSE)
 
-> **Public repository.** Development, pushes, and pull requests happen here. The owner archived the private archive [duwqijlk/margin-words-archive](https://github.com/duwqijlk/margin-words-archive) on 2026-10-04. It is read-only and stays private. Record: [docs/ARCHIVE.md](docs/ARCHIVE.md).
+> **Public repository.** Development, pushes, and pull requests happen in [duwqijlk/inputread](https://github.com/duwqijlk/inputread). The former public repository `duwqijlk/margin-words` was made private and is no longer maintained. The private archive [duwqijlk/margin-words-archive](https://github.com/duwqijlk/margin-words-archive) was archived by the owner on 2026-10-04; it is read-only and stays private. Record: [docs/ARCHIVE.md](docs/ARCHIVE.md).
 
 A reader for English novels, made for Chinese junior-high learners. Tap a word and see a short English meaning written for that book. The buttons and menus are in **Simplified Chinese or English**. The books stay in English. There is no AI.
 
@@ -68,7 +68,7 @@ From the commit introducing this license change onward, the original application
 
 Required Notice: Copyright (c) 2026 XCRUN
 
-You may use, copy, distribute, and modify these materials for the permitted purposes defined in the license, including its express permissions for personal uses and noncommercial organizations. Commercial use outside those permitted purposes requires separate written authorization from the relevant rights holder(s); contact the maintainer through <https://github.com/duwqijlk/margin-words/issues>. When distributing, include the license (or its URL) and the Required Notice. This is publicly available source, not an OSI-approved open-source license.
+You may use, copy, distribute, and modify these materials for the permitted purposes defined in the license, including its express permissions for personal uses and noncommercial organizations. Commercial use outside those permitted purposes requires separate written authorization from the relevant rights holder(s); contact the maintainer through <https://github.com/duwqijlk/inputread/issues>. When distributing, include the license (or its URL) and the Required Notice. This is publicly available source, not an OSI-approved open-source license.
 
 This change does not revoke the MIT permissions already granted for earlier versions. Copies obtained under MIT remain usable under that license; this does not grant MIT rights to subsequent changes released only under the new license. Third-party code, dependencies, fonts, icons, separately licensed examples, and contributions that XCRUN cannot relicense retain their own terms and notices. The root license does not replace those licenses.
 
@@ -84,11 +84,11 @@ The novels are a separate matter:
 | Pronunciation data (`src/data/ipa/`) | A cleaned snapshot redistributed with permission ([docs/LOCAL_IPA_DATA.md](docs/LOCAL_IPA_DATA.md)). American readings it lacked are filled from [CMUdict](https://github.com/cmusphinx/cmudict), Copyright (C) 1993-2015 Carnegie Mellon University, BSD-2-Clause; the notice is in [public/licenses/cmudict.txt](public/licenses/cmudict.txt). |
 | [English Read](https://github.com/bitbw/english-read) | A separate project, Copyright (c) 2026 English Read contributors, [MIT](https://github.com/bitbw/english-read/blob/main/LICENSE). Margin Words was inspired by it and is its own app. |
 
-Questions about a copyrighted excerpt: open an issue at <https://github.com/duwqijlk/margin-words/issues>.
+Questions about a copyrighted excerpt: open an issue at <https://github.com/duwqijlk/inputread/issues>.
 
 ## Develop and operate
 
-The live books and word lists are not maintained in this repository. `packs/` and `public-books/` are frozen snapshots; the live R2 buckets and D1 records are authoritative. Do not copy live content into git, commit book content, or open a book-content pull request. The current operational map is [docs/MAINTENANCE.md](docs/MAINTENANCE.md).
+The live books and word lists are not maintained in this repository. `public-books/` keeps the public-domain snapshot; `packs/` is not in this repository. The live R2 buckets and D1 records are authoritative. Do not copy live content into git, commit book content, or open a book-content pull request. The current operational map is [docs/MAINTENANCE.md](docs/MAINTENANCE.md).
 
 Start with the [maintenance map](docs/MAINTENANCE.md) for stores, versions/caches, publishing safety and recovery. Then choose your job:
 
@@ -120,7 +120,7 @@ npm run check:example
 npm test
 ```
 
-A full glossary check needs the matching EPUB, which is not available in this checkout for live books. Run `node scripts/validate-glossary.mjs <book.epub> <glossary.json>` only when you have that legal local EPUB. `node scripts/build-packs.mjs --check` checks the frozen snapshot and does not publish it.
+A full glossary check needs the matching EPUB, which is not available in this checkout for live books. Run `node scripts/validate-glossary.mjs <book.epub> <glossary.json>` only when you have that legal local EPUB. When a private `packs/` snapshot is present locally, `node scripts/build-packs.mjs --check` checks it and does not publish it.
 
 ### Languages in the interface
 
