@@ -7,7 +7,7 @@ import type { ContentCategory } from "@/lib/content-category";
 import { useLocale } from "@/lib/i18n";
 import { accountRequest } from "@/lib/sync-engine";
 
-/** used of limit; resetAt is when the oldest used place comes back (0 when none is used). */
+/** used of limit; resetAt is the next Monday 00:00 China-time reset (0 when none is used). */
 export type QuotaCount = { used: number; limit: number; resetAt: number };
 export type GlossaryQuota = { novel: QuotaCount; speech: QuotaCount | null; unlimited: boolean };
 

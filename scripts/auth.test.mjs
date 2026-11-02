@@ -31,7 +31,7 @@ import { handleUpload } from "../functions/api/admin/books.ts";
 import { handleGet as handleBlurbGet, handlePut as handleBlurbPut } from "../functions/api/admin/blurb.ts";
 import { handleGlossary, handleGlossaryRefund, GLOSSARY_REFUND_MS } from "../functions/api/glossary/[id].ts";
 import { GLOSSARY_MAX } from "../functions/lib/glossary-limit.ts";
-import { GLOSSARY_WEEK_BOOKS, GLOSSARY_WEEK_MS, GLOSSARY_WEEK_SPEECHES, trustedUntil } from "../functions/lib/trust.ts";
+import { glossaryWeekReset, glossaryWeekStart, GLOSSARY_WEEK_BOOKS, GLOSSARY_WEEK_MS, GLOSSARY_WEEK_SPEECHES, trustedUntil } from "../functions/lib/trust.ts";
 import { SYNC_CURSOR_OVERLAP_MS, SYNC_PUSH_MAX } from "../src/lib/limits.ts";
 import { handleEpub } from "../functions/api/book/[id]/epub.ts";
 import { handleWordTapsPost } from "../functions/api/analytics/word-taps.ts";
@@ -1406,6 +1406,14 @@ test("private epub: user denied, trusted allowed and logged, missing book 404", 
   assert.deepEqual(meBody.glossary, { used: 0, limit: GLOSSARY_WEEK_BOOKS, resetAt: 0, unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
 });
 
+test("the weekly allowance resets at Monday 00:00 China time", () => {
+  // 2023-11-13 00:00 China time is 2023-11-12 16:00 UTC.
+  const monday = Date.UTC(2023, 10, 12, 16, 0, 0);
+  assert.equal(glossaryWeekStart(monday), monday);
+  assert.equal(glossaryWeekStart(monday - 1), monday - 7 * 24 * 60 * 60 * 1000);
+  assert.equal(glossaryWeekReset(monday), monday + 7 * 24 * 60 * 60 * 1000);
+});
+
 test("word-list reads: seven new books a week, an old book stays free, trusted is unlimited", async () => {
   const db = openDb();
   const reader = await signUpFully(handleRegister, envOf(db), {
@@ -1435,11 +1443,11 @@ test("word-list reads: seven new books a week, an old book stays free, trusted i
   assert.equal((await open("book-1", readerCookie)).status, 200);
   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n, 7);
   const capped = await handleMe(raw("/api/auth/me", readerCookie), envOf(db), { now: NOW });
-  assert.deepEqual((await capped.json()).glossary, { used: 7, limit: GLOSSARY_WEEK_BOOKS, resetAt: NOW + GLOSSARY_WEEK_MS, unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
+  assert.deepEqual((await capped.json()).glossary, { used: 7, limit: GLOSSARY_WEEK_BOOKS, resetAt: glossaryWeekReset(NOW), unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
 
   const blocked = await open("book-7", readerCookie);
   assert.equal(blocked.status, 429);
-  assert.deepEqual(await blocked.json(), { error: "glossary-week", resetAt: NOW + GLOSSARY_WEEK_MS });
+  assert.deepEqual(await blocked.json(), { error: "glossary-week", resetAt: glossaryWeekReset(NOW) });
   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n, 7);
 
   // Another device, a week later: a book already opened is free and takes no new place.
@@ -1448,7 +1456,7 @@ test("word-list reads: seven new books a week, an old book stays free, trusted i
   assert.equal((await open("book-7", readerCookie, later)).status, 200);
   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads").get().n, 8);
   const laterMe = await handleMe(raw("/api/auth/me", readerCookie), envOf(db), { now: later });
-  assert.deepEqual((await laterMe.json()).glossary, { used: 1, limit: GLOSSARY_WEEK_BOOKS, resetAt: later + GLOSSARY_WEEK_MS, unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
+  assert.deepEqual((await laterMe.json()).glossary, { used: 1, limit: GLOSSARY_WEEK_BOOKS, resetAt: glossaryWeekReset(later), unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
 
   const listed = await call(handleList, envOf(db), { method: "GET", cookie: adminCookie });
   const target = (await listed.json()).users.find((item) => item.id === readerId);
@@ -1563,16 +1571,16 @@ test("word-list reads: speeches have their own seven a week, apart from novels",
   assert.equal((await novelFull.json()).error, "glossary-week");
   const speechFull = await open("speech-8");
   assert.equal(speechFull.status, 429);
-  assert.deepEqual(await speechFull.json(), { error: "glossary-week-speech", resetAt: NOW + GLOSSARY_WEEK_MS });
+  assert.deepEqual(await speechFull.json(), { error: "glossary-week-speech", resetAt: glossaryWeekReset(NOW) });
   // A speech opened before still downloads.
   assert.equal((await open("talk-1")).status, 200);
   const me = await handleMe(raw("/api/auth/me", readerCookie), env, { now: NOW });
   assert.deepEqual((await me.json()).glossary, {
     used: 7,
     limit: GLOSSARY_WEEK_BOOKS,
-    resetAt: NOW + GLOSSARY_WEEK_MS,
+    resetAt: glossaryWeekReset(NOW),
     unlimited: false,
-    speech: { used: 7, limit: GLOSSARY_WEEK_SPEECHES, resetAt: NOW + GLOSSARY_WEEK_MS },
+    speech: { used: 7, limit: GLOSSARY_WEEK_SPEECHES, resetAt: glossaryWeekReset(NOW) },
   });
 });
 
@@ -1845,7 +1853,7 @@ test("a book already on the shelf can be downloaded when the week is full", asyn
   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads WHERE created_at > 0").get().n, 7);
   assert.equal(db.raw.prepare("SELECT created_at AS at FROM glossary_reads WHERE book_id = 'owned-book'").get().at, 0);
   const me = await handleMe(raw("/api/auth/me", readerCookie), envOf(db), { now: NOW });
-  assert.deepEqual((await me.json()).glossary, { used: 7, limit: GLOSSARY_WEEK_BOOKS, resetAt: NOW + GLOSSARY_WEEK_MS, unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
+  assert.deepEqual((await me.json()).glossary, { used: 7, limit: GLOSSARY_WEEK_BOOKS, resetAt: glossaryWeekReset(NOW), unlimited: false, speech: { used: 0, limit: GLOSSARY_WEEK_SPEECHES, resetAt: 0 } });
   assert.equal((await open("owned-book")).status, 200);
   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM glossary_reads WHERE book_id = 'owned-book'").get().n, 1);
 });

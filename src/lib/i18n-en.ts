@@ -488,28 +488,28 @@ export const en = {
   "quota.rulesOpen": "How the weekly limit works",
   "quota.rulesTitle": "Weekly word lists",
   "quota.rule1":
-    "Each 7 days you can open 7 new novels and 7 new speeches. The two are counted apart.",
+    "Each week you can open 7 new novels and 7 new speeches. The two are counted apart.",
   "quota.rule2":
-    "The 7 days roll: a place comes back 7 days after you used it, not on a fixed weekday.",
+    "The week resets every Monday at 00:00 China time. Novels and speeches reset together; unused places do not carry over.",
   "quota.rule3":
     "A book you opened before, on any device, does not use a place. Books already on your shelf do not either.",
   "quota.rule4": "The limit stops bulk downloads of the word lists. Trusted readers have no limit.",
-  "quota.backOn": "One place comes back on {day}.",
-  "quota.fullNovel": "No novel places left this week. One comes back on {day}.",
-  "quota.fullSpeech": "No speech places left this week. One comes back on {day}.",
+  "quota.backOn": "Your places come back on {day}.",
+  "quota.fullNovel": "No novel places left this week. They come back on {day}.",
+  "quota.fullSpeech": "No speech places left this week. They come back on {day}.",
   "quota.fewNovels.one": "1 novel place left this week.",
   "quota.fewNovels.other": "{n} novel places left this week.",
   "quota.fewSpeeches.one": "1 speech place left this week.",
   "quota.fewSpeeches.other": "{n} speech places left this week.",
   "quota.cardFull": "No places left this week",
-  "quota.backShort": "(back {day})",
+  "quota.backShort": "(resets {day})",
   "account.glossaryTitle": "Word lists",
   "account.glossaryCount": "{used} of {limit}",
   "account.glossaryUnlimited": "No weekly limit",
   "account.glossaryNovels": "Novels",
   "account.glossarySpeeches": "Speeches",
   "account.glossaryHint":
-    "7 new novels and 7 new speeches in 7 days. A book already on your shelf does not use a place.",
+    "7 new novels and 7 new speeches each week. A book already on your shelf does not use a place. The week resets on Monday at 00:00 China time.",
   "account.syncSaved": "Synced",
   "account.syncSaving": "Syncing…",
   "account.syncOffline": "Offline. Changes will sync when you are back online.",
@@ -1272,9 +1272,9 @@ export const en = {
   "admin.status.resolved": "Resolved",
   "admin.status.reopened": "Reopened",
   "err.glossaryWeekSpeech":
-    "A reader can open 7 new speech word lists every 7 days. Speeches already on the shelf can be downloaded again. Trusted readers have no limit.",
+    "A reader can open 7 new speech word lists each week. Speeches already on the shelf can be downloaded again. Trusted readers have no limit. The week resets on Monday at 00:00 China time.",
   "err.glossaryWeek":
-    "A reader can open 7 new novel word lists every 7 days. Books already on the shelf can be downloaded again. Trusted readers have no limit.",
+    "A reader can open 7 new novel word lists each week. Books already on the shelf can be downloaded again. Trusted readers have no limit. The week resets on Monday at 00:00 China time.",
   "err.emailUnverified":
     "Check your email before opening word lists. The code was sent to your sign-up email; type it in your account.",
   /* ---- quotes */

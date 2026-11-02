@@ -27,11 +27,31 @@ export function trustedUntil(term: TrustTerm, now: number): number | null {
   return date.getTime();
 }
 
-/** Distinct new novels a plain reader may open in one rolling week. */
+/** Distinct new novels a plain reader may open in one week. */
 export const GLOSSARY_WEEK_BOOKS = 7;
 /** Distinct new speeches, counted apart from novels. */
 export const GLOSSARY_WEEK_SPEECHES = 7;
 export const GLOSSARY_WEEK_MS = 7 * DAY_MS;
+
+/** China is UTC+8 all year (no daylight saving). */
+const CHINA_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/**
+ * The Monday 00:00 (China time) that starts the week containing `now`, in epoch ms.
+ * A fixed week is easier to explain than a rolling one: both counts reset together.
+ */
+export function glossaryWeekStart(now: number): number {
+  const local = now + CHINA_OFFSET_MS;
+  const day = Math.floor(local / DAY_MS);
+  // 1970-01-01 was a Thursday. Monday is three days earlier, so Monday's day number is 4 mod 7.
+  const sinceMonday = (day + 3) % 7;
+  return (day - sinceMonday) * DAY_MS - CHINA_OFFSET_MS;
+}
+
+/** When this week's places come back: next Monday 00:00 China time, in epoch ms. */
+export function glossaryWeekReset(now: number): number {
+  return glossaryWeekStart(now) + GLOSSARY_WEEK_MS;
+}
 
 type CountDb = {
   prepare(sql: string): {
@@ -39,7 +59,7 @@ type CountDb = {
   };
 };
 
-/** Places used in the rolling week, and when the oldest one comes back (0 when none is used). */
+/** Places used this week, and the next weekly reset (0 when none is used). */
 export type WeekCount = { used: number; resetAt: number };
 export type GlossaryWeek = { novels: WeekCount; speeches: WeekCount };
 
@@ -50,20 +70,21 @@ export async function glossaryWeekUsed(
   now: number,
   speeches: ReadonlySet<string>,
 ): Promise<GlossaryWeek> {
-  const since = now - GLOSSARY_WEEK_MS;
+  const start = glossaryWeekStart(now);
   const recent = await db
     .prepare(
-      "SELECT book_id, MIN(created_at) AS at FROM glossary_reads WHERE user_id = ? AND created_at > ? GROUP BY book_id",
+      "SELECT book_id FROM glossary_reads WHERE user_id = ? AND created_at >= ? GROUP BY book_id",
     )
-    .bind(userId, since)
-    .all<{ book_id: string; at: number }>();
+    .bind(userId, start)
+    .all<{ book_id: string }>();
   const week: GlossaryWeek = { novels: { used: 0, resetAt: 0 }, speeches: { used: 0, resetAt: 0 } };
   for (const row of recent.results ?? []) {
-    const count = speeches.has(row.book_id) ? week.speeches : week.novels;
-    count.used += 1;
-    // A place comes back 7 days after that book was first opened. The oldest one comes back first.
-    const back = Number(row.at) + GLOSSARY_WEEK_MS;
-    if (!count.resetAt || back < count.resetAt) count.resetAt = back;
+    if (speeches.has(row.book_id)) week.speeches.used += 1;
+    else week.novels.used += 1;
   }
+  // Both counts reset at the same time. A row with created_at 0 is a shelf grant and never counts.
+  const resetAt = glossaryWeekReset(now);
+  if (week.novels.used > 0) week.novels.resetAt = resetAt;
+  if (week.speeches.used > 0) week.speeches.resetAt = resetAt;
   return week;
 }

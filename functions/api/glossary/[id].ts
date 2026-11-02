@@ -6,12 +6,13 @@ import { assertUserRateLimit } from "../../lib/rate-limit.ts";
 import { requireUser } from "../../lib/session.ts";
 import { shelfGrantsBook } from "../../lib/shelf-grant.ts";
 import { speechIds } from "../../lib/book-category.ts";
-import { glossaryWeekUsed, GLOSSARY_WEEK_BOOKS, GLOSSARY_WEEK_MS, GLOSSARY_WEEK_SPEECHES } from "../../lib/trust.ts";
+import { glossaryWeekReset, glossaryWeekStart, GLOSSARY_WEEK_BOOKS, GLOSSARY_WEEK_SPEECHES } from "../../lib/trust.ts";
 
 /**
  * One word list, for a signed-in reader.
- * A plain reader may open 7 new novels and 7 new speeches in a rolling week. A book already opened,
- * or already on the shelf before the cap, does not take another place.
+ * A plain reader may open 7 new novels and 7 new speeches each week. The week resets every
+ * Monday at 00:00 China time, both counts together. A book already opened, or already on the
+ * shelf before the cap, does not take another place.
  * Trusted and admin readers are not counted. A plain reader must have checked their email first.
  * There is no route that returns every list at once.
  *
@@ -126,12 +127,12 @@ type Place = { refused: Refused | null; fresh: boolean };
  * the list.
  *
  * - A book opened before (on any device, in any week) is free again.
- * - A book on the shelf before the cap is free and is recorded outside the window (created_at 0),
- *   so it never takes a place.
+ * - A book on the shelf before the cap is free and is recorded outside the weekly count
+ *   (created_at 0), so it never takes a place.
  * - Any other book takes a place. The place is written and the limit checked in ONE statement:
  *   the row goes in only while fewer than the limit of this kind (novel or speech) were opened in
- *   the window. Requests sent at the same moment cannot all pass a count each read before any of
- *   them wrote (D1 runs one statement at a time).
+ *   the current week. Requests sent at the same moment cannot all pass a count each read before
+ *   any of them wrote (D1 runs one statement at a time).
  */
 async function takePlace(
   db: Env["DB"],
@@ -157,7 +158,7 @@ async function takePlace(
   const speeches = await speechIds(bucket);
   const isSpeech = speeches.has(bookId);
   const limit = isSpeech ? GLOSSARY_WEEK_SPEECHES : GLOSSARY_WEEK_BOOKS;
-  const since = now - GLOSSARY_WEEK_MS;
+  const start = glossaryWeekStart(now);
   // ?4 is the list of speech ids; ?5 = 1 counts speeches, 0 counts every other book.
   const inserted = await db
     .prepare(
@@ -165,25 +166,24 @@ async function takePlace(
        SELECT ?1, ?2, ?3
         WHERE NOT EXISTS (SELECT 1 FROM glossary_reads WHERE user_id = ?1 AND book_id = ?2)
           AND (SELECT COUNT(DISTINCT r.book_id) FROM glossary_reads r
-                WHERE r.user_id = ?1 AND r.created_at > ?6
+                WHERE r.user_id = ?1 AND r.created_at >= ?6
                   AND ((r.book_id IN (SELECT value FROM json_each(?4))) = (?5 = 1))) < ?7
        RETURNING created_at`,
     )
-    .bind(userId, bookId, now, JSON.stringify([...speeches]), isSpeech ? 1 : 0, since, limit)
+    .bind(userId, bookId, now, JSON.stringify([...speeches]), isSpeech ? 1 : 0, start, limit)
     .first<{ created_at: number }>();
   if (inserted) return { refused: null, fresh: true };
   // Written by a request for the same book a moment ago: either way it is the reader's now.
-  // Not there: the week was full when the statement ran.
+  // Not there: the week was full when the statement ran. Both counts reset at the same time.
   const again2 = await db
     .prepare("SELECT 1 AS yes FROM glossary_reads WHERE user_id = ? AND book_id = ? LIMIT 1")
     .bind(userId, bookId)
     .first<{ yes: number }>();
   if (again2) return { refused: null, fresh: false };
-  const used = await glossaryWeekUsed(db, userId, now, speeches);
   return {
     refused: isSpeech
-      ? { error: "glossary-week-speech", resetAt: used.speeches.resetAt }
-      : { error: "glossary-week", resetAt: used.novels.resetAt },
+      ? { error: "glossary-week-speech", resetAt: glossaryWeekReset(now) }
+      : { error: "glossary-week", resetAt: glossaryWeekReset(now) },
     fresh: false,
   };
 }

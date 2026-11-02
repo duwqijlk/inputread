@@ -145,9 +145,9 @@ The cover and the summary are optional. Without a cover the app draws a title-an
 
 **Category.** A novel has no `category` field; a speech has `"category": "speech"`. The category
 picks the Discover tab (Novels / Speeches) and the weekly allowance: a plain reader may open 7 new
-novels and 7 new speeches in a rolling 7 days, and the server counts them from these catalogs. Ask
-the person who gave you the book which it is when you cannot tell. A talk, address or lecture is a
-speech.
+novels and 7 new speeches each week (both reset Monday 00:00 China time), and the server counts them
+from these catalogs. Ask the person who gave you the book which it is when you cannot tell. A talk,
+address or lecture is a speech.
 
 **Series.** `series` is just a string on the row. Discover groups a tab's books by that exact string,
 so a series needs no file of its own and works for speeches too (a TED row). Section 8 is the whole
