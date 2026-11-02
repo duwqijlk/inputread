@@ -3,26 +3,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { lastReadLine } from "../src/lib/last-read.ts";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const css = read("src/styles.css");
 
-test("the continue card shows where the reader stopped, with an ellipsis where the paragraph was cut", () => {
-  assert.equal(lastReadLine(undefined), "");
-  assert.equal(lastReadLine({ quote: "Too short", offset: 0 }), "");
-  assert.equal(
-    lastReadLine({ quote: "I know I'm not an everyday ten-year-old kid.", offset: 0 }),
-    "I know I'm not an everyday ten-year-old kid.",
-  );
-  assert.equal(
-    lastReadLine({ quote: "sure, I do everyday things.  I eat ice cream", offset: 40 }),
-    "…sure, I do everyday things. I eat ice cream…",
-  );
+test("the continue card stops at the book: no last-read quote, no icon in Keep reading", () => {
   const shelf = read("src/components/shelf.tsx");
-  assert.match(shelf, /const last = started \? lastReadLine\(progress\?\.anchor\) : "";/);
-  assert.match(shelf, /hidden self-center min-\[960px\]:block" data-continue-last/, "only on a window 60rem wide or more");
-  assert.match(css, /\.continue-last p \{[^}]*-webkit-line-clamp: 4;/);
+  assert.doesNotMatch(shelf, /data-continue-last|lastReadLine|shelf\.lastRead/);
+  assert.doesNotMatch(shelf, /<BookOpen\b/);
+  assert.doesNotMatch(css, /\.continue-last\b/);
 });
 
 test("quotes are not read aloud yet: no speaker on a quote card (design system QuoteBook)", () => {
@@ -57,9 +46,8 @@ test("book detail: four numbers at 24px (20px on a phone), labels 13px", () => {
   assert.match(discover, /text-\[20px\] leading-none sm:text-2xl font-display/);
 });
 
-test("sheets follow the finger on a phone: Settings, the book detail and the tutorial list", () => {
+test("sheets follow the finger on a phone: the book detail and the tutorial list", () => {
   assert.match(read("src/components/floating-card.tsx"), /export function useSheetDrag\(/);
-  assert.match(read("src/components/get-books.tsx"), /useSheetDrag\(sheet, \(\) => onOpenChange\(false\), "\(max-width: 639px\)", open\)/);
   assert.match(read("src/components/discover-browse.tsx"), /useSheetDrag\(sheet, onClose, "\(max-width: 639px\)", open\)/);
   assert.match(read("src/components/tutorial-tab.tsx"), /useSheetDrag\(box, hide, PHONE, from === "center" && phone\)/);
 });

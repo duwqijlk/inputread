@@ -57,7 +57,7 @@ test("button text never wraps; the continue button and the detail's main button 
   assert.match(read("src/components/shelf.tsx"), /btn\.primary, "flex-\[1_0_auto\] px-6 sm:flex-none"/);
   const discover = read("src/components/discover-browse.tsx");
   assert.match(discover, /flex flex-wrap items-center gap-2" data-detail-actions/);
-  assert.match(discover, /relative flex-\[1_0_auto\] overflow-hidden px-6 sm:flex-none sm:min-w-48/);
+  assert.match(discover, /relative min-w-0 flex-1 overflow-hidden px-6 sm:flex-none sm:min-w-48/);
 });
 
 test("the book detail shows the Lexile measure as a number with a smaller L, not a chip", () => {

@@ -70,22 +70,22 @@ function ShareBookLink({ id, title }: { id: string; title: string }) {
     }
   }
   return (
-    <div className="ml-auto grid gap-1.5">
+    <div className="relative shrink-0">
       <button
         type="button"
-        className="inline-flex min-h-11 items-center justify-center gap-2 rounded px-3 text-sm font-semibold whitespace-nowrap text-accent hover:bg-accent-soft/60"
+        className={cn(btn.icon, "text-accent hover:bg-accent-soft/60 hover:text-accent")}
         onClick={() => void share()}
+        aria-label={state === "copied" ? t("browse.linkCopied") : t("browse.shareLink")}
         data-detail-share={state}
       >
-        {state === "copied" ? <Check className="size-4" aria-hidden /> : <Link2 className="size-4" aria-hidden />}
-        {state === "copied" ? t("browse.linkCopied") : t("browse.shareLink")}
+        {state === "copied" ? <Check className="size-5" aria-hidden /> : <Link2 className="size-5" aria-hidden />}
       </button>
       {state === "show" ? (
         <input
           readOnly
           value={url}
           onFocus={(event) => event.currentTarget.select()}
-          className="w-full min-w-0 rounded-lg border border-line bg-paper px-2 py-1.5 text-base text-ink sm:text-xs"
+          className="absolute top-full right-0 z-10 mt-1 w-64 max-w-[70vw] rounded-lg border border-line bg-paper px-2 py-1.5 text-base text-ink shadow-lift sm:text-xs"
           aria-label={t("browse.shareLink")}
           data-detail-share-url
         />
@@ -473,14 +473,16 @@ export function BookDetail({
         >
           {row && model ? (
             <>
-              <div className="-mx-5 -mb-3 flex h-6 items-center justify-center sm:hidden" aria-hidden>
-                <span className="h-1 w-10 rounded-full bg-line" />
-              </div>
-              {/* The top on the book's own colour (CoverTone). */}
+              {/* The top on the book's own colour (CoverTone), starting at the sheet's rounded top
+                  edge. The pull handle floats in its top padding, so the cover stays at the centre
+                  of the colour block. */}
               <div
-                className="tone-ground -mx-5 flex items-start gap-4 px-5 py-5 sm:-mx-6 sm:-mt-6 sm:gap-6 sm:rounded-t-2xl sm:px-6 sm:py-6"
+                className="tone-ground relative -mx-5 flex items-center gap-4 rounded-t-sheet px-5 pt-9 pb-9 sm:-mx-6 sm:-mt-6 sm:gap-6 sm:rounded-t-2xl sm:px-6 sm:py-6"
                 style={tone}
               >
+                <div className="absolute inset-x-0 top-0 flex h-6 items-center justify-center sm:hidden" aria-hidden>
+                  <span className="h-1 w-10 rounded-full bg-ink/30" />
+                </div>
                 <div className="tone-cover relative w-28 shrink-0 sm:w-36" data-tilt>
                   <BookCover title={row.title} author={row.author} cover={row.coverUrl} look={coverLookOf(row.category, row.series)} />
                 </div>
@@ -577,7 +579,7 @@ export function BookDetail({
                   type="button"
                   className={cn(
                     btn.primary,
-                    "relative flex-[1_0_auto] overflow-hidden px-6 sm:flex-none sm:min-w-48",
+                    "relative min-w-0 flex-1 overflow-hidden px-6 sm:flex-none sm:min-w-48",
                     // Adding: the progress shows inside the button, with a line along its bottom edge.
                     model.state === "busy" && "disabled:opacity-100 bg-accent-soft text-accent",
                   )}
@@ -586,7 +588,7 @@ export function BookDetail({
                   aria-busy={model.state === "busy" || undefined}
                   data-detail-action={model.state}
                 >
-                  {model.state === "busy" ? null : <Icon className="size-5" aria-hidden />}
+                  {model.state === "busy" || model.state === "on" ? null : <Icon className="size-5" aria-hidden />}
                   {actionLabel(model, canAdd, t)}
                   {model.state === "busy" ? (
                     <span className="absolute inset-x-0 bottom-0 h-[3px] bg-accent/20" aria-hidden>
@@ -611,11 +613,12 @@ export function BookDetail({
                 {model.held ? (
                   <button
                     type="button"
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded px-3 text-[0.9375rem] font-bold whitespace-nowrap text-warn hover:underline hover:underline-offset-4"
+                    className={cn(btn.icon, "text-warn hover:bg-warn-soft/60 hover:text-warn")}
                     onClick={onRemove}
+                    aria-label={t("discover.remove")}
+                    data-detail-remove
                   >
-                    <Trash2 className="size-4" aria-hidden />
-                    {t("discover.remove")}
+                    <Trash2 className="size-5" aria-hidden />
                   </button>
                 ) : null}
                 <ShareBookLink id={row.id} title={row.title} />
