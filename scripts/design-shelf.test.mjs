@@ -48,6 +48,29 @@ test("the continue card shows on phones too and has no Lexile; list cards show n
   assert.match(read("src/components/discover-browse.tsx"), /\.\.\.\(lexile \? \[\{ label: t\("browse\.fact\.level"\)/, "Lexile tile only when there is a measure");
 });
 
+test("phone continue words sit below the author with a short label; desktop keeps its action", () => {
+  const shelf = read("src/components/shelf.tsx");
+  const hero = shelf.slice(shelf.indexOf("function ContinueCard("), shelf.indexOf("function ShelfSkeleton("));
+  const phone = hero.indexOf('data-continue-words="phone"');
+  assert.ok(phone > hero.indexOf("{book.author}"));
+  assert.ok(phone < hero.indexOf("data-continue-progress"));
+  assert.match(hero, /sm:hidden[^]*?data-continue-words="phone"/);
+  assert.match(hero, /shelf\.bookWordsShort/);
+  assert.match(hero, /sm:inline-flex[^]*?data-continue-words="desktop"/);
+  const phoneMeta = hero.slice(hero.indexOf("data-continue-phone-meta"), hero.indexOf("{offer ?"));
+  assert.match(phoneMeta, /ProgressRing compact/);
+  assert.match(phoneMeta, /ml-auto/);
+  assert.match(hero, /justify-between[^]*?data-continue-phone-meta/);
+  assert.doesNotMatch(phoneMeta, /shelf\.chapterOf|shelf\.chaptersLeft|shelf\.readAgo/);
+  assert.match(hero, /hidden items-center gap-3\.5 sm:flex[^]*?data-continue-progress/);
+  const en = read("src/lib/i18n-en.ts");
+  assert.match(en, /"shelf\.bookWordsShort\.one": "\{n\} saved word"/);
+  assert.match(en, /"shelf\.bookWordsShort\.other": "\{n\} saved words"/);
+  for (const suffix of ["one", "other"]) {
+    assert.ok(read("src/lib/i18n-zh.ts").includes(`"shelf.bookWordsShort.${suffix}"`));
+  }
+});
+
 test("adding a book: a ring with the real progress, then a +1 to the Shelf tab and a short toast", () => {
   const actions = read("src/components/shelf-actions.tsx");
   assert.match(actions, /before\.current === "busy" && state === "on"[^]*?flyTo\(button\.current, shelfTabTarget\(\)\)/);

@@ -234,7 +234,7 @@ function RenameDialog({ book, onClose }: { book: Book | null; onClose: () => voi
  * The shelf's hero (design system ContinueReading): the book being read, on a ground in its own
  * colour (src/lib/cover-tone.ts). The cover stands like a book (page edges, a shadow in the book's
  * colour), the title in Literata, a reading ring with the chapter, then "Keep reading" and the words
- * saved from this book. On a phone it shows too: the cover on the left, the rest under it full width.
+ * saved from this book. On a phone the words and ring sit under the author, with only Keep reading below.
  */
 function ContinueCard({
   row,
@@ -294,6 +294,27 @@ function ContinueCard({
             {book.author}
           </p>
         ) : null}
+        {row.words > 0 || started ? (
+          <div className="flex min-w-0 items-center justify-between gap-3 sm:hidden" data-continue-phone-meta>
+            {row.words > 0 ? (
+              <button
+                type="button"
+                className="inline-flex min-h-11 min-w-0 max-w-full items-center gap-1 text-left text-sm font-bold text-accent hover:underline hover:underline-offset-4"
+                onClick={onNotebook}
+                aria-label={tn("shelf.bookWords", row.words)}
+                data-continue-words="phone"
+              >
+                {tn("shelf.bookWordsShort", row.words)}
+                <ChevronRight className="size-4 shrink-0" aria-hidden />
+              </button>
+            ) : null}
+            {started ? (
+              <span className="ml-auto">
+                <ProgressRing compact value={fraction} label={t("shelf.readPct", { n: Math.round(fraction * 100) })} />
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         {offer ? (
           <BookTags>
             <UpdateTag title={book.title} offer={offer} busy={updating} onUpdate={onUpdate} />
@@ -302,7 +323,7 @@ function ContinueCard({
       </div>
       <div className="col-span-2 grid gap-3.5 sm:col-span-1 sm:col-start-2 sm:content-start">
         {started && progress ? (
-          <div className="flex items-center gap-3.5" data-continue-progress>
+          <div className="hidden items-center gap-3.5 sm:flex" data-continue-progress>
             <ProgressRing value={fraction} label={t("shelf.readPct", { n: Math.round(fraction * 100) })} />
             <div className="grid gap-0.5">
               <b className="text-[0.9375rem] font-bold tabular-nums">
@@ -316,7 +337,7 @@ function ContinueCard({
             </div>
           </div>
         ) : chapters > 0 ? (
-          <p className="text-[0.9375rem] font-bold">{tn("shelf.chaptersTotal", chapters)}</p>
+          <p className="hidden text-[0.9375rem] font-bold sm:block">{tn("shelf.chaptersTotal", chapters)}</p>
         ) : null}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <button type="button" className={cn(btn.primary, "flex-[1_0_auto] px-6 sm:flex-none")} onClick={onOpen} data-continue-open>
@@ -325,9 +346,9 @@ function ContinueCard({
           {row.words > 0 ? (
             <button
               type="button"
-              className="inline-flex min-h-11 items-center gap-1 px-1.5 text-[0.9375rem] font-bold text-accent hover:underline hover:underline-offset-4"
+              className="hidden min-h-11 items-center gap-1 px-1.5 text-[0.9375rem] font-bold text-accent hover:underline hover:underline-offset-4 sm:inline-flex"
               onClick={onNotebook}
-              data-continue-words
+              data-continue-words="desktop"
             >
               {tn("shelf.bookWords", row.words)}
               <ChevronRight className="size-4" aria-hidden />

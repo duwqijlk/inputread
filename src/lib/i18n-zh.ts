@@ -406,6 +406,8 @@ export const zh: Record<Key, string> = {
   "shelf.readAgo": "{time}读过",
   "shelf.bookWords.one": "这本书的 {n} 个生词",
   "shelf.bookWords.other": "这本书的 {n} 个生词",
+  "shelf.bookWordsShort.one": "{n} 个生词",
+  "shelf.bookWordsShort.other": "{n} 个生词",
   "shelf.readPct": "读了 {n}%",
   "shelf.chapterOf": "第 {n} 章，共 {total} 章",
   "err.pack.listBad": "词表（glossary.json）不能用。{problems}",

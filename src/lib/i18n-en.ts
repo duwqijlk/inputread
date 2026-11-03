@@ -408,6 +408,8 @@ export const en = {
   "shelf.readAgo": "Read {time}",
   "shelf.bookWords.one": "{n} saved word from this book",
   "shelf.bookWords.other": "{n} saved words from this book",
+  "shelf.bookWordsShort.one": "{n} saved word",
+  "shelf.bookWordsShort.other": "{n} saved words",
   "shelf.readPct": "{n}% read",
   "shelf.chapterOf": "Chapter {n} of {total}",
   "err.pack.listBad": "The word list (glossary.json) cannot be used. {problems}",
