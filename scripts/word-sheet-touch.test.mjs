@@ -36,6 +36,14 @@ test("a touch on the selection card or its ask button cannot scroll the article"
   assert.match(css, /\[data-passage-card\] textarea \{\s*touch-action: pan-y;/);
 });
 
+test("the account sheet binds pull-to-close on each open and keeps focus restoration", () => {
+  const account = readFileSync(new URL("../src/components/account-dialog.tsx", import.meta.url), "utf8");
+  assert.match(account, /useSheetDrag\(sheet, closeDialog, "\(max-width: 639px\)", open\)/);
+  assert.match(account, /<Dialog\.Content ref=\{sheet\} className=\{panel\.content\} data-account-dialog/);
+  assert.match(account, /onCloseAutoFocus/);
+  assert.match(account, /\[data-account-button\]/);
+});
+
 // The pan guard (src/lib/sheet-pan.ts, src/components/floating-card.tsx). iOS Safari and the
 // WeChat / QQ browsers do not fully honour touch-action, so CSS alone let a swipe on the sheet
 // scroll the article. Every move nothing in the sheet can scroll is cancelled in code.
