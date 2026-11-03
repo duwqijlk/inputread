@@ -14,10 +14,10 @@ export class HttpError extends Error {
   }
 }
 
-export function json(body: unknown, status = 200, headers?: Headers): Response {
+export function json(body: unknown, status = 200, headers?: Headers, cache = "no-store"): Response {
   const next = headers ?? new Headers();
   next.set("content-type", "application/json; charset=utf-8");
-  next.set("cache-control", "no-store");
+  next.set("cache-control", cache);
   return new Response(JSON.stringify(body), { status, headers: next });
 }
 

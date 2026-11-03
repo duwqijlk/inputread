@@ -69,7 +69,7 @@ export async function handlePublicSponsorships(_request: Request, env: Env, opti
       })),
       nowOf(options),
     );
-    return json(boards);
+    return json(boards, 200, undefined, "public, max-age=60");
   } catch (error) {
     return errorResponse(error);
   }

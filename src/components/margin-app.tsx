@@ -22,7 +22,6 @@ import { tr, trn, useT } from "@/lib/i18n";
 import { applyTheme, usePrefs } from "@/lib/reader-prefs";
 import type { VocabEntry } from "@/lib/vocab-model";
 import { markVocabHydrated, normalizeWord, useVocab } from "@/lib/vocab-store";
-import { useCovers } from "@/components/book-cover";
 import { ShelfToastHost } from "@/components/shelf-actions";
 import { finishPendingRemoval, useShelfRemove } from "@/lib/shelf-remove";
 import { SpineWarningList } from "@/components/spine-warnings";
@@ -240,14 +239,25 @@ export function MarginApp() {
         setStorageWarning(state.ok ? null : state.reason);
         if (state.ok) void requestPersistentStorage();
       });
-      // Covers are read straight from the live catalog (useCovers); nothing is copied onto the device.
-      void ensureClassics();
-      // Installed books whose catalog revision changed get an Update button. Nothing is replaced yet.
-      void autoUpdateWordLists();
+      // Covers are read straight from the live catalog (useCovers on the shelf); nothing is copied
+      // onto the device. The catalog work waits until a screen that needs it is on show.
       notifySyncReady();
       setReady(true);
     })();
   }, [replaceWords, restoreBooks]);
+
+  const catalogScreen =
+    screen.kind === "shelf" ||
+    screen.kind === "discover" ||
+    screen.kind === "book" ||
+    screen.kind === "dashboard";
+  useEffect(() => {
+    if (!ready || !catalogScreen) return;
+    void ensureClassics();
+    // Installed books whose catalog revision changed get an Update button. Nothing is replaced yet.
+    void autoUpdateWordLists();
+    // Every catalog screen transition retries: an empty shelf's first call has nothing to do.
+  }, [ready, screen.kind, catalogScreen]);
 
   useEffect(() => {
     const refreshStored = () => {
@@ -260,7 +270,6 @@ export function MarginApp() {
   }, []);
 
   const orderedBooks = useMemo(() => [...books].sort((a, b) => b.updatedAt - a.updatedAt), [books]);
-  const covers = useCovers(books);
 
   // If the book on screen was deleted (here or in another tab), fall back to the shelf.
   useEffect(() => {
@@ -662,7 +671,6 @@ export function MarginApp() {
             <Shelf
               books={orderedBooks}
               words={words}
-              covers={covers}
               ready={ready}
               onOpen={(bookId) => void openBook(bookId)}
               storedIds={storedIds}

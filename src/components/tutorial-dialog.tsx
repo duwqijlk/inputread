@@ -40,24 +40,9 @@ function useStarterBooks(): Starter[] {
   return books;
 }
 
-/**
- * How this reader works, in five animated steps: every book has its own word list, so a book is
- * found in Discover, paired with the reader's own EPUB, and read by tapping words. The last step
- * recommends the Magic Tree House series and its button opens it in Discover. Shown once on an
- * empty shelf (src/lib/tutorial.ts) and from Settings; the shelf itself stays one line of text.
- * The frame (step-dialog.tsx) is shared with the feedback tip.
- */
-export default function TutorialDialog() {
-  const { t } = useT();
-  const open = useTutorial((state) => state.open);
-  const hide = useTutorial((state) => state.hide);
+function StarterCovers() {
   const starters = useStarterBooks();
-  const seeSeries = () => {
-    hide();
-    useDiscoverIntent.getState().openSeries(STARTER_SERIES);
-    navigate({ kind: "discover", category: "novel" });
-  };
-  const covers = (
+  return (
     <div className="tut-art flex h-full w-full items-end justify-center gap-0 px-6 pb-3" data-tutorial-starters>
       {(starters.length ? starters : [null, null, null]).map((book, index) => (
         <div
@@ -76,6 +61,24 @@ export default function TutorialDialog() {
       ))}
     </div>
   );
+}
+
+/**
+ * How this reader works, in five animated steps: every book has its own word list, so a book is
+ * found in Discover, paired with the reader's own EPUB, and read by tapping words. The last step
+ * recommends the Magic Tree House series and its button opens it in Discover. Shown once on an
+ * empty shelf (src/lib/tutorial.ts) and from Settings; the shelf itself stays one line of text.
+ * The frame (step-dialog.tsx) is shared with the feedback tip.
+ */
+export default function TutorialDialog() {
+  const { t } = useT();
+  const open = useTutorial((state) => state.open);
+  const hide = useTutorial((state) => state.hide);
+  const seeSeries = () => {
+    hide();
+    useDiscoverIntent.getState().openSeries(STARTER_SERIES);
+    navigate({ kind: "discover", category: "novel" });
+  };
   return (
     <StepDialog
       name="tutorial"
@@ -88,7 +91,7 @@ export default function TutorialDialog() {
         { heading: t("tutorial.s2Title"), body: t("tutorial.s2Body"), art: <ArtDiscover label={t("tutorial.s2Title")} tag={t("tutorial.tagAdded")} /> },
         { heading: t("tutorial.s3Title"), body: t("tutorial.s3Body"), art: <ArtEpub label={t("tutorial.s3Title")} tag={t("tutorial.tagMatched")} /> },
         { heading: t("tutorial.s4Title"), body: t("tutorial.s4Body"), art: <ArtTapWord label={t("tutorial.s4Title")} /> },
-        { heading: t("tutorial.s5Title"), body: t("tutorial.s5Body"), art: covers },
+        { heading: t("tutorial.s5Title"), body: t("tutorial.s5Body"), art: <StarterCovers /> },
       ]}
     />
   );

@@ -51,9 +51,17 @@ export async function handleGlossary(
     // account per made-up address was the cheap way around the weekly cap.
     if (!open && !user.email_verified_at) throw new HttpError(403, "email-unverified");
     // The list must exist before a place is taken: a missing book costs nothing.
+    // The client knows which catalog it is installing from. Try that key first; the other key
+    // stays as a fallback for an older client or a wrong hint.
+    const catalog = new URL(request.url).searchParams.get("catalog");
+    const listKey = `word-lists/${id}/glossary.json`;
+    const publicKey = `public-books/${id}/glossary.json`;
     const object =
-      (await bucket.get(`word-lists/${id}/glossary.json`)) ??
-      (await bucket.get(`public-books/${id}/glossary.json`));
+      catalog === "public-books"
+        ? ((await bucket.get(publicKey)) ?? (await bucket.get(listKey)))
+        : catalog === "word-lists"
+          ? ((await bucket.get(listKey)) ?? (await bucket.get(publicKey)))
+          : ((await bucket.get(listKey)) ?? (await bucket.get(publicKey)));
     if (!object) throw new HttpError(404, "no-list");
     let fresh = false;
     if (!open) {

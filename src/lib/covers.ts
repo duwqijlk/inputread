@@ -28,12 +28,29 @@ export function coverAddress(url: string, sha256: string): string {
 }
 
 /** The cover as a data URL, or "" when it cannot be fetched. Never throws. */
+const dataCache = new Map<string, string>();
+const DATA_CACHE_MAX = 24;
+
 export async function fetchCoverData(url: string, sha256: string, signal?: AbortSignal): Promise<string> {
+  const address = coverAddress(url, sha256);
+  const cached = dataCache.get(address);
+  if (cached !== undefined) {
+    checkAbort(signal);
+    return cached;
+  }
   const scope = requestScope(signal, 10000);
   try {
-    const response = await scope.run(fetchCover(coverAddress(url, sha256), scope.signal));
+    const response = await scope.run(fetchCover(address, scope.signal));
     if (!response.ok) return "";
-    return await scope.run(response.blob().then(dataUrlOf));
+    const data = await scope.run(response.blob().then(dataUrlOf));
+    if (data) {
+      dataCache.set(address, data);
+      if (dataCache.size > DATA_CACHE_MAX) {
+        const oldest = dataCache.keys().next().value;
+        if (oldest !== undefined) dataCache.delete(oldest);
+      }
+    }
+    return data;
   } catch {
     checkAbort(signal);
     return "";

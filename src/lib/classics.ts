@@ -124,6 +124,17 @@ function asFacts(pack: CatalogPack | WordListPack): FactSource {
 
 async function run(): Promise<void> {
   try {
+    // An empty shelf, or a shelf with no catalog installs, has nothing to copy. Leave `once`
+    // retryable so a book added or synced later still gets its catalog facts.
+    if (useVocab.getState().books.length === 0) {
+      once = null;
+      return;
+    }
+    const records = await listPackRecords();
+    if (records.length === 0) {
+      once = null;
+      return;
+    }
     const { catalog } = await withTimeout(loadCatalog(BUNDLED_CATALOG_URL), 8000);
     await rememberFacts(catalog.packs.map(asFacts));
     try {
@@ -165,8 +176,21 @@ export function useClassicBookIds(bookKey: string): Set<string> {
   const finished = useDownloads((state) => state.finished);
   useEffect(() => {
     let alive = true;
-    void Promise.all([listPackRecords(), bundledPackIds()])
-      .then(([records, packs]) => {
+    // An empty shelf, or a shelf with no catalog install, needs neither the catalog nor a set.
+    if (!bookKey) {
+      setIds(new Set());
+      return () => {
+        alive = false;
+      };
+    }
+    void listPackRecords()
+      .then(async (records) => {
+        if (!alive) return;
+        if (records.length === 0) {
+          setIds(new Set());
+          return;
+        }
+        const packs = await bundledPackIds();
         if (alive) setIds(new Set(records.filter((r) => packs.has(r.packId)).map((r) => r.bookId)));
       })
       .catch(() => undefined);

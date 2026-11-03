@@ -52,6 +52,9 @@ const ROLE_KEY = "cibian-account-role-v1";
 const DIRTY_KEY = "cibian-sync-dirty-v1";
 /** Coming back to the tab pulls again only after this long (a pending edit still syncs at once). */
 const FOCUS_PULL_MS = 30_000;
+/** A /api/auth/me answer reused by the session check and the overview quota for this long. */
+const ME_CACHE_MS = 5_000;
+let meCache: { at: number; payload: Record<string, unknown> } | null = null;
 
 let meta: SyncMeta = emptyMeta();
 let prev: LocalSnapshot | null = null;
@@ -110,6 +113,9 @@ function capture(): LocalSnapshot {
 }
 
 function rememberEmail(email: string | null, nickname?: string | null, role?: AccountRole) {
+  // A different account (or sign-out) must not read the previous /api/auth/me answer. A refresh
+  // of the same account keeps it, so the overview quota can share the startup response.
+  if (readStorage(EMAIL_KEY) !== email) meCache = null;
   writeStorage(EMAIL_KEY, email);
   // The record of what the server holds belongs to one account (sync-view.ts).
   if (!email) writeStorage(SYNC_VIEW_KEY, null);
@@ -188,7 +194,16 @@ async function readBody(response: Response): Promise<ApiError & Record<string, u
   }
 }
 
-export async function accountRequest(path: string, body?: unknown): Promise<Record<string, unknown>> {
+export async function accountRequest(
+  path: string,
+  body?: unknown,
+  options?: { fresh?: boolean },
+): Promise<Record<string, unknown>> {
+  // The overview quota and the session check both ask /api/auth/me at startup. One five-second
+  // copy serves both; an auth change clears it (rememberEmail).
+  if (path === "/api/auth/me" && body === undefined && !options?.fresh && meCache && Date.now() - meCache.at < ME_CACHE_MS) {
+    return meCache.payload;
+  }
   let response: Response;
   try {
     let payload = body;
@@ -213,6 +228,7 @@ export async function accountRequest(path: string, body?: unknown): Promise<Reco
     if (response.status === 401 && payload.error !== "credentials") throw new Error("unauthorized");
     throw new Error(typeof payload.error === "string" ? payload.error : "generic");
   }
+  if (path === "/api/auth/me" && body === undefined) meCache = { at: Date.now(), payload };
   return payload;
 }
 

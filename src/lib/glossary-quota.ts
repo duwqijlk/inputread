@@ -49,19 +49,36 @@ export function dayLabel(time: number): string {
   });
 }
 
-type QuotaState = { quota: GlossaryQuota | null; refresh: () => Promise<void> };
+type QuotaState = { quota: GlossaryQuota | null; refresh: (force?: boolean) => Promise<void> };
 
 let asked = 0;
+let inFlight: Promise<void> | null = null;
+let lastAt = 0;
+const CACHE_MS = 10_000;
 
 export const useGlossaryQuota = create<QuotaState>()((set) => ({
   quota: null,
-  refresh: async () => {
+  refresh: async (force = false) => {
+    if (!force && inFlight) return inFlight;
+    if (!force && Date.now() - lastAt < CACHE_MS) return;
     const ticket = ++asked;
-    try {
-      const quota = readGlossaryQuota(await accountRequest("/api/auth/me"));
-      if (ticket === asked) set({ quota });
-    } catch {
-      // Offline or signed out: keep what we had. The server still checks every open.
-    }
+    const run = (async () => {
+      try {
+        const quota = readGlossaryQuota(
+          await accountRequest("/api/auth/me", undefined, { fresh: force }),
+        );
+        if (ticket === asked) {
+          set({ quota });
+          lastAt = Date.now();
+        }
+      } catch {
+        // Offline or signed out: keep what we had. The server still checks every open.
+      }
+    })();
+    inFlight = run;
+    void run.finally(() => {
+      if (inFlight === run) inFlight = null;
+    });
+    return run;
   },
 }));
