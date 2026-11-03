@@ -35,7 +35,7 @@ import { bookSyncKey } from "@/lib/sync-merge";
 import { wordsFromBook } from "@/lib/wordbook";
 import { useShelfRemove } from "@/lib/shelf-remove";
 import { SHELF_MENU_ARM_MS, shelfPressDown, shelfPressMove, shelfPressRelease } from "@/lib/phone-gestures";
-import { BookCover, talkCoverTone, type CoverLook, type useCovers } from "@/components/book-cover";
+import { BookCover, talkCoverTone, useCovers, type CoverLook } from "@/components/book-cover";
 import { useBookTone } from "@/lib/cover-tone";
 import { ShelfBookInfo } from "@/components/shelf-book-info";
 import { isTedBook, useSpeechBookIds } from "@/lib/speech-books";
@@ -715,7 +715,6 @@ function BookCard({
 export function Shelf({
   books,
   words,
-  covers,
   ready,
   storedIds,
   onOpen,
@@ -724,7 +723,6 @@ export function Shelf({
 }: {
   books: Book[];
   words: VocabEntry[];
-  covers: ReturnType<typeof useCovers>;
   ready: boolean;
   /** ids whose book file is on this device; null until that list has been read */
   storedIds: Set<string> | null;
@@ -733,6 +731,7 @@ export function Shelf({
   onAddList: (bookId: string | null) => void;
 }) {
   const { t } = useT();
+  const covers = useCovers(books);
   const progress = useProgress((state) => state.items);
   const pendingId = useShelfRemove((state) => state.pending?.bookId ?? "");
   const phoneMenu = usePhoneShelf();

@@ -15,8 +15,16 @@ import { cn } from "@/components/ui";
 export function useCovers(books: ReadonlyArray<{ id: string; title: string; author: string; isbn?: string }>) {
   const [sources, setSources] = useState<CoverSources | null>(null);
   const [packIds, setPackIds] = useState<Record<string, string>>({});
+  const hasBooks = books.length > 0;
   useEffect(() => {
     let alive = true;
+    // An empty shelf needs no catalog: the empty state is one link to Discover.
+    if (!hasBooks) {
+      setSources({ classics: [], lists: [] });
+      return () => {
+        alive = false;
+      };
+    }
     void Promise.all([
       loadCatalog(BUNDLED_CATALOG_URL)
         .then((result) => result.catalog.packs)
@@ -46,7 +54,7 @@ export function useCovers(books: ReadonlyArray<{ id: string; title: string; auth
     return () => {
       alive = false;
     };
-  }, []);
+  }, [hasBooks]);
   const key = books.map((book) => book.id).join("|");
   useEffect(() => {
     let alive = true;

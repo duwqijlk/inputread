@@ -27,17 +27,23 @@ export function remoteGlossaryId(absoluteUrl: string): string | null {
 }
 
 /** The bytes of one word list. `fallback` is the message for any failure except the weekly cap. */
-export async function fetchProtectedGlossary(bookId: string, fallback: string, signal?: AbortSignal): Promise<Uint8Array> {
+export async function fetchProtectedGlossary(
+  bookId: string,
+  fallback: string,
+  signal?: AbortSignal,
+  catalog?: "public-books" | "word-lists",
+): Promise<Uint8Array> {
   const scope = requestScope(signal);
   try {
-  return await scope.run(fetchProtectedGlossaryNow(bookId, fallback, scope.signal));
+  return await scope.run(fetchProtectedGlossaryNow(bookId, fallback, scope.signal, catalog));
   } finally { scope.dispose(); }
 }
 
-async function fetchProtectedGlossaryNow(bookId: string, fallback: string, signal?: AbortSignal): Promise<Uint8Array> {
+async function fetchProtectedGlossaryNow(bookId: string, fallback: string, signal?: AbortSignal, catalog?: "public-books" | "word-lists"): Promise<Uint8Array> {
   let response: Response;
   try {
-    response = await fetch(`/api/glossary/${encodeURIComponent(bookId)}`, {
+    const query = catalog ? `?catalog=${catalog}` : "";
+    response = await fetch(`/api/glossary/${encodeURIComponent(bookId)}${query}`, {
       credentials: "same-origin",
       cache: "no-store", signal,
     });
@@ -46,7 +52,7 @@ async function fetchProtectedGlossaryNow(bookId: string, fallback: string, signa
     throw new Error(fallback);
   }
   // The weekly count changed (a new place used) or the server refused one: show the new numbers.
-  void useGlossaryQuota.getState().refresh();
+  void useGlossaryQuota.getState().refresh(true);
   if (response.ok) return new Uint8Array(await response.arrayBuffer());
   let code = "";
   let resetAt = 0;
@@ -85,6 +91,6 @@ export async function refundGlossaryPlace(bookId: string): Promise<void> {
     // Keep the place. A retry of the same book does not take another one.
   } finally {
     clearTimeout(timer);
-    void useGlossaryQuota.getState().refresh();
+    void useGlossaryQuota.getState().refresh(true);
   }
 }

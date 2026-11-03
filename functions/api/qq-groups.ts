@@ -14,8 +14,14 @@ export async function handleGet(_request: Request, env: Env): Promise<Response> 
     const bucket = env.BOOKS;
     if (!bucket) throw new HttpError(500, "no-books-bucket");
     const file = await readQqGroups(bucket);
-    if (!file) return json({ format: 1, saved: false, groups: [] });
-    return json({ format: 1, saved: true, updated: file.updated, groups: file.groups });
+    if (!file)
+      return json({ format: 1, saved: false, groups: [] }, 200, undefined, "public, max-age=60");
+    return json(
+      { format: 1, saved: true, updated: file.updated, groups: file.groups },
+      200,
+      undefined,
+      "public, max-age=60",
+    );
   } catch (error) {
     return errorResponse(error);
   }

@@ -685,7 +685,16 @@ export async function downloadPack(
       const glossaryUrl = resolveAgainst(catalogUrl, pack.glossary.url);
       const remoteId = remoteGlossaryId(glossaryUrl);
       const bytes = remoteId
-        ? await fetchProtectedGlossary(pack.id, tr("err.fileNotFound"))
+        ? await fetchProtectedGlossary(
+            pack.id,
+            tr("err.fileNotFound"),
+            undefined,
+            catalogUrl === BUNDLED_CATALOG_URL
+              ? "public-books"
+              : catalogUrl === booksUrl("word-lists/catalog.json")
+                ? "word-lists"
+                : undefined,
+          )
         : await fetchBytes(glossaryUrl, pack.glossary.bytes, () => undefined);
       const sha = await hashBytes(bytes);
       if (pack.glossary.sha256 && sha && pack.glossary.sha256 !== sha)

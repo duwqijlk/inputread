@@ -19,6 +19,26 @@ import { loadWordListCatalog, WORD_LIST_CATALOG_URL } from "@/lib/word-list-cata
 
 type LoadState = "loading" | "ready" | "error";
 
+const SPONSOR_CACHE_MS = 5 * 60 * 1000;
+let sponsorCache: { at: number; promise: Promise<unknown> } | null = null;
+
+/** The public supporter boards, shared by every mount on this page for five minutes. */
+function loadSponsorPayload(): Promise<unknown> {
+  if (sponsorCache && Date.now() - sponsorCache.at < SPONSOR_CACHE_MS) return sponsorCache.promise;
+  let promise: Promise<unknown>;
+  promise = fetch("/api/sponsorships", { credentials: "same-origin" })
+    .then(async (response) => {
+      if (!response.ok) throw new Error("sponsorships");
+      return (await response.json()) as unknown;
+    })
+    .catch((error: unknown) => {
+      if (sponsorCache?.promise === promise) sponsorCache = null;
+      throw error;
+    });
+  sponsorCache = { at: Date.now(), promise };
+  return promise;
+}
+
 type OverviewTab = "library" | "contributors" | "supporters";
 const TABS: ReadonlyArray<{ id: OverviewTab; label: "dashboard.tabLibrary" | "dashboard.tabContributors" | "dashboard.tabSupporters" }> = [
   { id: "library", label: "dashboard.tabLibrary" },
@@ -226,8 +246,7 @@ export function DashboardScreen() {
 
   useEffect(() => {
     let alive = true;
-    void fetch("/api/sponsorships", { credentials: "same-origin" })
-      .then(async (response) => (response.ok ? response.json() : null))
+    void loadSponsorPayload()
       .then((payload) => {
         if (!alive || !payload || typeof payload !== "object") return;
         const body = payload as { month?: unknown; total?: unknown };
