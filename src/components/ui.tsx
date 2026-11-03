@@ -642,12 +642,12 @@ export function Highlighted({ sentence, surface }: { sentence: string; surface: 
  * A 48px reading ring (design system ContinueReading): brand on a faint track, the percent in the
  * middle. It draws itself once (off with reduced motion and on e-ink).
  */
-export function ProgressRing({ value, label }: { value: number; label: string }) {
+export function ProgressRing({ value, label, compact = false }: { value: number; label: string; compact?: boolean }) {
   const pct = Math.round(Math.min(1, Math.max(0, value)) * 100);
   const length = 2 * Math.PI * 20;
   return (
-    <span className="relative grid size-12 shrink-0 place-items-center" role="img" aria-label={label} data-progress-ring>
-      <svg viewBox="0 0 48 48" className="absolute inset-0 size-12 -rotate-90" aria-hidden>
+    <span className={cn("relative grid shrink-0 place-items-center", compact ? "size-10" : "size-12")} role="img" aria-label={label} data-progress-ring>
+      <svg viewBox="0 0 48 48" className="absolute inset-0 size-full -rotate-90" aria-hidden>
         <circle cx="24" cy="24" r="20" fill="none" strokeWidth="4" className="stroke-ink/10" />
         <circle
           cx="24"

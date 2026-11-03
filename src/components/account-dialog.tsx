@@ -3,6 +3,7 @@ import { Camera, ChevronRight, Download, Eye, EyeOff, Pencil, X } from "lucide-r
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAccount, type AccountMode, type SyncStatus } from "@/lib/account-store";
 import { Avatar } from "@/components/avatar";
+import { useSheetDrag } from "@/components/floating-card";
 import { cleanNickname } from "@/lib/nickname";
 import { ReadingOverviewPanel } from "@/components/reading-overview";
 import {
@@ -621,6 +622,8 @@ export function AccountDialog() {
   const resetEmailReady = useAccount((state) => state.resetEmail);
   const closeDialog = useAccount((state) => state.closeDialog);
   const openDialog = useAccount((state) => state.openDialog);
+  const sheet = useRef<HTMLDivElement>(null);
+  useSheetDrag(sheet, closeDialog, "(max-width: 639px)", open);
 
   const [email, setEmail] = useState("");
   /** The address a sign-up code was sent to, until the code is typed. */
@@ -823,7 +826,7 @@ export function AccountDialog() {
     <Dialog.Root open={open} onOpenChange={(next) => (next ? openDialog(mode, resetToken) : closeDialog())}>
       <Dialog.Portal>
         <Dialog.Overlay className={panel.overlay} />
-        <Dialog.Content className={panel.content} data-account-dialog
+        <Dialog.Content ref={sheet} className={panel.content} data-account-dialog
             onOpenAutoFocus={() => { restoreFocus.current = true; }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();

@@ -195,6 +195,38 @@ ends this discovery sweep: save cursor 0 for the **next run**, without wrapping 
 This eventually revisits old deferred topics and any newly open lower-numbered topics, while the
 finite page budget prevents endless discovery/polling. Topic discovery never authorizes closure.
 
+**Zero-topic anomaly lane: independent of the topic cursor.** Migration `0024` assigns a new
+report's own id inside its INSERT and repairs legacy `topic = 0` rows. A zero topic after that
+is an invariant violation, not a normal topic: report it to the operator. Do not run migrations
+or repair topic values from this patrol. Until the operator repairs it, do not silently skip it.
+
+```sql
+-- Zero-topic sweep: save anomaly_cutoff_id and open count when starting a new sweep.
+SELECT MAX(id) AS anomaly_cutoff_id, COUNT(*) AS anomaly_count FROM passage_feedback
+ WHERE status != 'resolved' AND topic = 0;
+
+-- Zero-topic page: ?1 = anomaly_id_cursor (initially 0), ?2 = saved anomaly_cutoff_id.
+SELECT p.id, p.topic, p.book_id, p.catalog_id, p.book_title, p.chapter, p.chapters, p.paragraph,
+       p.sel_start, p.sel_end, p.span, p.selected, p.before, p.after, p.reason, p.suggestion,
+       p.glossary_rev, p.status, p.created_at, u.public_id AS suggested_by
+  FROM passage_feedback p LEFT JOIN users u ON u.id = p.user_id
+ WHERE p.status != 'resolved' AND p.topic = 0 AND p.id > ?1 AND p.id <= ?2
+ ORDER BY p.id ASC LIMIT 20;
+```
+
+Use at most **1 zero-topic page per run**, independently of the 3 normal discovery pages.
+Review each zero-topic row **individually** by its own id, catalog and text: unrelated reports
+must never be grouped as "topic 0". The selected row is the complete individual work item.
+Advance `anomaly_id_cursor` to the last considered id even when deferred; persist it together
+with the fixed cutoff until an empty page ends the sweep. Then reset the cursor/cutoff for the
+next run, without wrapping in this run. If the saved state is unavailable, start a new sweep
+with cursor 0 and a fresh cutoff. New ids beyond the cutoff wait for the next sweep. The
+10-book limit still applies; record deferred ids and stop before exceeding it.
+For an individually reviewed, answered row, the existing §7 resolution guard uses its
+**original topic 0**, its id and the saved anomaly cutoff. If an operator meanwhile repairs its topic,
+zero changed rows means reread/re-evaluate; never broaden the guard. Acceptance still requires
+verified publication and credit. An anomaly scan is not authorization to resolve unreviewed rows.
+
 **LIMIT 300 is never a complete topic.** The initial report sample may cut one topic in half or
 omit others; the distinct-topic pages above avoid that starvation. For each discovered topic you will handle, record a fixed upper id
 before editing, then read **all** its reports up to that cutoff with keyset pagination (including
@@ -619,8 +651,9 @@ another writer's changes. Report a failed credit-file refresh; do not claim the 
   reports), then the words at the top of the ranked tap list in §3 (most readers first). Fully read a passage topic through its saved cutoff before
   deciding; resolve only its individually verified, answered ids. Defer it if review is incomplete.
 - D1 is on the Free plan (100,000 row writes a day for the whole site). The queries above read a
-  few thousand rows; each resolve writes a few. Use only the bounded topic discovery and finite topic/cutoff pagination in §3;
-  do not poll, rerun discovery indefinitely or broaden writes to save queries.
+  few thousand rows; each resolve writes a few. Use only the bounded topic discovery, the independent
+  zero-topic anomaly lane and finite topic/cutoff pagination in §3; do not poll, rerun discovery
+  indefinitely or broaden writes to save queries. Topic repair and schema migrations are operator work.
 - No other SQL that writes. No `DELETE`, `DROP` or `ALTER`. No R2 writes except a glossary, its
   catalog, and `contributors.json`. Never write to `margin-words-private`, and never touch
   `avatars/`.
@@ -634,7 +667,9 @@ one: report id, word or passage, and the entry, sense or note that holds its `cr
 topic you answered (its id, the reports in it, and the notes you wrote for it), what you
 skipped and why, the verified revision, the R2 verification/credit-file refresh result, and any error
 or unresolved recovery. Include discovery pages used, start/end topic cursor and deferred topics
-for next-run continuation. Include each topic's saved cutoff, reviewed ids, resolved/accepted ids and
+for next-run continuation. Also report the zero-topic anomaly count at sweep start, pages used,
+fixed cutoff, start/end anomaly id cursor, reviewed/deferred ids and any operator repair needed.
+Include each topic's saved cutoff, reviewed ids, resolved/accepted ids and
 unreviewed/deferred rows; do not claim the topic is closed from a partial query. Record the
 instruction sources, retrieval times, checkout commit/dirty state when applicable, original-byte
 hashes and comparable local/hosted result (or **unverified**). Say so if nothing was open.
