@@ -123,7 +123,9 @@ export async function handlePassageFeedbackPost(
     );
     const topic = near ? near.topic || near.id : 0;
 
-    const inserted = await env.DB.prepare(
+    // Migration 0024 assigns a new root's topic inside this INSERT. It must be applied first:
+    // a separate UPDATE could fail after the report was already committed with topic = 0.
+    await env.DB.prepare(
       `INSERT INTO passage_feedback (
          book_id, book_title, catalog_id, chapter, chapters, paragraph, sel_start, sel_end, span, selected, before, after, reason,
          suggestion, glossary_rev, status, topic, user_id, ip, created_at
@@ -152,10 +154,6 @@ export async function handlePassageFeedbackPost(
         now,
       )
       .first<{ id: number }>();
-    // The first report of a topic names it with its own id.
-    if (!topic && inserted?.id) {
-      await env.DB.prepare("UPDATE passage_feedback SET topic = id WHERE id = ?").bind(inserted.id).run();
-    }
     return json({ ok: true, saved: true, ...(near ? { joined: true } : {}) });
   } catch (error) {
     return errorResponse(error);

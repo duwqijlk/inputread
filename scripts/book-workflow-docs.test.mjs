@@ -464,3 +464,49 @@ test('distinct-topic discovery progresses past a deferred topic with more than 3
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM passage_feedback WHERE topic > 1 AND status = 'pending'").get().n, 65);
   } finally { db.close(); }
 });
+
+test('zero-topic anomaly lane is independently bounded, resumes by id and keeps original-topic resolution guards', () => {
+  const cutoffSql = patrol.match(/SELECT MAX\(id\) AS anomaly_cutoff_id,[^;]*;/)?.[0];
+  const pageSql = patrol.match(/SELECT p\.id,[^;]*WHERE p\.status != 'resolved' AND p\.topic = 0[^;]*;/)?.[0];
+  assert.ok(cutoffSql && pageSql, 'execute the documented anomaly SQL');
+  assert.match(patrol, /1 zero-topic page per run/);
+  assert.match(patrol, /original\s+topic 0/);
+  const db = new DatabaseSync(':memory:');
+  try {
+    for (const name of readdirSync(join(ROOT, 'migrations')).filter((s) => s.endsWith('.sql')).sort())
+      db.exec(readFileSync(join(ROOT, 'migrations', name), 'utf8'));
+    const insert = db.prepare(`INSERT INTO passage_feedback
+      (book_id, catalog_id, selected, reason, topic, status, created_at)
+      VALUES (?, ?, 'Text.', 'hard', ?, ?, 1)`);
+    const ids = [];
+    for (let i = 0; i < 25; i++) {
+      const id = Number(insert.run(`device-${i}`, `word-lists:book-${i}`, 0, 'pending').lastInsertRowid);
+      // Deliberately corrupt the invariant to test the operator-recovery fallback.
+      db.prepare('UPDATE passage_feedback SET topic = 0 WHERE id = ?').run(id);
+      ids.push(id);
+    }
+    const resolved = Number(insert.run('resolved', 'word-lists:resolved', 1, 'resolved').lastInsertRowid);
+    db.prepare('UPDATE passage_feedback SET topic = 0 WHERE id = ?').run(resolved);
+    const { anomaly_cutoff_id: cutoff, anomaly_count: count } = db.prepare(cutoffSql).get();
+    assert.equal(count, 25);
+    const page = db.prepare(positional(pageSql));
+    const first = page.all(0, cutoff);
+    assert.deepEqual(first.map((r) => r.id), ids.slice(0, 20));
+    assert.equal(new Set(first.map((r) => r.catalog_id)).size, 20, 'zero topic is not one catalog book');
+    const late = Number(insert.run('late', 'word-lists:late', 0, 'pending').lastInsertRowid);
+    db.prepare('UPDATE passage_feedback SET topic = 0 WHERE id = ?').run(late);
+    assert.deepEqual(page.all(first.at(-1).id, cutoff).map((r) => r.id), ids.slice(20));
+    assert.deepEqual(page.all(ids.at(-1), cutoff), []);
+    const resolve = db.prepare(positional(passageUpdate));
+    assert.equal(resolve.run(2, 'verified', late, 0, cutoff).changes, 0, 'post-cutoff anomaly cannot be resolved');
+    db.prepare('UPDATE passage_feedback SET topic = id WHERE id = ?').run(ids[0]);
+    assert.equal(resolve.run(2, 'verified', ids[0], 0, cutoff).changes, 0, 'concurrent topic repair requires rereading');
+    assert.equal(resolve.run(2, 'verified', ids[1], 0, cutoff).changes, 1);
+    assert.equal(db.prepare('SELECT status FROM passage_feedback WHERE id = ?').get(ids[2]).status, 'pending', 'unreviewed reports stay open');
+    db.exec(readFileSync(join(ROOT, 'migrations/0024_passage_feedback_topic.sql'), 'utf8'));
+    const discovery = db.prepare(positional(patrol.match(/SELECT DISTINCT topic FROM passage_feedback[^;]*;/)[0])).all(0);
+    assert.ok(discovery.some((row) => row.topic === ids[0]), 'repaired root is in normal discovery');
+    assert.ok(!discovery.some((row) => row.topic === ids[1]), 'resolved anomaly stays out');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM passage_feedback WHERE topic = 0').get().n, 0);
+  } finally { db.close(); }
+});
