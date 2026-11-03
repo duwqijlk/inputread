@@ -940,6 +940,13 @@ html[data-ui-font="display"] [class~="[font-variant-numeric:tabular-nums]"] {
   [data-passage-card] textarea {
     touch-action: pan-y;
   }
+  /* The book detail is a bottom sheet on a phone: a pull at its top belongs to the sheet,
+     and a list that reaches its end must not carry the page behind it. */
+  @media (max-width: 639px) {
+    [data-book-detail] {
+      overscroll-behavior: contain;
+    }
+  }
   .word-detail {
     border-top: 1px solid var(--line);
   }
@@ -1734,28 +1741,6 @@ html[data-ui-font="display"] [class~="[font-variant-numeric:tabular-nums]"] {
    behind it any more, which mixed green, amber and grey into a muddy ground. */
 .tone-ground {
   background: var(--book-wash, var(--sheet));
-}
-/* "Where you left off" on the continue card: a thin line of the book's own deep colour at 30%. */
-.continue-last {
-  position: relative;
-  padding-left: 20px;
-}
-.continue-last::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 2px;
-  bottom: 2px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--book-deep, var(--line));
-  opacity: 0.3;
-}
-.continue-last p {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  overflow: hidden;
 }
 .tone-cover .cover-frame {
   box-shadow:

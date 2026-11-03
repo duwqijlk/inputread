@@ -218,7 +218,6 @@ export const en = {
   "shelf.title": "Shelf",
   "shelf.search": "Search by title or author",
   "shelf.noMatch": "No books found for “{query}”.",
-  "shelf.lastRead": "Where you left off",
   "shelf.continueReading": "Continue reading",
   "shelf.startReading": "Start reading",
   "shelf.continue": "Keep reading",

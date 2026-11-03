@@ -220,7 +220,6 @@ export const zh: Record<Key, string> = {
   "shelf.title": "书架",
   "shelf.search": "按书名或作者搜索",
   "shelf.noMatch": "没有找到“{query}”相关的书。",
-  "shelf.lastRead": "上次读到",
   "shelf.continueReading": "继续阅读",
   "shelf.startReading": "开始阅读",
   "shelf.continue": "接着读",

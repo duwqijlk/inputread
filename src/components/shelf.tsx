@@ -2,7 +2,6 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import {
   ArrowRight,
-  BookOpen,
   BookPlus,
   Check,
   ChevronRight,
@@ -38,7 +37,6 @@ import { useShelfRemove } from "@/lib/shelf-remove";
 import { SHELF_MENU_ARM_MS, shelfPressDown, shelfPressMove, shelfPressRelease } from "@/lib/phone-gestures";
 import { BookCover, talkCoverTone, type CoverLook, type useCovers } from "@/components/book-cover";
 import { useBookTone } from "@/lib/cover-tone";
-import { lastReadLine } from "@/lib/last-read";
 import { ShelfBookInfo } from "@/components/shelf-book-info";
 import { isTedBook, useSpeechBookIds } from "@/lib/speech-books";
 import { navigate } from "@/lib/router";
@@ -263,14 +261,10 @@ function ContinueCard({
   const started = Boolean(progress && progress.updatedAt > 0 && fraction > 0);
   const chapters = progress?.chapters ?? 0;
   const left = progress ? Math.max(0, chapters - (progress.chapter + 1)) : 0;
-  const last = started ? lastReadLine(progress?.anchor) : "";
   return (
     <section
       aria-label={t("shelf.continueReading")}
-      className={cn(
-        "tone-ground grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-x-6 gap-y-4 rounded-2xl p-5 shadow-hero sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-x-11 sm:gap-y-3 sm:px-11 sm:py-9",
-        last && "min-[960px]:grid-cols-[11rem_minmax(0,1fr)_minmax(0,19rem)]",
-      )}
+      className="tone-ground grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-x-6 gap-y-4 rounded-2xl p-5 shadow-hero sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-x-11 sm:gap-y-3 sm:px-11 sm:py-9"
       style={tone}
       data-continue-card
     >
@@ -326,7 +320,6 @@ function ContinueCard({
         ) : null}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <button type="button" className={cn(btn.primary, "flex-[1_0_auto] px-6 sm:flex-none")} onClick={onOpen} data-continue-open>
-            <BookOpen className="size-5" aria-hidden />
             {started ? t("shelf.continue") : t("shelf.start")}
           </button>
           {row.words > 0 ? (
@@ -342,14 +335,6 @@ function ContinueCard({
           ) : null}
         </div>
       </div>
-      {last ? (
-        <blockquote className="continue-last col-start-3 row-span-2 row-start-1 m-0 hidden self-center min-[960px]:block" data-continue-last>
-          <span className="text-[0.8125rem] font-bold text-[var(--book-deep)]">{t("shelf.lastRead")}</span>
-          <p className="m-0 mt-1.5 font-display text-lg leading-[1.6] text-ink italic" lang="en">
-            {last}
-          </p>
-        </blockquote>
-      ) : null}
     </section>
   );
 }

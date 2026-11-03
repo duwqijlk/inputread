@@ -285,11 +285,30 @@ function usePhoneSheetDismiss(panelRef: RefObject<HTMLElement | null>, onClose: 
   useEffect(() => {
     const query = window.matchMedia(media);
     let detach = () => {};
+    let retry = 0;
+    let misses = 0;
     const bind = () => {
       detach();
       detach = () => {};
+      if (retry) {
+        window.cancelAnimationFrame(retry);
+        retry = 0;
+      }
       const el = panelRef.current;
-      if (!query.matches || !el) return;
+      // A Radix dialog's content can mount one commit after `open` changes, so the ref is
+      // still empty when this effect runs. Keep looking for a moment instead of leaving the
+      // sheet without a pull-to-close until something else binds it again.
+      if (!query.matches || !el) {
+        if (open && query.matches && misses < 60) {
+          misses += 1;
+          retry = window.requestAnimationFrame(() => {
+            retry = 0;
+            bind();
+          });
+        }
+        return;
+      }
+      misses = 0;
       let startY = 0;
       let startX = 0;
       let lastY = 0;
@@ -485,6 +504,7 @@ function usePhoneSheetDismiss(panelRef: RefObject<HTMLElement | null>, onClose: 
     query.addEventListener("change", bind);
     return () => {
       query.removeEventListener("change", bind);
+      if (retry) window.cancelAnimationFrame(retry);
       detach();
     };
   }, [panelRef, media, open]);

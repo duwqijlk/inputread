@@ -131,6 +131,13 @@ SELECT book_id, word, chapter, occurrence, catalog_id, book_title, form, chapter
   ORDER BY tap_count DESC, last_tapped_at DESC LIMIT 50;
 ```
 
+**Index note.** The `missing` index on `book_word_taps` is partial: it covers only
+`in_glossary = 0 AND status != 'resolved'`, ordered by `book_id`, `tap_count` and
+`last_tapped_at`. The `lookup` and `status` indexes no longer include `tap_count`, so their
+small filtered result is sorted at read time. Do not add `tap_count` or `last_tapped_at` back
+to those indexes without measuring the write cost: every tap updates both columns and rewrites
+the index. The patrol queries are small; measure their actual time before changing indexes.
+
 Open reports:
 
 ```sql
