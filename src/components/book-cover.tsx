@@ -14,7 +14,7 @@ const bookIdentity = (book: CoverBook) => JSON.stringify([book.title, book.autho
 type PackLinks = Record<string, { identity: string; packId: string }>;
 const coverLinks = sessionSnapshot<PackLinks>();
 
-// Only successful exact URLs, never image bytes. New revisions still get their first-load animation.
+// Only successful exact URLs, never image bytes. New revisions still track their own load.
 const seenImages = new Map<string, true>();
 function rememberImage(url: string) {
   seenImages.delete(url);
@@ -205,8 +205,6 @@ export function BookCover({
   const [broken, setBroken] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<string | null>(() => cover && seenImages.has(cover) ? cover : null);
   const remembered = Boolean(cover && seenImages.has(cover));
-  const presentation = useRef({ url: cover, skipFade: remembered });
-  if (presentation.current.url !== cover) presentation.current = { url: cover, skipFade: remembered };
   const currentCover = useRef(cover);
   currentCover.current = cover;
   const [near, setNear] = useState(!whenVisible);
@@ -271,7 +269,7 @@ export function BookCover({
       {...(showGenerated ? { "data-generated-cover": "" } : {})}
     >
       {!remembered && (pending || (showImage && !imageReady)) ? (
-        <span className="cover-shimmer absolute inset-0" data-cover-pending="" aria-hidden />
+        <span className="absolute inset-0 bg-line" data-cover-pending="" aria-hidden />
       ) : null}
       {showImage ? (
         <img
@@ -280,8 +278,9 @@ export function BookCover({
           src={cover}
           alt=""
           crossOrigin={coverCrossOrigin(cover)}
-          className={cn("absolute inset-0 h-full w-full object-cover", !presentation.current.skipFade && "transition-opacity duration-[280ms]", !imageReady && "opacity-0")}
-          loading="lazy"
+          className="absolute inset-0 h-full w-full object-cover"
+          // Discover already gates image mounting by visibility. Do not add a second lazy wait.
+          loading={whenVisible || remembered ? "eager" : "lazy"}
           decoding="async"
           onLoad={() => {
             if (!cover || currentCover.current !== cover) return;
