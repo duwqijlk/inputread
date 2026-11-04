@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { listPackRecords } from "@/lib/book-db";
 import { catalogRowOf, cloudCover, type CoverSources } from "@/lib/cloud-cover";
 import { noteSpeechBooks } from "@/lib/speech-books";
@@ -6,15 +6,30 @@ import { BUNDLED_CATALOG_URL, loadCatalog, resolveAgainst } from "@/lib/packs";
 import { loadWordListCatalog, WORD_LIST_CATALOG_URL } from "@/lib/word-list-catalog";
 import { coverCrossOrigin } from "@/lib/cover-request";
 import { cn } from "@/components/ui";
+import { sessionSnapshot } from "@/lib/shared-fetch";
+
+const coverSources = sessionSnapshot<CoverSources>();
+type CoverBook = { id: string; title: string; author: string; isbn?: string };
+const bookIdentity = (book: CoverBook) => JSON.stringify([book.title, book.author, book.isbn ?? ""]);
+type PackLinks = Record<string, { identity: string; packId: string }>;
+const coverLinks = sessionSnapshot<PackLinks>();
+
+// Only successful exact URLs, never image bytes. New revisions still get their first-load animation.
+const seenImages = new Map<string, true>();
+function rememberImage(url: string) {
+  seenImages.delete(url);
+  seenImages.set(url, true);
+  if (seenImages.size > 400) seenImages.delete(seenImages.keys().next().value!);
+}
 
 /**
  * The cover address of every shelf book, from the live catalogs (see src/lib/cloud-cover.ts). Each
  * card's <img> loads it straight from the books host, cached by the browser and the CDN; nothing is
  * stored on the device. A book with no catalog cover is not in the map and draws its own cover.
  */
-export function useCovers(books: ReadonlyArray<{ id: string; title: string; author: string; isbn?: string }>) {
-  const [sources, setSources] = useState<CoverSources | null>(null);
-  const [packIds, setPackIds] = useState<Record<string, string>>({});
+export function useCovers(books: ReadonlyArray<CoverBook>) {
+  const [sources, setSources] = useState<CoverSources | null>(() => coverSources.read() ?? null);
+  const [packIds, setPackIds] = useState<PackLinks>(() => coverLinks.read() ?? {});
   const hasBooks = books.length > 0;
   useEffect(() => {
     let alive = true;
@@ -25,11 +40,12 @@ export function useCovers(books: ReadonlyArray<{ id: string; title: string; auth
         alive = false;
       };
     }
+    const ticket = coverSources.begin();
     void Promise.all([
       loadCatalog(BUNDLED_CATALOG_URL)
         .then((result) => result.catalog.packs)
-        .catch(() => []),
-      loadWordListCatalog().catch(() => []),
+        .catch(() => undefined),
+      loadWordListCatalog().catch(() => undefined),
     ]).then(([classics, lists]) => {
       if (!alive) return;
       const row = (catalogUrl: string) => (pack: {
@@ -49,23 +65,39 @@ export function useCovers(books: ReadonlyArray<{ id: string; title: string; auth
         category: pack.category,
         series: pack.series ?? "",
       });
-      setSources({ classics: classics.map(row(BUNDLED_CATALOG_URL)), lists: lists.map(row(WORD_LIST_CATALOG_URL)) });
+      const previous = coverSources.read();
+      const next = {
+        classics: classics ? classics.map(row(BUNDLED_CATALOG_URL)) : previous?.classics ?? [],
+        lists: lists ? lists.map(row(WORD_LIST_CATALOG_URL)) : previous?.lists ?? [],
+      };
+      if ((classics || lists) && coverSources.publish(ticket, next)) setSources(next);
     });
     return () => {
       alive = false;
     };
   }, [hasBooks]);
-  const key = books.map((book) => book.id).join("|");
+  const key = JSON.stringify(books.map((book) => [book.id, bookIdentity(book)]));
   useEffect(() => {
     let alive = true;
+    if (!hasBooks) return;
+    const ticket = coverLinks.begin();
     void listPackRecords()
       .then((records) => {
-        if (alive) setPackIds(Object.fromEntries(records.map((record) => [record.bookId, record.packId])));
+        if (!alive) return;
+        const next: PackLinks = {};
+        const byId = new Map(records.map((record) => [record.bookId, record]));
+        for (const book of books) {
+          const record = byId.get(book.id);
+          if (record) next[book.id] = { identity: bookIdentity(book), packId: record.packId };
+        }
+        if (coverLinks.publish(ticket, next)) setPackIds(next);
       })
       .catch(() => undefined);
     return () => {
       alive = false;
     };
+    // The identity key tracks every book field read here without rerunning for array-only changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   return useMemo(() => {
     const out: Record<string, string> = {};
@@ -73,9 +105,11 @@ export function useCovers(books: ReadonlyArray<{ id: string; title: string; auth
     const speeches: string[] = [];
     const ted: string[] = [];
     for (const book of books) {
-      const url = cloudCover(book, packIds[book.id], sources);
+      const link = packIds[book.id];
+      const packId = link?.identity === bookIdentity(book) ? link.packId : undefined;
+      const url = cloudCover(book, packId, sources);
       if (url) out[book.id] = url;
-      const row = catalogRowOf(book, packIds[book.id], sources);
+      const row = catalogRowOf(book, packId, sources);
       if (row?.category === "speech") {
         speeches.push(book.id);
         if (isTedSeries(row.series)) ted.push(book.id);
@@ -169,19 +203,31 @@ export function BookCover({
   const frame = useRef<HTMLSpanElement>(null);
   // A picture that failed to load is only given up on until the cover changes (a new picture gets a new try).
   const [broken, setBroken] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<string | null>(() => cover && seenImages.has(cover) ? cover : null);
+  const remembered = Boolean(cover && seenImages.has(cover));
+  const presentation = useRef({ url: cover, skipFade: remembered });
+  if (presentation.current.url !== cover) presentation.current = { url: cover, skipFade: remembered };
+  const currentCover = useRef(cover);
+  currentCover.current = cover;
   const [near, setNear] = useState(!whenVisible);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!whenVisible || !cover) {
       setNear(true);
       return;
     }
-    setNear(false);
     const el = frame.current;
     if (!el || typeof IntersectionObserver !== "function") {
       setNear(true);
       return;
     }
+    // The observer callback is async, even for an already visible cover. Resolve that first
+    // frame before paint without starting images further than the existing preload margin.
+    const box = el.getBoundingClientRect();
+    if (box.bottom >= -160 && box.top <= window.innerHeight + 160 && box.right >= 0 && box.left <= window.innerWidth) {
+      setNear(true);
+      return;
+    }
+    setNear(false);
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
@@ -207,10 +253,14 @@ export function BookCover({
   // A picture already in the cache can finish before React attaches `onLoad`, and then the image
   // stayed at opacity 0 with nothing to un-hide it. Check the element itself once it is mounted.
   const imgRef = useRef<HTMLImageElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = imgRef.current;
-    if (el?.complete && el.naturalWidth > 0) setLoaded(cover ?? null);
+    if (cover && el?.complete && el.naturalWidth > 0) {
+      rememberImage(cover);
+      setLoaded(cover);
+    }
   }, [cover, showImage]);
+  const imageReady = loaded === cover || remembered;
   return (
     <span
       ref={frame}
@@ -220,20 +270,30 @@ export function BookCover({
       )}
       {...(showGenerated ? { "data-generated-cover": "" } : {})}
     >
-      {pending || (showImage && loaded !== cover) ? (
+      {!remembered && (pending || (showImage && !imageReady)) ? (
         <span className="cover-shimmer absolute inset-0" data-cover-pending="" aria-hidden />
       ) : null}
       {showImage ? (
         <img
+          key={cover}
           ref={imgRef}
           src={cover}
           alt=""
           crossOrigin={coverCrossOrigin(cover)}
-          className={cn("absolute inset-0 h-full w-full object-cover transition-opacity duration-[280ms]", loaded !== cover && "opacity-0")}
+          className={cn("absolute inset-0 h-full w-full object-cover", !presentation.current.skipFade && "transition-opacity duration-[280ms]", !imageReady && "opacity-0")}
           loading="lazy"
           decoding="async"
-          onLoad={() => setLoaded(cover ?? null)}
-          onError={() => setBroken(cover ?? null)}
+          onLoad={() => {
+            if (!cover || currentCover.current !== cover) return;
+            rememberImage(cover);
+            setLoaded(cover);
+          }}
+          onError={() => {
+            if (!cover || currentCover.current !== cover) return;
+            seenImages.delete(cover);
+            setLoaded(null);
+            setBroken(cover);
+          }}
         />
       ) : null}
       {showGenerated && talk ? (

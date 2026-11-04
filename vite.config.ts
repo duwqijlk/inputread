@@ -43,6 +43,10 @@ export default defineConfig(({ mode }) => ({
      * blank. The floor is the oldest engine we can still support; it costs a little size.
      */
     target: "chrome69",
+    // CSS is shared by both JS builds. Chrome-only targets merge Tailwind's universal
+    // defaults with ::backdrop, invalidating the entire rule on Safari before 15.4.
+    // Missing transform defaults then leave centred dialogs at top/left: 50%.
+    cssTarget: ["chrome49", "safari10", "ios10", "firefox52", "edge15"],
   },
   // Tailwind is a PostCSS plugin now (postcss.config.js), not a Vite plugin: that is how v3 works.
   plugins: [

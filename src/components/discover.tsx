@@ -46,6 +46,7 @@ import {
   wordListRev,
 } from "@/lib/word-list-update";
 import { BookMaintainers } from "@/components/book-maintainers";
+import { sessionSnapshot } from "@/lib/shared-fetch";
 
 /** How many cards to mount at once. The rest of the catalog stays in memory for search and filters. */
 const DISCOVER_PAGE = 12;
@@ -92,6 +93,7 @@ function CardSkeleton() {
 }
 
 type Row = DiscoverRow;
+const discoverSnapshot = sessionSnapshot<{ rows: Row[]; rails: DiscoverRailSpec[] | null }>();
 
 /**
  * Every book we have, from the books host. The two catalog files are one fetch each. Covers load as
@@ -113,10 +115,11 @@ export function DiscoverScreen({
   routeBookId?: string;
 }) {
   const { t, tn } = useT();
-  const [rows, setRows] = useState<Row[]>([]);
+  const [initial] = useState(() => discoverSnapshot.read());
+  const [rows, setRows] = useState<Row[]>(() => initial?.rows ?? []);
   /** null: no saved list, so the biggest series stay automatic. */
-  const [railSpecs, setRailSpecs] = useState<DiscoverRailSpec[] | null>(null);
-  const [ready, setReady] = useState(false);
+  const [railSpecs, setRailSpecs] = useState<DiscoverRailSpec[] | null>(() => initial?.rails ?? null);
+  const [ready, setReady] = useState(Boolean(initial));
   const [records, setRecords] = useState<DiscoverRecord[]>([]);
   const [customPacks, setCustomPacks] = useState<ReadonlySet<string>>(() => new Set());
   const [query, setQuery] = useState("");
@@ -150,15 +153,16 @@ export function DiscoverScreen({
 
   useEffect(() => {
     let alive = true;
+    const ticket = discoverSnapshot.begin();
     void (async () => {
       try {
         const [catalog, lists, shelfMarks, railFile] = await Promise.all([
           loadCatalog(BUNDLED_CATALOG_URL),
           // A word-list catalog that cannot be loaded must not hide the classics.
           // Those lists are not kept in the service worker.
-          loadWordListCatalog().catch(() => [] as WordListPack[]),
+          loadWordListCatalog().catch(() => undefined),
           loadDiscoverRecords(),
-          loadDiscoverRailFile().catch(() => null),
+          loadDiscoverRailFile().catch(() => undefined),
         ]);
         if (!alive) return;
         const classics: Row[] = catalog.catalog.packs.map((pack) => ({
@@ -181,7 +185,7 @@ export function DiscoverScreen({
           added: pack.added,
           pack,
         }));
-        const words: Row[] = lists.map((pack) => ({
+        const words: Row[] = lists ? lists.map((pack) => ({
           key: `list:${pack.id}`,
           id: pack.id,
           kind: "list",
@@ -198,16 +202,18 @@ export function DiscoverScreen({
           updated: pack.updated,
           added: pack.added,
           list: pack,
-        }));
-        setRows([...classics, ...words]);
-        setRailSpecs(railFile);
+        })) : discoverSnapshot.read()?.rows.filter((row) => row.kind === "list") ?? [];
+        const next = { rows: [...classics, ...words], rails: railFile === undefined ? discoverSnapshot.read()?.rails ?? null : railFile };
+        if (!discoverSnapshot.publish(ticket, next)) return;
+        setRows(next.rows);
+        setRailSpecs(next.rails);
         setRecords(shelfMarks.records);
         setCustomPacks(shelfMarks.custom);
         setError("");
         // The catalogs are fresh: notice which installed books have a newer word list.
         void autoUpdateWordLists();
       } catch (reason) {
-        if (alive) setError(errorText(reason, "err.catalogLoad"));
+        if (alive && !discoverSnapshot.read()) setError(errorText(reason, "err.catalogLoad"));
       } finally {
         if (alive) setReady(true);
       }

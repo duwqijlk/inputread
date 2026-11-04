@@ -11,6 +11,26 @@
 export const SHARED_TEXT_MS = 60_000;
 
 const recent = new Map<string, { at: number; text: Promise<string> }>();
+let generation = 0;
+
+/** A successful display snapshot for a remounted screen, not a replacement for revalidation. */
+export function sessionSnapshot<T>() {
+  let saved: { generation: number; value: T } | undefined;
+  let sequence = 0;
+  return {
+    read(): T | undefined {
+      return saved?.generation === generation ? saved.value : undefined;
+    },
+    begin() {
+      return { generation, sequence: ++sequence };
+    },
+    publish(ticket: { generation: number; sequence: number }, value: T): boolean {
+      if (ticket.generation !== generation || ticket.sequence !== sequence) return false;
+      saved = { generation, value };
+      return true;
+    },
+  };
+}
 
 export function sharedText(url: string, now = Date.now()): Promise<string> {
   const hit = recent.get(url);
@@ -33,5 +53,6 @@ export async function sharedJson(url: string): Promise<unknown> {
 
 /** Forget every shared download (tests, and an admin who just published a catalog). */
 export function forgetSharedFetches(): void {
+  generation += 1;
   recent.clear();
 }
