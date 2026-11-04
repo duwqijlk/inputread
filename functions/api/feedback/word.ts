@@ -134,12 +134,10 @@ export async function handleWordFeedbackPost(
         (priorReports.results ?? []).map((r) => r.glossary_rev).filter(Boolean),
       );
 
-      // Simple Occam's razor:
-      // An incoming report is only suppressed as an outdated client if its revision
-      // explicitly matches one of the known pre-resolution buggy revisions (and != resolvedRev).
-      // All other cases (reproduced on resolvedRev, on any newer revision, or unknown) trigger 'reopened'.
+      // A new explanation is fresh review work even from an old list. Only a plain report
+      // on a known pre-resolution revision can be suppressed as an outdated client.
       const isOutdatedClient =
-        Boolean(glossaryRev) &&
+        !suggestion && Boolean(glossaryRev) &&
         preResolutionRevs.has(glossaryRev) &&
         glossaryRev !== resolvedRev;
 

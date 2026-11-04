@@ -274,7 +274,12 @@ const passageDiscovery = patrol.match(/SELECT p\.id,[\s\S]*?WHERE p\.status != '
 const passageCutoff = patrol.match(/SELECT MAX\(id\) AS cutoff_id FROM passage_feedback WHERE topic = \?1;/)?.[0];
 const passagePage = patrol.match(/SELECT p\.id,[^;]*?WHERE p\.topic = \?1[^;]*?;/)?.[0];
 const passageUpdate = patrol.match(/UPDATE passage_feedback SET status = 'resolved'[\s\S]*?;/)?.[0];
-const positional = (sql) => sql.replace(/\?\d+/g, '?');
+const positional = (sql) => {
+  const count = Math.max(0, ...[...sql.matchAll(/\?(\d+)/g)].map((match) => Number(match[1])));
+  if (!count) return sql;
+  const params = Array.from({ length: count }, (_, index) => `? AS p${index + 1}`).join(', ');
+  return `WITH bound_params AS (SELECT ${params}) ${sql.replace(/\?(\d+)/g, ' (SELECT p$1 FROM bound_params) ')}`;
+};
 
 test('documented passage pagination reviews a topic larger than 300 without resolving post-cutoff or unrelated reports', () => {
   const db = new DatabaseSync(':memory:');
@@ -314,7 +319,7 @@ test('documented passage pagination reviews a topic larger than 300 without reso
     assert.ok(reviewed.some((r) => r.status === 'resolved'), 'resolved context must not be lost');
     assert.ok(reviewed.some((r) => r.catalog_id === 'public-books:other'), 'topic is not catalog identity');
     const resolve = db.prepare(positional(passageUpdate));
-    const apply = (id, savedTopic = topic, savedCutoff = cutoff) => resolve.run(10000, 'verifiedrev', id, savedTopic, savedCutoff).changes;
+    const apply = (id, savedTopic = topic, savedCutoff = cutoff) => resolve.run(10000, 'verifiedrev', id, savedTopic, savedCutoff, 'fixed').changes;
     assert.equal(apply(lateId), 0, 'cutoff protects a newly appended report, even if accidentally supplied');
     const unrelated = db.prepare('SELECT id FROM passage_feedback WHERE topic = ? LIMIT 1').get(otherTopic);
     assert.equal(apply(unrelated.id), 0, 'topic guard protects an unrelated reviewed id');
@@ -498,10 +503,10 @@ test('zero-topic anomaly lane is independently bounded, resumes by id and keeps 
     assert.deepEqual(page.all(first.at(-1).id, cutoff).map((r) => r.id), ids.slice(20));
     assert.deepEqual(page.all(ids.at(-1), cutoff), []);
     const resolve = db.prepare(positional(passageUpdate));
-    assert.equal(resolve.run(2, 'verified', late, 0, cutoff).changes, 0, 'post-cutoff anomaly cannot be resolved');
+    assert.equal(resolve.run(2, 'verified', late, 0, cutoff, 'fixed').changes, 0, 'post-cutoff anomaly cannot be resolved');
     db.prepare('UPDATE passage_feedback SET topic = id WHERE id = ?').run(ids[0]);
-    assert.equal(resolve.run(2, 'verified', ids[0], 0, cutoff).changes, 0, 'concurrent topic repair requires rereading');
-    assert.equal(resolve.run(2, 'verified', ids[1], 0, cutoff).changes, 1);
+    assert.equal(resolve.run(2, 'verified', ids[0], 0, cutoff, 'fixed').changes, 0, 'concurrent topic repair requires rereading');
+    assert.equal(resolve.run(2, 'verified', ids[1], 0, cutoff, 'fixed').changes, 1);
     assert.equal(db.prepare('SELECT status FROM passage_feedback WHERE id = ?').get(ids[2]).status, 'pending', 'unreviewed reports stay open');
     db.exec(readFileSync(join(ROOT, 'migrations/0024_passage_feedback_topic.sql'), 'utf8'));
     const discovery = db.prepare(positional(patrol.match(/SELECT DISTINCT topic FROM passage_feedback[^;]*;/)[0])).all(0);
