@@ -12,6 +12,7 @@ export const SHARED_TEXT_MS = 60_000;
 
 const recent = new Map<string, { at: number; text: Promise<string> }>();
 let generation = 0;
+export const sharedFetchGeneration = () => generation;
 
 /** A successful display snapshot for a remounted screen, not a replacement for revalidation. */
 export function sessionSnapshot<T>() {

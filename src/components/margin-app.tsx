@@ -199,6 +199,7 @@ export function MarginApp() {
       }
       markVocabHydrated();
       await finishPendingRemoval();
+      let startupSummaries: Awaited<ReturnType<typeof listBookSummaries>> | undefined;
       try {
         // Summaries only: loading every chapter and image here made the shelf slow.
         const [storedResult, notesResult] = await Promise.allSettled([
@@ -206,6 +207,7 @@ export function MarginApp() {
           loadNotes(),
         ]);
         if (storedResult.status === "fulfilled") {
+          startupSummaries = storedResult.value;
           restoreBooks(storedResult.value);
           setStoredIds(new Set(storedResult.value.map((book) => book.id)));
         }
@@ -229,7 +231,7 @@ export function MarginApp() {
         // Keep whatever was already on this device.
       }
       try {
-        await repairShelf();
+        await repairShelf(startupSummaries);
       } catch {
         // Two cards of one book are a nuisance, not a reason to stop: the next start tries again.
       }

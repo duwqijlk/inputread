@@ -238,6 +238,7 @@ test("stored catalog wins a raw-id collision; legacy collision refuses; SHA cycl
   let lists = [{ id: "shared", glossary: { url: "list.json", sha256: "" } }];
   const writes = [];
   let applyCount = 0;
+  let generation = 0;
   const create = () => (init) => {
     let state;
     const store = { getState: () => state, setState: (patch) => { state = { ...state, ...(typeof patch === "function" ? patch(state) : patch) }; } };
@@ -251,7 +252,8 @@ test("stored catalog wins a raw-id collision; legacy collision refuses; SHA cycl
     "@/lib/book-db": {
       listPackRecords: async () => [record], loadBookExtras: async () => extras,
       loadStoredBook: async () => ({ chapters: [{ paragraphs: ["Original fixture prose."] }] }),
-      savePackRecord: async (row) => writes.push(row), loadBookMeta: async () => ({ glossary: {} }),
+      savePackRecord: async (row) => writes.push(row),
+      loadBookSummary: async () => ({ ...extras, glossaryWords: 0 }), bookDataGeneration: () => generation,
     },
     "@/lib/packs": {
       BUNDLED_CATALOG_URL: "https://fixture.invalid/catalog", getCatalogUrl: () => "https://fixture.invalid/catalog",
@@ -260,6 +262,7 @@ test("stored catalog wins a raw-id collision; legacy collision refuses; SHA cycl
       downloadPack: async () => { throw new Error("wrong public catalog update"); },
     },
     "@/lib/word-list-catalog": { loadWordListCatalog: async () => lists },
+    "@/lib/shared-fetch": { sharedFetchGeneration: () => 0, SHARED_TEXT_MS: 60_000 },
     "@/lib/glossary-fetch": { remoteGlossaryId: () => null },
     "@/lib/pack-glossary": { hashBytes: async () => "", applyPackGlossary: async () => { applyCount += 1; } },
     "@/lib/pair-epub": { storeWordListText: async () => {} },
@@ -284,6 +287,7 @@ test("stored catalog wins a raw-id collision; legacy collision refuses; SHA cycl
     extras = { source: "shared", catalog: "public-books" };
     for (const rev of ["g1", "combined-e1-g1", "g2", "g1", ""]) {
       classic = { ...classic, rev };
+      generation += 1;
       await module.exports.autoUpdateWordLists();
       assert.equal(module.exports.useListUpdates.getState().holds["book:private"], "bookChanged", `hold survives catalog rev ${JSON.stringify(rev)}`);
       assert.equal(module.exports.useListUpdates.getState().waiting, 1);

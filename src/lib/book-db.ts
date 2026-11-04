@@ -150,6 +150,63 @@ const glossKey = (id: string) => `gloss:${id}`;
 const extrasKey = (id: string) => `extras:${id}`;
 const packKey = (bookId: string) => `pack:${bookId}`;
 const coverInfoKey = (bookId: string) => `coverinfo:${bookId}`;
+const summaryKey = (id: string) => `summary:${id}`;
+
+export type BookSummary = {
+  id: string;
+  title?: string;
+  author?: string;
+  glossaryWords?: number;
+  extrasKnown?: boolean;
+  source?: string;
+  catalog?: CatalogName;
+  rev?: string;
+};
+
+let dataGeneration = 0;
+export const bookDataGeneration = () => dataGeneration;
+const CHANGE_KEY = "cibian-book-data-change-v1";
+function noteBookChange(): void {
+  dataGeneration += 1;
+  try { localStorage.setItem(CHANGE_KEY, `${Date.now()}:${Math.random()}`); } catch { /* TTL revalidation still works. */ }
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key === CHANGE_KEY || event.key === null) dataGeneration += 1;
+    // Older tabs do not maintain projections. A bookshelf write is a conservative signal
+    // to rebuild derived fields before trusting them again; ordinary navigation sends none.
+    if (event.key === "cibian-notebook-v1" || event.key === null) {
+      dataGeneration += 1;
+      void clearDerivedSummaries().catch(() => undefined);
+    }
+  });
+}
+
+async function clearDerivedSummaries(): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(NOTES, "readwrite");
+  const done = finish(tx, db);
+  tx.objectStore(NOTES).delete(IDBKeyRange.bound("summary:", "summary:\uffff"));
+  await done;
+  dataGeneration += 1;
+}
+
+function summaryOf(meta: BookMeta): Partial<BookSummary> {
+  return { id: meta.id, title: meta.title, author: meta.author ?? "", glossaryWords: Object.keys(meta.glossary ?? {}).length };
+}
+function identityOf(extras: BookExtras | null | undefined): Partial<BookSummary> {
+  return {
+    extrasKnown: true,
+    source: extras?.source || undefined,
+    catalog: isCatalogName(extras?.catalog) ? extras.catalog : undefined,
+    rev: extras?.rev || undefined,
+  };
+}
+async function mergeSummary(tx: IDBTransaction, id: string, patch: Partial<BookSummary>): Promise<void> {
+  const store = tx.objectStore(NOTES);
+  const previous = await requestToPromise(store.get(summaryKey(id))) as BookSummary | undefined;
+  store.put({ ...previous, ...patch, id }, summaryKey(id));
+}
 // Older versions kept answers from an online helper under `help:`. Nothing writes them now.
 const helpRange = (id: string) => IDBKeyRange.bound(`help:${id}:`, `help:${id}:\uffff`);
 const allHelpRange = () => IDBKeyRange.bound("help:", "help:\uffff");
@@ -270,9 +327,18 @@ export async function saveStoredBook(book: StoredBook): Promise<void> {
   const db = await openDb();
   const tx = db.transaction([STORE, NOTES], "readwrite");
   const done = finish(tx, db);
-  tx.objectStore(STORE).put(book, book.id);
-  tx.objectStore(GLOSS).put(metaOf(book), glossKey(book.id));
-  await done;
+  try {
+    const meta = metaOf(book);
+    tx.objectStore(STORE).put(book, book.id);
+    tx.objectStore(GLOSS).put(meta, glossKey(book.id));
+    await mergeSummary(tx, book.id, summaryOf(meta));
+    await done;
+    noteBookChange();
+  } catch (error) {
+    try { tx.abort(); } catch { /* already finished */ }
+    await done.catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function listStoredBooks(): Promise<StoredBook[]> {
@@ -316,39 +382,68 @@ export async function listBookSummaries(): Promise<
   const tx = db.transaction([STORE, NOTES], "readonly");
   const done = finish(tx, db);
   const idsReq = tx.objectStore(STORE).getAllKeys();
-  const metaKeysReq = tx.objectStore(NOTES).getAllKeys();
-  const metaReq = tx.objectStore(NOTES).getAll() as IDBRequest<unknown[]>;
-  const [ids, metaKeys, metas] = await Promise.all([
-    requestToPromise(idsReq),
-    requestToPromise(metaKeysReq),
-    requestToPromise(metaReq),
-  ]);
+  const summariesReq = tx.objectStore(NOTES).getAll(IDBKeyRange.bound("summary:", "summary:\uffff")) as IDBRequest<BookSummary[]>;
+  const [ids, summaries] = await Promise.all([requestToPromise(idsReq), requestToPromise(summariesReq)]);
   await done;
-  const byId = new Map<string, BookMeta>();
-  (metaKeys ?? []).forEach((key, index) => {
-    const value = metas?.[index] as BookMeta | undefined;
-    if (typeof key === "string" && key.startsWith("gloss:") && value && typeof value === "object") {
-      byId.set(key.slice(6), value);
-    }
-  });
+  const byId = new Map((summaries ?? []).filter(validSummary).map((summary) => [summary.id, summary]));
   const out: Array<{ id: string; title: string; author: string }> = [];
   for (const key of ids ?? []) {
     if (typeof key !== "string") continue;
-    const meta = byId.get(key);
-    if (meta && typeof meta.title === "string") {
-      out.push({ id: key, title: meta.title, author: meta.author ?? "" });
-      continue;
+    const summary = byId.get(key) ?? await loadBookSummary(key);
+    if (summary && typeof summary.title === "string") {
+      out.push({ id: key, title: summary.title, author: summary.author ?? "" });
     }
-    // Book saved by an older version: read it once and remember its title.
-    const full = await loadStoredBook(key).catch(() => null);
-    if (!full) continue;
-    out.push({ id: full.id, title: full.title, author: full.author });
-    void patchStoredBook(full.id, (m) => {
-      m.title = full.title;
-      m.author = full.author;
-    }).catch(() => undefined);
   }
   return out;
+}
+
+function validSummary(value: BookSummary | undefined): value is BookSummary & { title: string; glossaryWords: number } {
+  return Boolean(value && typeof value.id === "string" && typeof value.title === "string" &&
+    Number.isInteger(value.glossaryWords) && value.glossaryWords! >= 0);
+}
+
+/** Projection only. Legacy payloads are read once, inside the same transaction as their backfill. */
+export async function loadBookSummary(id: string, extras = false): Promise<BookSummary | null> {
+  const db = await openDb();
+  const tx = db.transaction([STORE, NOTES], "readonly");
+  const done = finish(tx, db);
+  const existsReq = tx.objectStore(STORE).getKey(id);
+  const summaryReq = tx.objectStore(NOTES).get(summaryKey(id)) as IDBRequest<BookSummary | undefined>;
+  const [exists, saved] = await Promise.all([requestToPromise(existsReq), requestToPromise(summaryReq)]);
+  await done;
+  if ((exists === undefined || validSummary(saved)) && (!extras || saved?.extrasKnown === true)) {
+    return exists === undefined && !extras ? null : saved ?? null;
+  }
+  const backfillDb = await openDb();
+  const write = backfillDb.transaction([STORE, NOTES], "readwrite");
+  const complete = finish(write, backfillDb);
+  try {
+    const store = write.objectStore(NOTES);
+    const existsNow = await requestToPromise(write.objectStore(STORE).getKey(id));
+    let summary = await requestToPromise(store.get(summaryKey(id))) as BookSummary | undefined;
+    if (existsNow !== undefined && !validSummary(summary)) {
+      let meta = await requestToPromise(store.get(glossKey(id))) as BookMeta | undefined;
+      if (!meta || typeof meta.title !== "string") {
+        const full = await requestToPromise(write.objectStore(STORE).get(id)) as StoredBook | undefined;
+        if (full) meta = { ...(meta ?? metaOf(full)), title: full.title, author: full.author };
+      }
+      if (meta) summary = { ...summary, ...summaryOf(meta), id };
+    }
+    if (extras && summary?.extrasKnown !== true) {
+      const value = await requestToPromise(store.get(extrasKey(id))) as BookExtras | undefined;
+      summary = { ...summary, ...identityOf(value), id };
+    }
+    // No book and no extras check: do not resurrect a deleted summary.
+    const packExists = extras && existsNow === undefined
+      ? await requestToPromise(store.getKey(packKey(id))) : undefined;
+    if (summary && (existsNow !== undefined || packExists !== undefined)) store.put(summary, summaryKey(id));
+    await complete;
+    return existsNow === undefined && !extras ? null : summary ?? null;
+  } catch (error) {
+    try { write.abort(); } catch { /* already finished */ }
+    await complete.catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function saveNotes(words: unknown[]): Promise<void> {
@@ -437,8 +532,10 @@ async function deleteStoredBookNow(id: string): Promise<void> {
   tx.objectStore(NOTES).delete(extrasKey(id));
   tx.objectStore(NOTES).delete(packKey(id));
   tx.objectStore(NOTES).delete(coverInfoKey(id));
+  tx.objectStore(NOTES).delete(summaryKey(id));
   tx.objectStore(NOTES).delete(helpRange(id));
   await done;
+  noteBookChange();
 }
 
 /* ------------------------------------------------------------------ extras and help cache */
@@ -471,9 +568,17 @@ export async function saveBookExtras(id: string, extras: BookExtras): Promise<vo
   const db = await openDb();
   const tx = db.transaction(NOTES, "readwrite");
   const done = finish(tx, db);
-  tx.objectStore(NOTES).put(extras, extrasKey(id));
-  await done;
+  try {
+    tx.objectStore(NOTES).put(extras, extrasKey(id));
+    await mergeSummary(tx, id, identityOf(extras));
+    await done;
+  } catch (error) {
+    try { tx.abort(); } catch { /* already finished */ }
+    await done.catch(() => undefined);
+    throw error;
+  }
   extrasRevisions.set(id, extrasRevision(id) + 1);
+  noteBookChange();
 }
 
 /** One-time clean-up: remove the saved answers an older version kept from its online helper. */
@@ -493,6 +598,7 @@ export async function savePackRecord(record: PackRecord): Promise<void> {
   const done = finish(tx, db);
   tx.objectStore(NOTES).put(record, packKey(record.bookId));
   await done;
+  noteBookChange();
 }
 
 export async function loadPackRecord(bookId: string): Promise<PackRecord | null> {
@@ -568,7 +674,9 @@ export async function patchStoredBook(
       }
       change(meta);
       tx.objectStore(GLOSS).put(meta, glossKey(id));
+      await mergeSummary(tx, id, summaryOf(meta));
       await done;
+      noteBookChange();
       return meta;
     } catch (error) {
       try {
@@ -623,6 +731,7 @@ export async function deletePackRecord(bookId: string): Promise<void> {
   const done = finish(tx, db);
   tx.objectStore(NOTES).delete(packKey(bookId));
   await done;
+  noteBookChange();
 }
 
 export async function loadAllCovers(): Promise<Record<string, string>> {

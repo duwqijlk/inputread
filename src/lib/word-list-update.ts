@@ -12,10 +12,12 @@
  * A hold stays on the shelf card and the Discover card. A banner says how many books are waiting.
  */
 import { create } from "zustand";
+import { sharedFetchGeneration, SHARED_TEXT_MS } from "@/lib/shared-fetch";
 import {
   listPackRecords,
   loadBookExtras,
-  loadBookMeta,
+  loadBookSummary,
+  bookDataGeneration,
   loadStoredBook,
   savePackRecord,
   type PackRecord,
@@ -119,13 +121,6 @@ function rememberFailure(packId: string, reason: unknown): void {
   }));
 }
 
-/** The card explains why this book was left for the reader. The sentence is translated at render. */
-function rememberHold(packId: string, why: "ownList" | "bookChanged" | "newList"): void {
-  useListUpdates.setState((prev) => ({
-    holds: { ...prev.holds, [packId]: why },
-  }));
-}
-
 /** The catalog revision of a word-list pack (place-word-list.ts stores the same value). */
 export function wordListRev(pack: Pick<WordListPack, "id" | "glossary">): string {
   return pack.glossary.sha256.slice(0, 12) || pack.id;
@@ -225,32 +220,25 @@ export async function retryWordListUpdate(pack: WordListPack): Promise<void> {
 type CatalogMaps = {
   classics: Map<string, { pack: CatalogPack; url: string }>;
   lists: Map<string, WordListPack>;
+  complete: boolean;
 };
 
 async function loadCatalogMaps(): Promise<CatalogMaps> {
-  const classics = new Map<string, { pack: CatalogPack; url: string }>();
-  try {
-    const { catalog } = await loadCatalog(BUNDLED_CATALOG_URL);
-    for (const pack of catalog.packs) classics.set(pack.id, { pack, url: BUNDLED_CATALOG_URL });
-  } catch {
-    // Offline or no catalog: the word-list catalog below may still answer.
-  }
   const custom = getCatalogUrl();
-  if (custom !== BUNDLED_CATALOG_URL) {
-    try {
-      const { catalog } = await loadCatalog(custom);
-      for (const pack of catalog.packs) classics.set(pack.id, { pack, url: custom });
-    } catch {
-      // The extra list is optional.
-    }
-  }
+  const [bundled, extra, wordLists] = await Promise.all([
+    loadCatalog(BUNDLED_CATALOG_URL).catch(() => null),
+    custom !== BUNDLED_CATALOG_URL ? loadCatalog(custom).catch(() => null) : Promise.resolve(null),
+    loadWordListCatalog().catch(() => null),
+  ]);
+  const classics = new Map<string, { pack: CatalogPack; url: string }>();
+  for (const pack of bundled?.catalog.packs ?? []) classics.set(pack.id, { pack, url: BUNDLED_CATALOG_URL });
+  // Preserve the custom catalog's precedence even though the downloads are concurrent.
+  for (const pack of extra?.catalog.packs ?? []) classics.set(pack.id, { pack, url: custom });
   const lists = new Map<string, WordListPack>();
-  try {
-    for (const pack of await loadWordListCatalog()) lists.set(pack.id, pack);
-  } catch {
-    // The word-list catalog is optional.
-  }
-  return { classics, lists };
+  for (const pack of wordLists ?? []) lists.set(pack.id, pack);
+  const complete = Boolean(bundled && !bundled.offline && wordLists &&
+    (custom === BUNDLED_CATALOG_URL || (extra && !extra.offline)));
+  return { classics, lists, complete };
 }
 
 /** Stored catalog identity wins; a legacy bare id shared by both catalogs is not evidence. */
@@ -331,66 +319,81 @@ export async function updateInstalledBooks(
 }
 
 let running: Promise<void> | null = null;
-/** A call arrived while a run was already going. One more run follows. */
-let queued = false;
+let lastCheck: { key: string; at: number } | null = null;
+function checkKey(): string {
+  return JSON.stringify([bookDataGeneration(), sharedFetchGeneration(), getCatalogUrl(),
+    useVocab.getState().books.map((book) => book.id).sort()]);
+}
 
-/**
- * Notice installed books whose catalog revision changed, and offer Update.
- * Never replaces a list. Never throws.
- * A second call during a run is not dropped.
- */
+/** Unchanged navigation shares one check; mutations during it drain into the latest state. */
 export function autoUpdateWordLists(): Promise<void> {
-  if (running) {
-    queued = true;
-    return running;
-  }
-  running = runUpdates()
-    .catch(() => undefined)
-    .finally(() => {
-      running = null;
-      if (queued) {
-        queued = false;
-        void autoUpdateWordLists();
-      }
-    });
+  if (running) return running;
+  if (lastCheck?.key === checkKey() && Date.now() - lastCheck.at < SHARED_TEXT_MS) return Promise.resolve();
+  running = (async () => {
+    // Yield before scanning so every overlapping caller receives the draining promise.
+    await Promise.resolve();
+    for (;;) {
+      const key = checkKey();
+      const at = Date.now();
+      const complete = await runUpdates(key).catch(() => false);
+      if (key !== checkKey()) continue;
+      if (complete) lastCheck = { key, at };
+      break;
+    }
+  })().finally(() => { running = null; });
   return running;
 }
 
-async function runUpdates(): Promise<void> {
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return;
-  const records = await listPackRecords().catch(() => [] as PackRecord[]);
-  if (records.length === 0) return;
+async function runUpdates(key: string): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return false;
+  const records = await listPackRecords();
   const onShelf = new Set(useVocab.getState().books.map((book) => book.id));
   const live = [...onShelf].map((id) => uniqueBookRecord(records, id)).filter((record): record is PackRecord => Boolean(record));
-  if (live.length === 0) return;
+  if (live.length === 0) {
+    if (key === checkKey()) useListUpdates.setState((prev) => ({ waiting: 0, finished: prev.finished + 1 }));
+    return true;
+  }
 
   const maps = await loadCatalogMaps();
   const { classics, lists } = maps;
-  if (classics.size === 0 && lists.size === 0) return;
+  if (classics.size === 0 && lists.size === 0) return false;
 
-  let waiting = 0;
+  const holds: Record<string, ListHoldWhy> = {};
+  const failures: Record<string, string> = {};
+  const clear = new Set<string>();
+  let complete = maps.complete;
+  const unresolved = new Set<string>();
+  const checked = new Set<string>();
+  const waitingBooks = new Set<string>();
   for (const record of live) {
-    const extras = await loadBookExtras(record.bookId).catch(() => null);
+    const extras = await loadBookSummary(record.bookId, true);
+    // A partial catalog cannot establish a legacy book's identity by absence.
+    if (!maps.complete && !extras?.catalog) { unresolved.add(record.bookId); continue; }
     let target: Awaited<ReturnType<typeof catalogTarget>>;
     try { target = await catalogTarget(record, extras, maps); }
-    catch (reason) { rememberFailure(`book:${record.bookId}`, reason); continue; }
+    catch (reason) {
+      failures[`book:${record.bookId}`] = errorText(reason, "err.downloadFailed");
+      complete = false;
+      unresolved.add(record.bookId);
+      continue;
+    }
     const { classic, list } = target;
-    if (!classic && !list) continue;
+    if (!classic && !list) { complete = false; unresolved.add(record.bookId); continue; }
+    checked.add(record.bookId);
     const catalogRev = classic ? classic.pack.rev : wordListRev(list as WordListPack);
     const catalogWords = list?.words ?? 0;
     // The revision string can already match while the stored list is an older file
     // (a cached copy paired under the new revision). The word count tells them apart.
     let installedWords: number | undefined;
     if (list && record.rev === catalogRev && catalogWords > 0) {
-      const meta = await loadBookMeta(record.bookId).catch(() => null);
-      if (meta) installedWords = Object.keys(meta.glossary ?? {}).length;
+      installedWords = extras?.glossaryWords;
     }
     const countsMightDiffer =
       typeof installedWords === "number" && catalogWords > 0 && installedWords !== catalogWords;
     const shaDiffers = Boolean(classic?.pack.epub.sha256 && record.sha256 !== classic.pack.epub.sha256);
     if (record.rev === catalogRev && !countsMightDiffer && !shaDiffers) {
-      useListUpdates.getState().clearFailure(record.packId);
-      useListUpdates.getState().clearFailure(`book:${record.bookId}`);
+      clear.add(record.packId);
+      clear.add(`book:${record.bookId}`);
       continue;
     }
     const plan = shaDiffers
@@ -405,15 +408,24 @@ async function runUpdates(): Promise<void> {
       catalogWords,
     });
     if (plan.kind !== "manual") {
-      if (record.rev === catalogRev) useListUpdates.getState().clearFailure(record.packId);
+      if (record.rev === catalogRev) clear.add(record.packId);
       continue;
     }
-    rememberHold(record.packId, plan.why);
-    rememberHold(`book:${record.bookId}`, plan.why);
-    if (plan.why !== "ownList") waiting += 1;
+    holds[record.packId] = plan.why;
+    holds[`book:${record.bookId}`] = plan.why;
+    if (plan.why !== "ownList") waitingBooks.add(record.bookId);
   }
-  useListUpdates.setState((prev) => ({
-    finished: prev.finished + 1,
-    waiting,
-  }));
+  if (key !== checkKey()) return false;
+  useListUpdates.setState((prev) => {
+    const nextHolds = { ...prev.holds };
+    const nextFailures = { ...prev.failures };
+    for (const id of checked) delete nextHolds[`book:${id}`];
+    for (const id of clear) { delete nextHolds[id]; delete nextFailures[id]; }
+    for (const id of unresolved) {
+      const why = prev.holds[`book:${id}`];
+      if (why && why !== "ownList") waitingBooks.add(id);
+    }
+    return { holds: { ...nextHolds, ...holds }, failures: { ...nextFailures, ...failures }, finished: prev.finished + 1, waiting: waitingBooks.size };
+  });
+  return complete;
 }

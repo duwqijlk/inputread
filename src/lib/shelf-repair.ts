@@ -17,7 +17,7 @@ import {
   loadAllCoverInfo,
   loadAllCovers,
   loadCover,
-  loadBookExtras,
+  loadBookSummary,
   loadStoredBook,
   saveCover,
   savePackRecord,
@@ -42,12 +42,13 @@ import { loadWordListCatalog, WORD_LIST_CATALOG_URL } from "@/lib/word-list-cata
  * A second card that holds its own stored e-book is only folded in when it has the very same title;
  * two different-looking e-books are never thrown away.
  */
-export async function repairShelf(): Promise<number> {
+export async function repairShelf(summaries?: Array<{ id: string; title: string; author: string }>): Promise<number> {
   const vocab = useVocab.getState();
-  const stored = new Set((await listBookSummaries().catch(() => [])).map((book) => book.id));
+  const stored = new Set((summaries ?? await listBookSummaries()).map((book) => book.id));
   const records = await listPackRecords();
+  // A failed identity read must stop repair, not become permission to merge unknown books.
   const extras = new Map(await Promise.all(vocab.books.map(async (book) =>
-    [book.id, await loadBookExtras(book.id).catch(() => null)] as const,
+    [book.id, await loadBookSummary(book.id, true)] as const,
   )));
   const progress = useProgress.getState().items;
   const entries = vocab.books.filter((book) =>
