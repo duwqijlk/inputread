@@ -9,6 +9,11 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { forgetSharedFetches, sessionSnapshot } from "../src/lib/shared-fetch.ts";
 
+test("cover loading has no looping sweep animation", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  assert.doesNotMatch(css, /\.cover-shimmer\s*\{|@keyframes cover-shimmer/);
+});
+
 test("display snapshots revalidate without losing the last success and reject obsolete publications", () => {
   const cache = sessionSnapshot();
   const old = cache.begin();
@@ -76,18 +81,28 @@ export const cn = (...values) => values.filter(Boolean).join(' ');
     const unmount = async () => act(async () => { root.render(null); });
     await render({ cover: "/cover?v=one" });
     assert.ok(container.querySelector("[data-cover-pending]"));
+    assert.ok(!container.querySelector(".cover-shimmer"));
+    assert.ok(!container.querySelector("img").className.includes("opacity-0"), "pending image is not artificially hidden");
+    await unmount();
+    await render({ cover: "/cover?v=one" });
+    assert.ok(!container.querySelector(".cover-shimmer"), "switching away before load completes never restarts a shimmer");
     await act(async () => container.querySelector("img").dispatchEvent(new Event("load")));
-    assert.ok(container.querySelector("img").className.includes("transition-opacity"), "first load keeps its fade");
+    assert.ok(!container.querySelector("img").className.includes("transition-opacity"), "first load does not replay a presentation fade");
     await unmount();
     await render({ cover: "/cover?v=one", whenVisible: true });
     assert.ok(container.querySelector("img"), "visible remount resolves before paint");
+    assert.equal(container.querySelector("img").getAttribute("loading"), "eager", "visibility gating must not be followed by a second lazy gate");
     assert.ok(!container.querySelector("[data-cover-pending]"));
     assert.ok(!container.querySelector("img").className.includes("opacity-0"));
     assert.ok(!container.querySelector("img").className.includes("transition-opacity"));
     await unmount();
+    await render({ cover: "/cover?v=one" });
+    assert.equal(container.querySelector("img").getAttribute("loading"), "eager", "remembered visible images avoid a new native lazy wait");
+    await unmount();
     y = 5000;
     await render({ cover: "/cover?v=one", whenVisible: true });
     assert.equal(container.querySelector("img"), null, "seen but offscreen URLs still stay lazy");
+    assert.ok(!container.querySelector(".cover-shimmer"), "offscreen wait is static");
     await act(async () => observers.at(-1).callback([{ isIntersecting: true }]));
     assert.ok(container.querySelector("img"));
     y = 0;
