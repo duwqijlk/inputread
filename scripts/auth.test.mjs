@@ -3005,7 +3005,16 @@ test("word feedback: old-revision explanations stay reviewable after no-change r
   assert.equal((await send({}, NOW + 200, "192.0.2.11")).status, 200);
   assert.equal(db.raw.prepare("SELECT status FROM word_feedback ORDER BY id DESC LIMIT 1").get().status, "resolved", "plain old-client suppression remains");
   const suggestion = "Completely, with nothing left out.";
-  assert.equal((await send({ suggestion }, NOW + 300, "192.0.2.11")).status, 200);
+  const prepare = db.prepare;
+  let historyReads = 0;
+  db.prepare = (sql) => {
+    if (sql.includes("SELECT DISTINCT glossary_rev")) historyReads++;
+    return prepare(sql);
+  };
+  try {
+    assert.equal((await send({ suggestion }, NOW + 300, "192.0.2.11")).status, 200);
+    assert.equal(historyReads, 0, "new explanations never need the old-version suppression scan");
+  } finally { db.prepare = prepare; }
   const fresh = db.raw.prepare("SELECT status,resolution,accepted_at,suggestion FROM word_feedback ORDER BY id DESC LIMIT 1").get();
   assert.equal(fresh.status, "reopened");
   assert.equal(fresh.resolution, "", "new report cannot inherit the old review outcome");

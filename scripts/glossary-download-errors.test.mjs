@@ -8,7 +8,7 @@ function client(deadline = 1000) {
   const src = readFileSync(new URL("../src/lib/glossary-fetch.ts", import.meta.url), "utf8");
   const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const stubs = {
-    "@/lib/cancel-work": { ...cancel, requestScope: (signal) => cancel.requestScope(signal, deadline) },
+    "@/lib/cancel-work": { ...cancel, requestScope: (signal, innerDeadline) => cancel.requestScope(signal, innerDeadline ? 10 : deadline) },
     "@/lib/books-base": { DEFAULT_BOOKS_BASE: "https://books.test" },
     "@/lib/i18n": { tr: (key) => key },
     "@/lib/glossary-quota": { dayLabel: () => "Monday", useGlossaryQuota: { getState: () => ({ refresh: async () => {} }) } },
@@ -36,6 +36,22 @@ test("protected glossary errors distinguish auth, rate, missing, blocked and ser
     await assert.rejects(download("book", "fallback"), { message: "err.glossaryServer" });
     globalThis.fetch = async () => new Response(JSON.stringify({ error: "glossary-week", resetAt: 1000 }), { status: 429 });
     await assert.rejects(download("book", "fallback"), { message: "quota.fullNovel" });
+  } finally { globalThis.fetch = original; }
+});
+
+test("known HTTP failures do not wait for a stalled error body", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const [status, message] of [[401, "err.glossaryLogin"], [404, "err.glossaryMissing"], [502, "err.glossaryServer"]]) {
+      let bodyReads = 0;
+      globalThis.fetch = async () => ({ ok: false, status, json: () => { bodyReads++; return new Promise(() => {}); } });
+      await assert.rejects(client(50)("book", "fallback"), { message });
+      assert.equal(bodyReads, 0);
+    }
+    for (const [status, message] of [[403, "err.glossaryForbidden"], [429, "err.glossaryRate"]]) {
+      globalThis.fetch = async () => ({ ok: false, status, json: () => new Promise(() => {}) });
+      await assert.rejects(client(100)("book", "fallback"), { message });
+    }
   } finally { globalThis.fetch = original; }
 });
 
