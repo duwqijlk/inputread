@@ -1,0 +1,1693 @@
+{
+  "generatedAt": "2026-11-05T07:45:09.629Z",
+  "sources": [
+    "https://books.inputread.site/public-books/catalog.json",
+    "https://books.inputread.site/word-lists/catalog.json"
+  ],
+  "books": [
+    {
+      "catalog": "public-books",
+      "id": "alice",
+      "title": "Alice's Adventures in Wonderland",
+      "author": "Lewis Carroll",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Portal fantasy with absurd adventures in Wonderland.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Alice%27s_Adventures_in_Wonderland"
+      ]
+    },
+    {
+      "catalog": "public-books",
+      "id": "treasure-island",
+      "title": "Treasure Island",
+      "author": "Robert Louis Stevenson",
+      "genres": [
+        "adventure"
+      ],
+      "basis": "Pirate adventure searching for buried treasure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Treasure_Island"
+      ]
+    },
+    {
+      "catalog": "public-books",
+      "id": "anne",
+      "title": "Anne of Green Gables",
+      "author": "L. M. Montgomery",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "Realistic coming-of-age story in late-19th-century Canada.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Anne_of_Green_Gables"
+      ]
+    },
+    {
+      "catalog": "public-books",
+      "id": "peter-pan",
+      "title": "Peter and Wendy",
+      "author": "J. M. Barrie",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Fantasy adventure in Neverland with pirates and fairies.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Peter_and_Wendy"
+      ]
+    },
+    {
+      "catalog": "public-books",
+      "id": "tom-sawyer",
+      "title": "The Adventures of Tom Sawyer",
+      "author": "Mark Twain",
+      "genres": [
+        "adventure",
+        "realistic"
+      ],
+      "basis": "Boyhood adventure in a Mississippi River town.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Adventures_of_Tom_Sawyer"
+      ]
+    },
+    {
+      "catalog": "public-books",
+      "id": "wind-in-the-willows",
+      "title": "The Wind in the Willows",
+      "author": "Kenneth Grahame",
+      "genres": [
+        "animals",
+        "adventure"
+      ],
+      "basis": "Animal adventure with Mole, Rat, and Toad.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Wind_in_the_Willows"
+      ]
+    },
+    {
+      "catalog": "public-books",
+      "id": "little-women",
+      "title": "Little Women",
+      "author": "Louisa May Alcott",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "Realistic family coming-of-age story during the Civil War era.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Little_Women"
+      ]
+    },
+    {
+      "catalog": "public-books",
+      "id": "secret-garden",
+      "title": "The Secret Garden",
+      "author": "Frances Hodgson Burnett",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "Realistic story of a hidden garden and a lonely child.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Secret_Garden"
+      ]
+    },
+    {
+      "catalog": "public-books",
+      "id": "black-beauty",
+      "title": "Black Beauty",
+      "author": "Anna Sewell",
+      "genres": [
+        "animals"
+      ],
+      "basis": "Animal autobiography told by a horse in Victorian England.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Black_Beauty"
+      ]
+    },
+    {
+      "catalog": "public-books",
+      "id": "looking-glass",
+      "title": "Through the Looking-Glass",
+      "author": "Lewis Carroll",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Fantasy adventure through a looking-glass world.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Through_the_Looking-Glass"
+      ]
+    },
+    {
+      "catalog": "public-books",
+      "id": "jungle-book",
+      "title": "The Jungle Book",
+      "author": "Rudyard Kipling",
+      "genres": [
+        "animals",
+        "adventure"
+      ],
+      "basis": "Animal adventure with Mowgli in the Indian jungle.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Jungle_Book"
+      ]
+    },
+    {
+      "catalog": "public-books",
+      "id": "wizard-of-oz",
+      "title": "The Wonderful Wizard of Oz",
+      "author": "L. Frank Baum",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Fantasy adventure in the Land of Oz.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Wonderful_Wizard_of_Oz"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wof1",
+      "title": "Wings of Fire 1: The Dragonet Prophecy",
+      "author": "Tui T. Sutherland",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon fantasy adventure; dragonets fulfill a prophecy.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Wings_of_Fire_(novel_series)"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wof2",
+      "title": "Wings of Fire 2: The Lost Heir",
+      "author": "Tui T. Sutherland",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon fantasy adventure; dragonets fulfill a prophecy.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Wings_of_Fire_(novel_series)"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wof03",
+      "title": "Wings of Fire 3: The Hidden Kingdom",
+      "author": "Tui T. Sutherland",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon fantasy adventure; dragonets fulfill a prophecy.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Wings_of_Fire_(novel_series)"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wof04",
+      "title": "Wings of Fire 4: The Dark Secret",
+      "author": "Tui T. Sutherland",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon fantasy adventure; dragonets fulfill a prophecy.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Wings_of_Fire_(novel_series)"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wof05",
+      "title": "Wings of Fire 5: The Brightest Night",
+      "author": "Tui T. Sutherland",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon fantasy adventure; dragonets fulfill a prophecy.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Wings_of_Fire_(novel_series)"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wof06",
+      "title": "Wings of Fire 6: Moon Rising",
+      "author": "Tui T. Sutherland",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon fantasy adventure; dragonets fulfill a prophecy.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Wings_of_Fire_(novel_series)"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wof07",
+      "title": "Wings of Fire 7: Winter Turning",
+      "author": "Tui T. Sutherland",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon fantasy adventure; dragonets fulfill a prophecy.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Wings_of_Fire_(novel_series)"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wof08",
+      "title": "Wings of Fire 8: Escaping Peril",
+      "author": "Tui T. Sutherland",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon fantasy adventure; dragonets fulfill a prophecy.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Wings_of_Fire_(novel_series)"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wof09",
+      "title": "Wings of Fire 9: Talons of Power",
+      "author": "Tui T. Sutherland",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon fantasy adventure; dragonets fulfill a prophecy.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Wings_of_Fire_(novel_series)"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "narnia",
+      "title": "The Chronicles of Narnia (Complete 7-Book Collection)",
+      "author": "C. S. Lewis",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Portal fantasy adventure in the land of Narnia.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Chronicles_of_Narnia"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "lkoe01",
+      "title": "The Last Kids on Earth",
+      "author": "Max Brallier",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Post-apocalyptic monster adventure; supernatural creatures drive the plot, with comedy rather than horror.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Last_Kids_on_Earth"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "lkoe02",
+      "title": "The Last Kids on Earth and the Zombie Parade",
+      "author": "Max Brallier",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Post-apocalyptic monster adventure; supernatural creatures drive the plot, with comedy rather than horror.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Last_Kids_on_Earth"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "lkoe03",
+      "title": "The Last Kids on Earth and the Nightmare King",
+      "author": "Max Brallier",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Post-apocalyptic monster adventure; supernatural creatures drive the plot, with comedy rather than horror.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Last_Kids_on_Earth"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "cb01",
+      "title": "Midnight for Charlie Bone",
+      "author": "Jenny Nimmo",
+      "genres": [
+        "fantasy",
+        "mystery"
+      ],
+      "basis": "Magical boarding-school mystery adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Charlie_Bone"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "cb02",
+      "title": "Charlie Bone and the Time Twister",
+      "author": "Jenny Nimmo",
+      "genres": [
+        "fantasy",
+        "mystery"
+      ],
+      "basis": "Magical boarding-school mystery adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Charlie_Bone"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "cb03",
+      "title": "Charlie Bone and the Invisible Boy",
+      "author": "Jenny Nimmo",
+      "genres": [
+        "fantasy",
+        "mystery"
+      ],
+      "basis": "Magical boarding-school mystery adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Charlie_Bone"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "cb04",
+      "title": "Charlie Bone and the Castle of Mirrors",
+      "author": "Jenny Nimmo",
+      "genres": [
+        "fantasy",
+        "mystery"
+      ],
+      "basis": "Magical boarding-school mystery adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Charlie_Bone"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "cb05",
+      "title": "Charlie Bone and the Hidden King",
+      "author": "Jenny Nimmo",
+      "genres": [
+        "fantasy",
+        "mystery"
+      ],
+      "basis": "Magical boarding-school mystery adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Charlie_Bone"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "cb06",
+      "title": "Charlie Bone and the Beast",
+      "author": "Jenny Nimmo",
+      "genres": [
+        "fantasy",
+        "mystery"
+      ],
+      "basis": "Magical boarding-school mystery adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Charlie_Bone"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "cb07",
+      "title": "Charlie Bone and the Shadow",
+      "author": "Jenny Nimmo",
+      "genres": [
+        "fantasy",
+        "mystery"
+      ],
+      "basis": "Magical boarding-school mystery adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Charlie_Bone"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "cb08",
+      "title": "Charlie Bone and the Red Knight",
+      "author": "Jenny Nimmo",
+      "genres": [
+        "fantasy",
+        "mystery"
+      ],
+      "basis": "Magical boarding-school mystery adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Charlie_Bone"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth01-04",
+      "title": "Magic Tree House Books 1-4 Collection",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Four time-travel adventures: dinosaurs, a medieval knight, ancient Egypt, and pirates.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth05",
+      "title": "Magic Tree House 5: Night of the Ninjas",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in ancient Japan with ninjas.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth06",
+      "title": "Magic Tree House 6: Afternoon on the Amazon",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel adventure in the Amazon rainforest; animals are setting, not the core.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth07",
+      "title": "Magic Tree House 7: Sunset of the Sabertooth",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel adventure in the Ice Age searching for a mammoth-bone flute.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth08",
+      "title": "Magic Tree House 8: Midnight on the Moon",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "science-fiction"
+      ],
+      "basis": "Time-travel adventure to a 2031 moon base.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth09",
+      "title": "Magic Tree House 9: Dolphins at Daybreak",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel riddle adventure in the Pacific; dolphins are companions, not the mission.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth10",
+      "title": "Magic Tree House 10: Ghost Town at Sundown",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in the Wild West.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth11",
+      "title": "Magic Tree House 11: Lions at Lunchtime",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel riddle adventure on the African savanna.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth12",
+      "title": "Magic Tree House 12: Polar Bears Past Bedtime",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel riddle adventure at the North Pole.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth13",
+      "title": "Magic Tree House 13: Vacation Under the Volcano",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in Pompeii before Vesuvius erupts.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth14",
+      "title": "Magic Tree House 14: Day of the Dragon King",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in ancient China with the Dragon King.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth15",
+      "title": "Magic Tree House 15: Viking Ships at Sunrise",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure with Viking ships in medieval Ireland.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth16",
+      "title": "Magic Tree House 16: Hour of the Olympics",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure at the ancient Greek Olympics.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth17",
+      "title": "Magic Tree House 17: Tonight on the Titanic",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure on the Titanic.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth18",
+      "title": "Magic Tree House 18: Buffalo Before Breakfast",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure with a Lakota boy on the Old West plains.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth19",
+      "title": "Magic Tree House 19: Tigers at Twilight",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "animals"
+      ],
+      "basis": "Time-travel adventure whose main action is rescuing a tiger in the Indian jungle.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth20",
+      "title": "Magic Tree House 20: Dingoes at Dinnertime",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "animals"
+      ],
+      "basis": "Time-travel adventure in the Australian Outback with a wildfire rescue of a joey and a koala.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth21",
+      "title": "Magic Tree House 21: Civil War on Sunday",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure during the Civil War with Clara Barton.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth22",
+      "title": "Magic Tree House 22: Revolutionary War on Wednesday",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure during the Revolutionary War.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth24",
+      "title": "Magic Tree House 24: Earthquake in the Early Morning",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure during the 1906 San Francisco earthquake.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth25",
+      "title": "Magic Tree House 25: Stage Fright on a Summer Night",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in Elizabethan England with Shakespeare.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth26",
+      "title": "Magic Tree House 26: Good Morning, Gorillas",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "animals"
+      ],
+      "basis": "Time-travel adventure centered on meeting gorillas in the Congo.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth27",
+      "title": "Magic Tree House 27: Thanksgiving on Thursday",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure at the 1621 Plymouth Thanksgiving.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth28",
+      "title": "Magic Tree House 28: High Tide in Hawaii",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel adventure in Hawaii around a tsunami; no clear historical period.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth29",
+      "title": "Magic Tree House 29: Christmas in Camelot",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel fantasy adventure in Camelot.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth30",
+      "title": "Magic Tree House 30: Haunted Castle on Hallows Eve",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel fantasy adventure in a haunted castle.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth31",
+      "title": "Magic Tree House 31: Summer of the Sea Serpent",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel fantasy adventure with a sea serpent.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth32",
+      "title": "Magic Tree House 32: Winter of the Ice Wizard",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel fantasy adventure with an ice wizard.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth33",
+      "title": "Magic Tree House 33: Carnival at Candlelight",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in Venice at Carnival.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth34",
+      "title": "Magic Tree House 34: Season of the Sandstorms",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in ancient Baghdad.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth35",
+      "title": "Magic Tree House 35: Night of the New Magicians",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure at the 1889 Paris World's Fair.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth36",
+      "title": "Magic Tree House 36: Blizzard of the Blue Moon",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in Depression-era New York.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth37",
+      "title": "Magic Tree House 37: Dragon of the Red Dawn",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in feudal Japan.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth38",
+      "title": "Magic Tree House 38: Monday with a Mad Genius",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure with Leonardo da Vinci in Florence.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth39",
+      "title": "Magic Tree House 39: Dark Day in the Deep Sea",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure on the 1870s HMS Challenger expedition.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth40",
+      "title": "Magic Tree House 40: Eve of the Emperor Penguin",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "animals"
+      ],
+      "basis": "Time-travel adventure with emperor penguins in Antarctica.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth41",
+      "title": "Magic Tree House 41: Moonlight on the Magic Flute",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure with Mozart in Austria.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth42",
+      "title": "Magic Tree House 42: A Good Night for Ghosts",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in New Orleans with Louis Armstrong.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth43",
+      "title": "Magic Tree House 43: Leprechaun in Late Winter",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in 1862 Ireland with a leprechaun.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth44",
+      "title": "Magic Tree House 44: A Ghost Tale for Christmas Time",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure with Charles Dickens in Victorian England.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth45",
+      "title": "Magic Tree House 45: A Crazy Day with Cobras",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel quest in an Indian desert; cobras are obstacles, not the core.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth46",
+      "title": "Magic Tree House 46: Dogs in the Dead of Night",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "animals"
+      ],
+      "basis": "Time-travel adventure centered on a Saint Bernard rescue in the Swiss Alps.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth47",
+      "title": "Magic Tree House 47: Abe Lincoln at Last!",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure with Abraham Lincoln during the Civil War.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth48",
+      "title": "Magic Tree House 48: A Perfect Time for Pandas",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "animals"
+      ],
+      "basis": "Time-travel adventure rescuing pandas during the 2008 Sichuan earthquake.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth49",
+      "title": "Magic Tree House 49: Stallion by Starlight",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in ancient Macedonia with Alexander the Great and Bucephalus.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth50",
+      "title": "Magic Tree House 50: Hurry Up, Houdini!",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure with Harry Houdini.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth51",
+      "title": "Magic Tree House 51: High Time for Heroes",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure with Florence Nightingale in Egypt.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth52",
+      "title": "Magic Tree House 52: Soccer on Sunday",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure at the 1970 World Cup with Pelé.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth53",
+      "title": "Magic Tree House 53: Shadow of the Shark",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure in the Maya world; sharks are one hazard, not the core.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth54",
+      "title": "Magic Tree House 54: Balto of the Blue Dawn",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "animals"
+      ],
+      "basis": "Time-travel adventure centered on Balto and the 1925 Alaska serum run.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth55",
+      "title": "Magic Tree House 55: Night of the Ninth Dragon",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy"
+      ],
+      "basis": "Time-travel fantasy adventure in Camelot and Avalon.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mockingjay",
+      "title": "Mockingjay",
+      "author": "Suzanne Collins",
+      "genres": [
+        "science-fiction",
+        "adventure",
+        "romance"
+      ],
+      "basis": "Dystopian survival games with adventure and romance.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Hunger_Games"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "ballad-of-songbirds-and-snakes",
+      "title": "The Ballad of Songbirds and Snakes",
+      "author": "Suzanne Collins",
+      "genres": [
+        "science-fiction",
+        "adventure",
+        "romance"
+      ],
+      "basis": "Dystopian survival games with adventure and romance.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Hunger_Games"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "catching-fire",
+      "title": "Catching Fire",
+      "author": "Suzanne Collins",
+      "genres": [
+        "science-fiction",
+        "adventure",
+        "romance"
+      ],
+      "basis": "Dystopian survival games with adventure and romance.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Hunger_Games"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "sunrise-on-the-reaping",
+      "title": "Sunrise on the Reaping",
+      "author": "Suzanne Collins",
+      "genres": [
+        "science-fiction",
+        "adventure"
+      ],
+      "basis": "Dystopian Hunger Games prequel; the Games and political manipulation are the main arc, with romance only as a subplot.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Sunrise_on_the_Reaping"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "hunger-games",
+      "title": "The Hunger Games",
+      "author": "Suzanne Collins",
+      "genres": [
+        "science-fiction",
+        "adventure",
+        "romance"
+      ],
+      "basis": "Dystopian survival games with adventure and romance.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Hunger_Games"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "a-clash-of-kings",
+      "title": "A Clash of Kings",
+      "author": "George R. R. Martin",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Epic political fantasy with adventure in Westeros.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/A_Song_of_Ice_and_Fire"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "a-storm-of-swords",
+      "title": "A Storm of Swords",
+      "author": "George R. R. Martin",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Epic political fantasy with adventure in Westeros.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/A_Song_of_Ice_and_Fire"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "a-feast-for-crows",
+      "title": "A Feast for Crows",
+      "author": "George R. R. Martin",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Epic political fantasy with adventure in Westeros.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/A_Song_of_Ice_and_Fire"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "a-dance-with-dragons",
+      "title": "A Dance with Dragons",
+      "author": "George R. R. Martin",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Epic political fantasy with adventure in Westeros.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/A_Song_of_Ice_and_Fire"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "a-game-of-thrones",
+      "title": "A Game of Thrones",
+      "author": "George R. R. Martin",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Epic political fantasy with adventure in Westeros.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/A_Song_of_Ice_and_Fire"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mth23",
+      "title": "Magic Tree House 23: Twister on Tuesday",
+      "author": "Mary Pope Osborne",
+      "genres": [
+        "adventure",
+        "fantasy",
+        "historical"
+      ],
+      "basis": "Time-travel adventure on the 1870s prairie during a tornado.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Magic_Tree_House"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "harry-potter-and-the-sorcerers-stone",
+      "title": "Harry Potter and the Sorcerer’s Stone",
+      "author": "J.K. Rowling",
+      "genres": [
+        "fantasy",
+        "adventure",
+        "mystery"
+      ],
+      "basis": "Wizarding-school fantasy adventure with a mystery.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Harry_Potter"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "harry-potter-02-and-the-chamber-of-secrets-illustrated",
+      "title": "Harry Potter 02 & The Chamber Of Secrets (Illustrated)",
+      "author": "J.K. Rowling",
+      "genres": [
+        "fantasy",
+        "adventure",
+        "mystery"
+      ],
+      "basis": "Wizarding-school fantasy adventure with a mystery.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Harry_Potter"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "harry-potter-03-and-the-prisoner-of-azkaban-illustrated",
+      "title": "Harry Potter 03 & The Prisoner Of Azkaban (Illustrated)",
+      "author": "J.K. Rowling",
+      "genres": [
+        "fantasy",
+        "adventure",
+        "mystery"
+      ],
+      "basis": "Wizarding-school fantasy adventure with a mystery.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Harry_Potter"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "harry-potter-4-the-goblet-of-fire",
+      "title": "Harry Potter - 4 - The Goblet of Fire",
+      "author": "J.K. Rowling",
+      "genres": [
+        "fantasy",
+        "adventure",
+        "mystery"
+      ],
+      "basis": "Wizarding-school fantasy adventure with a mystery.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Harry_Potter"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "harry-potter-05-and-the-order-of-the-phoenix",
+      "title": "Harry Potter 05 & The Order of The Phoenix",
+      "author": "J.K. Rowling",
+      "genres": [
+        "fantasy",
+        "adventure",
+        "mystery"
+      ],
+      "basis": "Wizarding-school fantasy adventure with a mystery.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Harry_Potter"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "rowling-j-k-harry-potter-06-harry-potter-and-the-half-blood",
+      "title": "Rowling, J.K - Harry Potter 06 - Harry Potter and the Half-Blood Prince",
+      "author": "Rowling, J K",
+      "genres": [
+        "fantasy",
+        "adventure",
+        "mystery"
+      ],
+      "basis": "Wizarding-school fantasy adventure with a mystery.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Harry_Potter"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "harry-potter-and-the-deathly-hallows",
+      "title": "Harry Potter and the Deathly Hallows",
+      "author": "J. K. Rowling",
+      "genres": [
+        "fantasy",
+        "adventure",
+        "mystery"
+      ],
+      "basis": "Wizarding-school fantasy adventure with a mystery.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Harry_Potter"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "divergent",
+      "title": "Divergent",
+      "author": "Veronica Roth",
+      "genres": [
+        "science-fiction",
+        "adventure",
+        "romance"
+      ],
+      "basis": "Dystopian faction society; sci-fi adventure with romance.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Divergent_trilogy"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "insurgent-divergent",
+      "title": "Insurgent (Divergent)",
+      "author": "Veronica Roth",
+      "genres": [
+        "science-fiction",
+        "adventure",
+        "romance"
+      ],
+      "basis": "Dystopian faction society; sci-fi adventure with romance.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Divergent_trilogy"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "roth-veronica-divergent-03-allegiant",
+      "title": "Roth, Veronica - Divergent 03 - Allegiant",
+      "author": "Roth, Veronica",
+      "genres": [
+        "science-fiction",
+        "adventure",
+        "romance"
+      ],
+      "basis": "Dystopian faction society; sci-fi adventure with romance.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/Divergent_trilogy"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "eragon",
+      "title": "Eragon",
+      "author": "Christopher Paolini",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon-rider epic fantasy adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Inheritance_Cycle"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "inheritance-cycle-2-eldest",
+      "title": "Inheritance Cycle 2: Eldest",
+      "author": "Christopher Paolini",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon-rider epic fantasy adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Inheritance_Cycle"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "brisingr",
+      "title": "Brisingr",
+      "author": "Christopher Paolini",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon-rider epic fantasy adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Inheritance_Cycle"
+      ]
+    },
+    {
+      "catalog": "word-lists",
+      "id": "inheritance-the-inheritance-cycle-book-4",
+      "title": "Inheritance (The Inheritance Cycle Book 4)",
+      "author": "Christopher Paolini",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "Dragon-rider epic fantasy adventure.",
+      "confidence": "high",
+      "evidence": [
+        "https://en.wikipedia.org/wiki/The_Inheritance_Cycle"
+      ]
+    }
+  ]
+}

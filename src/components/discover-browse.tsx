@@ -332,9 +332,13 @@ function useRailPages(ref: React.RefObject<HTMLElement | null>, count: number): 
 export function FeaturedBook({
   row,
   onOpen,
+  animateCover = true,
+  carouselFooter = false,
 }: {
   row: DiscoverRow;
   onOpen: (row: DiscoverRow) => void;
+  animateCover?: boolean;
+  carouselFooter?: boolean;
 }) {
   const { t, locale } = useT();
   const { words, phrases, notes } = counts(row);
@@ -350,12 +354,12 @@ export function FeaturedBook({
     <section className="group" aria-label={t("browse.featured")} data-discover-featured={row.id}>
       <button
         type="button"
-        className="tone-ground grid w-full grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-[22px] gap-y-3 rounded-2xl p-5 text-left shadow-hero sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-x-10 sm:gap-y-2.5 sm:px-10 sm:py-8"
+        className={cn("tone-ground grid w-full grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-[22px] gap-y-3 rounded-2xl p-5 text-left shadow-hero sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-x-10 sm:gap-y-2.5 sm:px-10 sm:py-8", carouselFooter && "pb-10 sm:pb-10")}
         style={tone}
         onClick={() => onOpen(row)}
         aria-label={t("browse.openAria", { title: row.title })}
       >
-        <span className="cover-rise tone-cover relative block w-full sm:row-span-2 sm:mx-auto sm:w-[10.5rem]">
+        <span className={cn(animateCover && "cover-rise", "tone-cover relative block w-full sm:row-span-2 sm:mx-auto sm:w-[10.5rem]")}>
           <BookCover title={row.title} author={row.author} cover={row.coverUrl} look={coverLookOf(row.category, row.series)} />
         </span>
         <span className="grid min-w-0 content-end gap-1.5 sm:gap-2.5">
