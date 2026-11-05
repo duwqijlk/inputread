@@ -24,6 +24,16 @@ test("carousel reuses the original banner and does not reannounce or mount hidde
   assert.match(featured, /animateCover && "cover-rise"/);
 });
 
+test("carousel banners reserve title, author, late blurb and optional facts space", () => {
+  const featured = readFileSync(new URL("../src/components/discover-browse.tsx", import.meta.url), "utf8");
+  assert.match(featured, /carouselFooter && "h-\[2\.1em\]"/);
+  assert.match(featured, /carouselFooter && "h-6"/);
+  assert.match(featured, /blurb \|\| carouselFooter/);
+  assert.match(featured, /carouselFooter && "h-\[4\.95em\] sm:h-\[3\.3em\]"/);
+  assert.match(featured, /facts\.length \|\| carouselFooter/);
+  assert.match(featured, /h-\[4\.25rem\] content-start overflow-hidden leading-5 sm:h-11/);
+});
+
 test("real React carousel timers, pauses, catalog identities and dynamic motion preferences", async (t) => {
   const dom = new JSDOM('<!doctype html><html data-theme="light"><body><div id="root"></div></body></html>', { url: "https://test.invalid" });
   const originals = new Map();
