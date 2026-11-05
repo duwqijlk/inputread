@@ -332,9 +332,13 @@ function useRailPages(ref: React.RefObject<HTMLElement | null>, count: number): 
 export function FeaturedBook({
   row,
   onOpen,
+  animateCover = true,
+  carouselFooter = false,
 }: {
   row: DiscoverRow;
   onOpen: (row: DiscoverRow) => void;
+  animateCover?: boolean;
+  carouselFooter?: boolean;
 }) {
   const { t, locale } = useT();
   const { words, phrases, notes } = counts(row);
@@ -350,12 +354,12 @@ export function FeaturedBook({
     <section className="group" aria-label={t("browse.featured")} data-discover-featured={row.id}>
       <button
         type="button"
-        className="tone-ground grid w-full grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-[22px] gap-y-3 rounded-2xl p-5 text-left shadow-hero sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-x-10 sm:gap-y-2.5 sm:px-10 sm:py-8"
+        className={cn("tone-ground grid w-full grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-[22px] gap-y-3 rounded-2xl p-5 text-left shadow-hero sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-x-10 sm:gap-y-2.5 sm:px-10 sm:py-8", carouselFooter && "pb-10 sm:pb-10")}
         style={tone}
         onClick={() => onOpen(row)}
         aria-label={t("browse.openAria", { title: row.title })}
       >
-        <span className="cover-rise tone-cover relative block w-full sm:row-span-2 sm:mx-auto sm:w-[10.5rem]">
+        <span className={cn(animateCover && "cover-rise", "tone-cover relative block w-full sm:row-span-2 sm:mx-auto sm:w-[10.5rem]")}>
           <BookCover title={row.title} author={row.author} cover={row.coverUrl} look={coverLookOf(row.category, row.series)} />
         </span>
         <span className="grid min-w-0 content-end gap-1.5 sm:gap-2.5">
@@ -364,23 +368,24 @@ export function FeaturedBook({
             {t("browse.featured")}
           </span>
           <span
-            className="overflow-hidden font-display text-[1.875rem] leading-[1.05] font-bold tracking-[-0.02em] text-ink transition-colors duration-100 group-hover:text-accent [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] sm:text-[2.5rem]"
+            className={cn("overflow-hidden font-display text-[1.875rem] leading-[1.05] font-bold tracking-[-0.02em] text-ink transition-colors duration-100 group-hover:text-accent [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] sm:text-[2.5rem]", carouselFooter && "h-[2.1em]")}
+            data-featured-title
             lang="en"
           >
             {row.title}
           </span>
-          <span className="truncate text-[0.9375rem] text-muted" lang="en">
+          <span className={cn("truncate text-[0.9375rem] text-muted", carouselFooter && "h-6")} lang="en">
             {row.author}
           </span>
         </span>
         <span className="col-span-2 grid min-w-0 gap-2.5 sm:col-span-1 sm:col-start-2">
-          {blurb ? (
-            <span className="max-w-[34rem] overflow-hidden text-[0.9375rem] leading-[1.65] text-muted [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] sm:[-webkit-line-clamp:2]" lang={locale === "zh" ? "zh-CN" : "en"}>
+          {blurb || carouselFooter ? (
+            <span className={cn("max-w-[34rem] overflow-hidden text-[0.9375rem] leading-[1.65] text-muted [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] sm:[-webkit-line-clamp:2]", carouselFooter && "h-[4.95em] sm:h-[3.3em]")} lang={locale === "zh" ? "zh-CN" : "en"} data-featured-blurb>
               {blurb}
             </span>
           ) : null}
-          {facts.length ? (
-            <span className="flex flex-wrap gap-x-4 gap-y-1 text-[0.8125rem] text-faint">
+          {facts.length || carouselFooter ? (
+            <span className={cn("flex flex-wrap gap-x-4 gap-y-1 text-[0.8125rem] text-faint", carouselFooter && "h-[4.25rem] content-start overflow-hidden leading-5 sm:h-11")} data-featured-facts>
               {facts.map((fact) => (
                 <span key={fact}>{fact}</span>
               ))}

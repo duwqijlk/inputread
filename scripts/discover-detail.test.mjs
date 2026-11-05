@@ -23,12 +23,13 @@ test("grid covers and titles open details regardless of shelf ownership", () => 
   assert.match(discover, /visible\.map\(renderCard\)/, "the all-books grid uses the same cards");
 });
 
-test("All has one new-books rail without restoring the old recommendation homepage", () => {
-  assert.doesNotMatch(discover, /<DiscoverHome|<FeaturedBook/);
-  const entries = discover.match(/<BookRail\b[^]*?\/>/g) ?? [];
-  assert.equal(entries.length, 1, "only one compact new-books rail");
+test("All has one original-style new-books carousel, not the cover rail", () => {
+  assert.doesNotMatch(discover, /<DiscoverHome|<BookRail/);
+  const entries = discover.match(/<NewBooksCarousel\b[^]*?\/>/g) ?? [];
+  assert.equal(entries.length, 1, "only one new-books banner carousel");
+  assert.match(entries[0], /detailOpen=\{Boolean\(detailId\)\}/);
   assert.match(entries[0], /onOpen=\{\(row\) => setDetailId\(row\.key\)\}/);
-  assert.match(entries[0], /onSeeAll=\{\(\) => openCollection\("new"\)\}/);
+  assert.doesNotMatch(entries[0], /onSeeAll/);
   assert.match(discover, /showNewBooks && newest\.length > 0/);
   assert.match(discover, /const showNewBooks = ready && !error && category === "novel" && !genre && !query\.trim\(\) && !collection/);
   for (const component of ["BookRail", "FeaturedBook"]) {

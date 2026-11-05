@@ -1,0 +1,1559 @@
+{
+  "generatedAt": "2026-11-05T07:33:55.342Z",
+  "sources": [
+    "https://books.inputread.site/word-lists/catalog.json"
+  ],
+  "books": [
+    {
+      "catalog": "word-lists",
+      "id": "charlie",
+      "title": "Charlie and the Chocolate Factory",
+      "author": "Roald Dahl",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "george",
+      "title": "George’s Marvellous Medicine",
+      "author": "Roald Dahl",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "Magic or impossible events are central to the narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "james",
+      "title": "James and the Giant Peach",
+      "author": "Roald Dahl",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "matilda",
+      "title": "Matilda",
+      "author": "Roald Dahl",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "Magic or impossible events are central to the narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "magicfinger",
+      "title": "The Magic Finger",
+      "author": "Roald Dahl",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "Magic or impossible events are central to the narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "twits",
+      "title": "The Twits",
+      "author": "Roald Dahl",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "Anthropomorphic animal communication and the fantastical shrinking ending are central to this comic story.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wonder",
+      "title": "Wonder",
+      "author": "R J Palacio",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "charlottes-web",
+      "title": "Charlotte's Web",
+      "author": "E. B. White",
+      "genres": [
+        "animals",
+        "fantasy"
+      ],
+      "basis": "Animal voices, thoughts or impossible animal events are central to the fictional narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "flipped",
+      "title": "Flipped",
+      "author": "Wendelin Van Draanen",
+      "genres": [
+        "realistic",
+        "romance"
+      ],
+      "basis": "A realistic story in which a developing romantic relationship is a central narrative thread.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "sarah-plain-tall",
+      "title": "Sarah, Plain and Tall",
+      "author": "Patricia MacLachlan",
+      "genres": [
+        "historical",
+        "realistic"
+      ],
+      "basis": "A fictional narrative in a specific historical setting, centred on lived social or family experience.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "number-the-stars",
+      "title": "Number the Stars",
+      "author": "Lois Lowry",
+      "genres": [
+        "historical"
+      ],
+      "basis": "The plot is grounded in a historical period or conflict.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "winn-dixie",
+      "title": "Because of Winn-Dixie",
+      "author": "Kate DiCamillo",
+      "genres": [
+        "animals",
+        "realistic"
+      ],
+      "basis": "The relationship between people and an animal is central, in a realistic setting.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "out-of-my-mind",
+      "title": "Out of My Mind",
+      "author": "Sharon M. Draper",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "shiloh",
+      "title": "Shiloh",
+      "author": "Phyllis Reynolds Naylor",
+      "genres": [
+        "animals",
+        "realistic"
+      ],
+      "basis": "The relationship between people and an animal is central, in a realistic setting.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "one-and-only-ivan",
+      "title": "The One and Only Ivan",
+      "author": "Katherine Applegate",
+      "genres": [
+        "animals",
+        "fantasy"
+      ],
+      "basis": "Animal voices, thoughts or impossible animal events are central to the fictional narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "thousand-splendid-suns",
+      "title": "A Thousand Splendid Suns",
+      "author": "Khaled Hosseini",
+      "genres": [
+        "historical",
+        "realistic"
+      ],
+      "basis": "A fictional narrative in a specific historical setting, centred on lived social or family experience.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "daughters-of-shandong",
+      "title": "Daughters of Shandong",
+      "author": "Eve J. Chung",
+      "genres": [
+        "historical",
+        "realistic"
+      ],
+      "basis": "A fictional narrative in a specific historical setting, centred on lived social or family experience.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "all-the-light-we-cannot-see",
+      "title": "All the Light We Cannot See",
+      "author": "Anthony Doerr",
+      "genres": [
+        "historical"
+      ],
+      "basis": "The plot is grounded in a historical period or conflict.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "aristotle-and-dante",
+      "title": "Aristotle and Dante Discover the Secrets of the Universe",
+      "author": "Benjamin Alire Sáenz",
+      "genres": [
+        "realistic",
+        "romance"
+      ],
+      "basis": "A realistic story in which a developing romantic relationship is a central narrative thread.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "alias-anna",
+      "title": "Alias Anna",
+      "author": "Susan Hood & Greg Dawson",
+      "genres": [
+        "nonfiction"
+      ],
+      "basis": "An identifiable memoir, biographical account or reported nonfiction work, not a fictional genre assignment.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "all-my-rage-lite",
+      "title": "All My Rage",
+      "author": "Sabaa Tahir",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "educated-lite",
+      "title": "Educated",
+      "author": "Tara Westover",
+      "genres": [
+        "nonfiction"
+      ],
+      "basis": "An identifiable memoir, biographical account or reported nonfiction work, not a fictional genre assignment.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "firekeepers-daughter-lite",
+      "title": "Firekeeper's Daughter",
+      "author": "Angeline Boulley",
+      "genres": [
+        "mystery",
+        "horror-thriller"
+      ],
+      "basis": "A crime or concealed identity is investigated under sustained threat and suspense.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "dont-let-him-in-lite",
+      "title": "Don't Let Him In",
+      "author": "Lisa Jewell",
+      "genres": [
+        "mystery",
+        "horror-thriller"
+      ],
+      "basis": "A crime or concealed identity is investigated under sustained threat and suspense.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "everything-sad-is-untrue-lite",
+      "title": "Everything Sad Is Untrue",
+      "author": "Daniel Nayeri",
+      "genres": [],
+      "basis": "Autobiographical novel versus memoir classification needs authoritative confirmation; the public blurb alone does not resolve it.",
+      "confidence": "uncertain",
+      "evidence": [
+        "https://books.inputread.site/word-lists/everything-sad-is-untrue-lite/blurb.json"
+      ],
+      "evidenceKind": "Live public synopsis and recognized work identity"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "demon-copperhead-lite",
+      "title": "Demon Copperhead",
+      "author": "Barbara Kingsolver",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "charlie_and_the_great_glass_elevator",
+      "title": "Charlie and the Great Glass Elevator",
+      "author": "Roald Dahl",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "going_solo",
+      "title": "Going Solo",
+      "author": "Roald Dahl",
+      "genres": [
+        "nonfiction"
+      ],
+      "basis": "An identifiable memoir, biographical account or reported nonfiction work, not a fictional genre assignment.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_giraffe_and_the_pelly_and_me",
+      "title": "The Giraffe and the Pelly and Me",
+      "author": "Roald Dahl",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "Magic or impossible events are central to the narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "fantastic_mr_fox",
+      "title": "Fantastic Mr. Fox",
+      "author": "Dahl, Roald",
+      "genres": [
+        "animals",
+        "fantasy"
+      ],
+      "basis": "Animal voices, thoughts or impossible animal events are central to the fictional narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "esio_trot",
+      "title": "Esio Trot",
+      "author": "Roald Dahl",
+      "genres": [
+        "realistic",
+        "romance"
+      ],
+      "basis": "A romantic courtship drives a comic story without supernatural events.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "revolting_rhymes",
+      "title": "Revolting Rhymes",
+      "author": "Roald Dahl",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "Magic or impossible events are central to the narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "boy-tales-of-childhood",
+      "title": "Boy: Tales of Childhood",
+      "author": "Roald Dahl",
+      "genres": [
+        "nonfiction"
+      ],
+      "basis": "An identifiable memoir, biographical account or reported nonfiction work, not a fictional genre assignment.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the-bfg",
+      "title": "The BFG",
+      "author": "Roald Dahl",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "and_then_there_were_none",
+      "title": "And Then There Were None",
+      "author": "Agatha Christie",
+      "genres": [
+        "mystery"
+      ],
+      "basis": "Investigation of deaths or a concealed crime is the central plot.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "murder_on_the_orient_express",
+      "title": "Murder on the Orient Express",
+      "author": "Agatha Christie",
+      "genres": [
+        "mystery"
+      ],
+      "basis": "Investigation of deaths or a concealed crime is the central plot.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_murder_of_roger_ackroyd",
+      "title": "The Murder of Roger Ackroyd",
+      "author": "Agatha Christie",
+      "genres": [
+        "mystery"
+      ],
+      "basis": "Investigation of deaths or a concealed crime is the central plot.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "death_on_the_nile",
+      "title": "Death on the Nile",
+      "author": "Agatha Christie",
+      "genres": [
+        "mystery"
+      ],
+      "basis": "Investigation of deaths or a concealed crime is the central plot.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_naked_face",
+      "title": "The Naked Face",
+      "author": "Sidney Sheldon",
+      "genres": [
+        "mystery",
+        "horror-thriller"
+      ],
+      "basis": "A crime or concealed identity is investigated under sustained threat and suspense.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "tell_me_your_dreams",
+      "title": "Tell Me Your Dreams",
+      "author": "Sidney Sheldon",
+      "genres": [
+        "mystery",
+        "horror-thriller"
+      ],
+      "basis": "A crime or concealed identity is investigated under sustained threat and suspense.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the-witches",
+      "title": "The Witches",
+      "author": "Roald Dahl",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "if_tomorrow_comes",
+      "title": "If Tomorrow Comes",
+      "author": "Sidney Sheldon",
+      "genres": [
+        "mystery",
+        "adventure"
+      ],
+      "basis": "Crime, elaborate deception and dangerous escapes drive the plot.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "starter_villain",
+      "title": "Starter Villain",
+      "author": "Scalzi, John",
+      "genres": [
+        "science-fiction"
+      ],
+      "basis": "A technologically or socially speculative world is essential to the story.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_nickel_boys",
+      "title": "The Nickel Boys",
+      "author": "Colson Whitehead",
+      "genres": [
+        "historical",
+        "realistic"
+      ],
+      "basis": "A fictional narrative in a specific historical setting, centred on lived social or family experience.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "fourth_wing",
+      "title": "Fourth Wing",
+      "author": "Rebecca Yarros",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "red_white_royal_blue",
+      "title": "Red, White & Royal Blue",
+      "author": "Casey McQuiston",
+      "genres": [
+        "realistic",
+        "romance"
+      ],
+      "basis": "A realistic story in which a developing romantic relationship is a central narrative thread.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_only_good_indians",
+      "title": "The Only Good Indians",
+      "author": "Stephen Graham Jones",
+      "genres": [
+        "horror-thriller"
+      ],
+      "basis": "Horror and an escalating threat are central to the reading experience.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_house_in_the_cerulean_sea",
+      "title": "The House in the Cerulean Sea",
+      "author": "TJ Klune",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "Magic or impossible events are central to the narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "i_must_betray_you",
+      "title": "I Must Betray You",
+      "author": "Ruta Sepetys",
+      "genres": [
+        "historical"
+      ],
+      "basis": "The plot is grounded in a historical period or conflict.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "how_to_solve_your_own_murder",
+      "title": "How to Solve Your Own Murder",
+      "author": "Kristen Perrin",
+      "genres": [
+        "mystery"
+      ],
+      "basis": "Investigation of deaths or a concealed crime is the central plot.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "ill_give_you_the_sun",
+      "title": "I'll Give You the Sun",
+      "author": "Jandy Nelson",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "i_was_a_teenage_slasher",
+      "title": "I Was a Teenage Slasher",
+      "author": "Stephen Graham Jones",
+      "genres": [
+        "horror-thriller"
+      ],
+      "basis": "Horror and an escalating threat are central to the reading experience.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "mother-mary",
+      "title": "Mother Mary Comes to Me",
+      "author": "Arundhati Roy",
+      "genres": [
+        "nonfiction"
+      ],
+      "basis": "An identifiable memoir, biographical account or reported nonfiction work, not a fictional genre assignment.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/mother-mary/blurb.json"
+      ],
+      "evidenceKind": "Live public synopsis and recognized work identity"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "telegraph-club",
+      "title": "Last Night at the Telegraph Club",
+      "author": "Malinda Lo",
+      "genres": [
+        "historical",
+        "romance"
+      ],
+      "basis": "A historical novel with a central romantic relationship.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "king_sorrow",
+      "title": "King Sorrow",
+      "author": "Joe Hill",
+      "genres": [
+        "fantasy",
+        "horror-thriller"
+      ],
+      "basis": "A supernatural force or creature drives a dark and threatening narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/king_sorrow/blurb.json"
+      ],
+      "evidenceKind": "Live public synopsis and recognized work identity"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "ghost-boys",
+      "title": "Ghost Boys",
+      "author": "Jewell Parker Rhodes",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "A dead child narrates as a ghost and meets other ghosts; supernatural events are central.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "genevieves-war",
+      "title": "Genevieve's War",
+      "author": "Patricia Reilly Giff",
+      "genres": [
+        "historical"
+      ],
+      "basis": "The plot is grounded in a historical period or conflict.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "jellicoe-road",
+      "title": "Jellicoe Road",
+      "author": "Melina Marchetta",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "kiki-and-the-new-magic",
+      "title": "Kiki and the New Magic",
+      "author": "Eiko Kadono",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "Magic or impossible events are central to the narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "james-everett",
+      "title": "James",
+      "author": "Percival Everett",
+      "genres": [
+        "historical",
+        "realistic"
+      ],
+      "basis": "A fictional narrative in a specific historical setting, centred on lived social or family experience.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "iron-flame",
+      "title": "Iron Flame",
+      "author": "Rebecca Yarros",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "kikis-delivery",
+      "title": "Kiki's Delivery Service",
+      "author": "Emily Balistrieri",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "Magic or impossible events are central to the narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/kikis-delivery/blurb.json"
+      ],
+      "evidenceKind": "Live public synopsis and recognized work identity"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_little_prince",
+      "title": "Little Prince",
+      "author": "Antoine De Saint Exupéry",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "Magic or impossible events are central to the narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_giver",
+      "title": "The Giver",
+      "author": "Lois Lowry",
+      "genres": [
+        "science-fiction"
+      ],
+      "basis": "A technologically or socially speculative world is essential to the story.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "tuck_everlasting",
+      "title": "Tuck Everlasting",
+      "author": "Natalie Babbitt",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "Magic or impossible events are central to the narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "1984",
+      "title": "Nineteen Eighty-Four",
+      "author": "George Orwell",
+      "genres": [
+        "science-fiction"
+      ],
+      "basis": "A technologically or socially speculative world is essential to the story.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "never_let_me_go",
+      "title": "Never Let Me Go",
+      "author": "Kazuo Ishiguro",
+      "genres": [
+        "science-fiction"
+      ],
+      "basis": "A technologically or socially speculative world is essential to the story.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "we_are_okay",
+      "title": "We Are Okay",
+      "author": "Nina LaCour",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wombat_waiting",
+      "title": "Wombat Waiting",
+      "author": "Katherine Applegate",
+      "genres": [],
+      "basis": "Recent work: the existing public blurb needs independent corroboration before assigning a genre.",
+      "confidence": "uncertain",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wishtree",
+      "title": "Wishtree",
+      "author": "Katherine Applegate",
+      "genres": [
+        "fantasy"
+      ],
+      "basis": "A sentient tree narrates the story and interacts with the human community.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "not_nothing",
+      "title": "Not Nothing",
+      "author": "Gayle Forman",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/not_nothing/blurb.json"
+      ],
+      "evidenceKind": "Live public synopsis and recognized work identity"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "whalefall",
+      "title": "Whalefall",
+      "author": "Daniel Kraus",
+      "genres": [
+        "adventure",
+        "horror-thriller"
+      ],
+      "basis": "A diver trapped inside a whale faces a sustained physical survival crisis.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "where_only_storms_grow",
+      "title": "Where Only Storms Grow",
+      "author": "Alyssa Colman",
+      "genres": [],
+      "basis": "The current public blurb may not identify the actual work reliably; verify the historical setting before tagging.",
+      "confidence": "uncertain",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "wild_dark_shore",
+      "title": "Wild Dark Shore",
+      "author": "Charlotte McConaghy",
+      "genres": [],
+      "basis": "The author and title identify a real work, but the public blurb is imprecise; confirm mystery versus survival classification independently.",
+      "confidence": "uncertain",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "refugee",
+      "title": "Refugee",
+      "author": "Alan Gratz",
+      "genres": [
+        "historical",
+        "adventure"
+      ],
+      "basis": "Historical circumstances drive an escape or dangerous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "motherland",
+      "title": "Motherland",
+      "author": "Julia Ioffe",
+      "genres": [
+        "nonfiction"
+      ],
+      "basis": "An identifiable memoir, biographical account or reported nonfiction work, not a fictional genre assignment.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/motherland/blurb.json"
+      ],
+      "evidenceKind": "Live public synopsis and recognized work identity"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_war_that_saved_my_life",
+      "title": "The War that Saved My Life",
+      "author": "Kimberly Brubaker Bradley",
+      "genres": [
+        "historical"
+      ],
+      "basis": "The plot is grounded in a historical period or conflict.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_song_of_achilles",
+      "title": "The Song of Achilles",
+      "author": "Miller, Madeline",
+      "genres": [
+        "fantasy",
+        "romance"
+      ],
+      "basis": "A standalone mythological retelling with gods and the central romantic relationship of Patroclus and Achilles.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_woman_in_me",
+      "title": "The Woman in Me",
+      "author": "Britney Spears",
+      "genres": [
+        "nonfiction"
+      ],
+      "basis": "An identifiable memoir, biographical account or reported nonfiction work, not a fictional genre assignment.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_girl_who_drank_the_moon",
+      "title": "The Girl Who Drank the Moon",
+      "author": "Kelly Barnhill",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_thing_about_jellyfish",
+      "title": "The Thing About Jellyfish",
+      "author": "Ali Benjamin",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_labors_of_hercules_beal",
+      "title": "The Labors of Hercules Beal",
+      "author": "Gary D. Schmidt",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_book_thief",
+      "title": "The Book Thief",
+      "author": "Markus Zusak",
+      "genres": [
+        "historical"
+      ],
+      "basis": "The plot is grounded in a historical period or conflict.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the_dead_cat_tail_assassins",
+      "title": "The Dead Cat Tail Assassins",
+      "author": "P. Djeli Djeli Clark",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "animal-farm",
+      "title": "Animal Farm",
+      "author": "George Orwell",
+      "genres": [
+        "animals",
+        "fantasy"
+      ],
+      "basis": "Animal voices, thoughts or impossible animal events are central to the fictional narrative.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "atonement",
+      "title": "Atonement (2001)",
+      "author": "Ian McEwan",
+      "genres": [
+        "historical",
+        "romance"
+      ],
+      "basis": "A historical novel with a central romantic relationship.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "goldfinch",
+      "title": "Goldfinch (The Plated Prisoner Series Book 6)",
+      "author": "Raven Kennedy",
+      "genres": [
+        "fantasy",
+        "romance"
+      ],
+      "basis": "An explicitly identified fantasy-series instalment with a central romantic storyline.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/goldfinch/blurb.json"
+      ],
+      "evidenceKind": "Live public synopsis and recognized work identity"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "a-little-life",
+      "title": "A Little Life",
+      "author": "Hanya Yanagihara",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "let-the-great-world-spin",
+      "title": "Let the Great World Spin",
+      "author": "Colum McCann",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "normal-people",
+      "title": "Normal People",
+      "author": "Sally Rooney",
+      "genres": [
+        "realistic",
+        "romance"
+      ],
+      "basis": "A realistic story in which a developing romantic relationship is a central narrative thread.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "nowhere-boy",
+      "title": "Nowhere Boy",
+      "author": "Katherine Marsh",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "restart",
+      "title": "Restart",
+      "author": "Gordon Korman",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "A fictional story centred on people, relationships, family or growing up.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "across-so-many-seas",
+      "title": "Across So Many Seas",
+      "author": "Ruth Behar",
+      "genres": [
+        "historical",
+        "realistic"
+      ],
+      "basis": "A fictional narrative in a specific historical setting, centred on lived social or family experience.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "brown-girl-dreaming",
+      "title": "Brown Girl Dreaming",
+      "author": "Jacqueline Woodson",
+      "genres": [
+        "nonfiction"
+      ],
+      "basis": "An identifiable memoir, biographical account or reported nonfiction work, not a fictional genre assignment.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "bridge-to-terabithia",
+      "title": "Bridge to Terabithia",
+      "author": "Katherine Paterson",
+      "genres": [
+        "realistic"
+      ],
+      "basis": "Children invent a play kingdom in a realistic childhood story; their imagined kingdom is not literal magic.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "inheritance-cycle-5-murtagh",
+      "title": "Inheritance Cycle 5: Murtagh",
+      "author": "Christopher Paolini",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the-lightning-thief-percy-jackson-and-the-olympians-book-1",
+      "title": "The Lightning Thief (Percy Jackson and the Olympians, Book 1)",
+      "author": "Rick Riordan",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the-sea-of-monsters-percy-jackson-and-the-olympians-book-2",
+      "title": "The Sea of Monsters: Percy Jackson and the Olympians [Book 2]",
+      "author": "Rick Riordan",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "percy-jackson-3-the-titans-curse",
+      "title": "Percy Jackson 3 - The Titan's Curse",
+      "author": "Rick Riordan",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the-battle-of-the-labyrinth-percy-jackson-and-the-olympians-book",
+      "title": "The Battle of the Labyrinth: Percy Jackson and the Olympians [Book 4]",
+      "author": "Rick Riordan",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    },
+    {
+      "catalog": "word-lists",
+      "id": "the-last-olympian-percy-jackson-and-the-olympians-book-5",
+      "title": "The Last Olympian: Percy Jackson and the Olympians [Book 5]",
+      "author": "Rick Riordan",
+      "genres": [
+        "fantasy",
+        "adventure"
+      ],
+      "basis": "The story centres on magical events and an adventurous journey.",
+      "confidence": "high",
+      "evidence": [
+        "https://books.inputread.site/word-lists/catalog.json"
+      ],
+      "evidenceKind": "Recognized work identity and plot; catalog establishes exact title and author, not genre evidence"
+    }
+  ]
+}

@@ -28,6 +28,7 @@ import { useVocab } from "@/lib/vocab-store";
 import { navigate, discoverPosition, rememberDiscoverPosition } from "@/lib/router";
 import { discoverSearch, type DiscoverView } from "@/lib/discover-route";
 import { DiscoverGenres } from "@/components/discover-genres";
+import { NewBooksCarousel } from "@/components/new-books-carousel";
 import { useDiscoverIntent } from "@/lib/tutorial";
 import { countFromBook } from "@/lib/wordbook";
 import { loadWordListCatalog, WORD_LIST_CATALOG_URL, type WordListPack } from "@/lib/word-list-catalog";
@@ -37,7 +38,7 @@ import { WeeklyQuota } from "@/components/weekly-quota";
 import { newestUpdates } from "@/lib/discover-recent";
 import { browseRails, compareSeriesPlace, railsFor, type DiscoverRailSpec } from "@/lib/discover-rails";
 import { loadDiscoverRailFile } from "@/lib/discover-rail-config";
-import { BookDetail, BookRail, rowCatalogRef, type CardModel, type DiscoverRow } from "@/components/discover-browse";
+import { BookDetail, rowCatalogRef, type CardModel, type DiscoverRow } from "@/components/discover-browse";
 import { holdOffersUpdate, type ListHoldWhy } from "@/lib/word-list-plan";
 import {
   autoUpdateWordLists,
@@ -287,7 +288,7 @@ export function DiscoverScreen({
   }, [routeBookId, rows]);
 
   const inCategory = useMemo(() => rows.filter((item) => item.category === category), [rows, category]);
-  const newest = useMemo(() => newestUpdates(inCategory, new Date(), 12), [inCategory]);
+  const newest = useMemo(() => newestUpdates(inCategory, new Date(), 6), [inCategory]);
   // The admin saves rows per tab. No saved file at all keeps the automatic series rows.
   const rails = useMemo(
     () => browseRails(inCategory, railSpecs === null ? null : railsFor(railSpecs, category)),
@@ -739,7 +740,7 @@ export function DiscoverScreen({
       >
         {showNewBooks && newest.length > 0 ? (
           <div data-discover-new>
-            <BookRail rail="new" title={t("discover.recent")} rows={newest} onOpen={(row) => setDetailId(row.key)} onSeeAll={() => openCollection("new")} action={renderAdd} />
+            <NewBooksCarousel rows={newest} detailOpen={Boolean(detailId)} onOpen={(row) => setDetailId(row.key)} />
           </div>
         ) : null}
         {ready ? (
