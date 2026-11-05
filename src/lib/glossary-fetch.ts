@@ -26,7 +26,7 @@ export function remoteGlossaryId(absoluteUrl: string): string | null {
   return /^[a-z0-9][a-z0-9_-]{0,63}$/.test(id) ? id : null;
 }
 
-/** The bytes of one word list. `fallback` is the message for any failure except the weekly cap. */
+/** The bytes of one word list. `fallback` is for an unrecognized API error only. */
 export async function fetchProtectedGlossary(
   bookId: string,
   fallback: string,
@@ -35,7 +35,11 @@ export async function fetchProtectedGlossary(
 ): Promise<Uint8Array> {
   const scope = requestScope(signal);
   try {
-  return await scope.run(fetchProtectedGlossaryNow(bookId, fallback, scope.signal, catalog));
+    return await scope.run(fetchProtectedGlossaryNow(bookId, fallback, scope.signal, catalog));
+  } catch (error) {
+    checkAbort(signal);
+    if (scope.timedOut) throw new Error(tr("err.glossaryTimeout"));
+    throw error;
   } finally { scope.dispose(); }
 }
 
@@ -49,11 +53,18 @@ async function fetchProtectedGlossaryNow(bookId: string, fallback: string, signa
     });
   } catch {
     checkAbort(signal);
-    throw new Error(fallback);
+    throw new Error(tr("err.glossaryNetwork"));
   }
   // The weekly count changed (a new place used) or the server refused one: show the new numbers.
   void useGlossaryQuota.getState().refresh(true);
-  if (response.ok) return new Uint8Array(await response.arrayBuffer());
+  if (response.ok) {
+    try {
+      return new Uint8Array(await response.arrayBuffer());
+    } catch {
+      checkAbort(signal);
+      throw new Error(tr("err.glossaryNetwork"));
+    }
+  }
   let code = "";
   let resetAt = 0;
   try {
@@ -68,6 +79,11 @@ async function fetchProtectedGlossaryNow(bookId: string, fallback: string, signa
   if (code === "glossary-week-speech")
     throw new Error(resetAt ? tr("quota.fullSpeech", { day: dayLabel(resetAt) }) : tr("err.glossaryWeekSpeech"));
   if (code === "email-unverified") throw new Error(tr("err.emailUnverified"));
+  if (response.status === 401) throw new Error(tr("err.glossaryLogin"));
+  if (response.status === 429) throw new Error(tr("err.glossaryRate"));
+  if (response.status === 404) throw new Error(tr("err.glossaryMissing"));
+  if (response.status === 403) throw new Error(tr("err.glossaryForbidden"));
+  if (response.status >= 500) throw new Error(tr("err.glossaryServer"));
   throw new Error(fallback);
 }
 

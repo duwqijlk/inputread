@@ -154,7 +154,7 @@ async function fetchListText(pack: WordListPack): Promise<string> {
     : await readDirectList(glossaryUrl);
   const sha = await hashBytes(bytes);
   if (pack.glossary.sha256 && sha && pack.glossary.sha256 !== sha)
-    throw new Error(tr("err.damaged"));
+    throw new Error(tr("err.glossaryMismatch"));
   return new TextDecoder().decode(bytes);
 }
 

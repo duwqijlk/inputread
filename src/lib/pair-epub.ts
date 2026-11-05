@@ -55,11 +55,15 @@ export async function fetchWordList(pack: WordListPack, catalogUrl = WORD_LIST_C
     ? await scope.run(fetchProtectedGlossary(pack.id, tr("err.bookAddFailed"), scope.signal))
     : await scope.run(readDirect(glossaryUrl, scope.signal));
   const sha = await hashBytes(bytes);
-  if (want && sha && sha !== want) throw new Error(tr("err.damaged"));
+  if (want && sha && sha !== want) throw new Error(tr("err.glossaryMismatch"));
   const text = new TextDecoder().decode(bytes);
   await saveCachedText(cacheKey(pack.id), text);
   checkAbort(signal);
   return text;
+  } catch (error) {
+    checkAbort(signal);
+    if (scope.timedOut) throw new Error(tr("err.glossaryTimeout"));
+    throw error;
   } finally { scope.dispose(); }
 }
 
