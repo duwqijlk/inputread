@@ -21,10 +21,11 @@
  * than it saves.
  */
 import { useSyncExternalStore } from "react";
+import { discoverSearch, readDiscoverView, type DiscoverView } from "./discover-route.ts";
 
 export type Route =
   | { kind: "shelf" }
-  | { kind: "discover"; category?: "novel" | "speech" }
+  | { kind: "discover"; category?: "novel" | "speech"; browse?: DiscoverView }
   | { kind: "book"; bookId: string }
   | { kind: "dashboard" }
   | { kind: "admin" }
@@ -131,6 +132,36 @@ function currentPath(): string {
   return typeof window === "undefined" ? "/shelf/" : window.location.pathname;
 }
 
+function currentAddress(): string {
+  return currentPath() + (typeof window === "undefined" ? "" : window.location.search);
+}
+
+export function routeAddress(route: Route): string {
+  return pathFor(route) + (route.kind === "discover" ? discoverSearch(route.browse) : "");
+}
+
+export function parseAddress(address: string): Route | null {
+  const [path, search = ""] = address.split("?", 2);
+  const route = parsePath(path);
+  if (route?.kind !== "discover" || !search) return route;
+  const browse = readDiscoverView(search);
+  if (route.category === "speech") delete browse.genre;
+  return { ...route, browse };
+}
+
+type DiscoverPosition = { address: string; y: number; limit: number };
+export function discoverPosition(): DiscoverPosition | null {
+  const value = window.history.state?.discoverPosition as DiscoverPosition | undefined;
+  return value?.address === currentAddress() && Number.isFinite(value.y) && Number.isFinite(value.limit) ? value : null;
+}
+
+export function rememberDiscoverPosition(limit: number): void {
+  const state = window.history.state;
+  window.history.replaceState({ ...(state && typeof state === "object" ? state : {}),
+    discoverPosition: { address: currentAddress(), y: window.scrollY, limit },
+  }, "", currentAddress() + window.location.hash);
+}
+
 function subscribe(onChange: () => void): () => void {
   window.addEventListener("popstate", onChange);
   window.addEventListener(CHANGED, onChange);
@@ -146,9 +177,9 @@ function subscribe(onChange: () => void): () => void {
  * of that visit opens the cards again. Every other visit clears the state.
  */
 export function navigate(route: Route, options: { replace?: boolean; state?: unknown } = {}): void {
-  const path = pathFor(route);
+  const path = routeAddress(route);
   const state = options.state === undefined ? null : options.state;
-  if (window.location.pathname !== path) {
+  if (currentAddress() !== path) {
     if (options.replace) window.history.replaceState(state, "", path);
     else window.history.pushState(state, "", path);
   } else if (options.state !== undefined) {
@@ -190,8 +221,8 @@ export function rememberNotebookTab(tab: "words" | "quotes"): void {
 
 /** The route of the address bar. An address that is not a page of the app reads as the shelf. */
 export function useRoute(): Route {
-  const path = useSyncExternalStore(subscribe, currentPath, () => "/shelf/");
-  return parsePath(path) ?? DEFAULT_ROUTE;
+  const path = useSyncExternalStore(subscribe, currentAddress, () => "/shelf/");
+  return parseAddress(path) ?? DEFAULT_ROUTE;
 }
 
 /** True when the address bar is not a page of the app ("/" or a typo): the caller redirects. */

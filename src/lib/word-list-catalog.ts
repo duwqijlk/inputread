@@ -8,6 +8,7 @@ import { isbnDigits, matchWordListPack, readSeries } from "@/lib/book-meta";
 
 export { matchWordListPack };
 import { readContentCategory, type ContentCategory } from "@/lib/content-category";
+import { readBookGenres, type BookGenre } from "@/lib/book-genres";
 import { lexileMeasure } from "@/lib/lexile";
 import { readUpdated } from "@/lib/list-updated";
 import { noteCatalogIds } from "@/lib/catalog-index";
@@ -34,6 +35,8 @@ export type WordListPack = {
   cover: { url: string; bytes: number; sha256: string } | null;
   /** Discover tab. Missing on older catalogs, which are novels. */
   category: ContentCategory;
+  /** Optional editorial genres; never part of the word-list revision. */
+  genres: BookGenre[];
   /** English that is too old for a beginner. None of the word lists are flagged today. */
   oldFashioned: boolean;
   oldFashionedReason: string;
@@ -89,6 +92,7 @@ export function parseWordListCatalog(value: unknown): WordListPack[] {
       phrases: count(row.phrases),
       cover,
       category: readContentCategory(row.category),
+      genres: readBookGenres(row.genres),
       oldFashioned: row.oldFashioned === true,
       oldFashionedReason: row.oldFashioned === true ? text(row.oldFashionedReason, 240) : "",
       glossary: {

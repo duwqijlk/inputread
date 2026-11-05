@@ -86,6 +86,33 @@ bucket policy, CORS or CDN rules; verify those separately when changing hosting.
 <a id="versions"></a>
 ## Versions, caches, and when readers see changes
 
+### Book classification metadata
+
+Book genres live only on the existing live catalog rows as optional `genres` (up to three fixed
+English slugs from `src/lib/book-genres.ts`). They are independent of `category`, series, Lexile,
+and homepage display configuration. The historical internal `novel` group means non-speech books;
+the reader-facing name is Books. Its weekly allowance and `/discover/novels/` address do not change.
+
+The authenticated admin Book details editor uses `/api/admin/book-metadata` to load current values,
+prepare drafts and preview before saving. A PATCH names exactly one catalog and up to 60 distinct
+ids with their read-time metadata baselines. It acquires that catalog's existing lock, rereads the
+live raw object, rejects stale metadata before any PUT, and updates only explicit genres/series
+fields. Unrelated publisher updates are preserved. A batch per catalog is all-or-nothing; saves
+across the two catalogs are separate operations and can partially succeed. A failed or uncertain
+save must be refreshed/reconciled before retrying; never silently replace the baseline and resubmit.
+
+Classification-only saves do not publish a glossary: preserve EPUB/glossary objects, hashes, rev,
+row `updated`/`added`/`previousUpdated`, counts, credits and all unknown fields. Book/list publishers
+and patrol catalog writes must preserve `genres` explicitly in their before/after checks. Genre
+changes must not trigger a word-list Update or a new-arrival card. Missing genres remain valid old
+data, visible in all-books/search. Speeches are not assigned book genres in this release.
+
+The catalog lock is cooperative and does not fence direct R2 writers. Live batch classification
+still requires the publishing exclusion window, fresh byte/HTTP-metadata backups, a reviewed
+catalog+id patch list and readback comparison. Never generate live metadata from frozen checkout
+catalogs or infer series membership merely from titles. App deployment and live book classification
+are separate authorizations; adding the editor does not classify production books automatically.
+
 ### Catalog/file contract
 
 - Hash **exact uploaded bytes**, not a parsed/reserialized equivalent. Store the byte count and full

@@ -7,7 +7,7 @@ import ts from "typescript";
 const discover = readFileSync(new URL("../src/components/discover.tsx", import.meta.url), "utf8");
 const browse = readFileSync(new URL("../src/components/discover-browse.tsx", import.meta.url), "utf8");
 // The card and the add button it shares with the rows (renderAdd).
-const card = discover.slice(discover.indexOf("  function renderAdd("), discover.indexOf("  const browsing ="));
+const card = discover.slice(discover.indexOf("  function renderAdd("), discover.indexOf("  const detailRow ="));
 
 test("grid covers and titles open details regardless of shelf ownership", () => {
   const cover = card.match(/<button\b[^>]*onClick=\{\(\) => setDetailId\(row\.key\)\}[^]*?data-card-detail[^]*?<\/button>/)?.[0];
@@ -23,12 +23,14 @@ test("grid covers and titles open details regardless of shelf ownership", () => 
   assert.match(discover, /visible\.map\(renderCard\)/, "the all-books grid uses the same cards");
 });
 
-test("the featured book and every rail also open details", () => {
-  const entries = discover.match(/<(?:FeaturedBook|BookRail)\b[^]*?\/>/g) ?? [];
-  assert.equal(entries.length, 3, "featured, new books, and configured rails");
-  for (const entry of entries) {
-    assert.match(entry, /onOpen=\{\(row\) => setDetailId\(row\.key\)\}/);
-  }
+test("All has one new-books rail without restoring the old recommendation homepage", () => {
+  assert.doesNotMatch(discover, /<DiscoverHome|<FeaturedBook/);
+  const entries = discover.match(/<BookRail\b[^]*?\/>/g) ?? [];
+  assert.equal(entries.length, 1, "only one compact new-books rail");
+  assert.match(entries[0], /onOpen=\{\(row\) => setDetailId\(row\.key\)\}/);
+  assert.match(entries[0], /onSeeAll=\{\(\) => openCollection\("new"\)\}/);
+  assert.match(discover, /showNewBooks && newest\.length > 0/);
+  assert.match(discover, /const showNewBooks = ready && !error && category === "novel" && !genre && !query\.trim\(\) && !collection/);
   for (const component of ["BookRail", "FeaturedBook"]) {
     const start = browse.indexOf(`export function ${component}(`);
     const next = browse.indexOf("export function ", start + 1);
@@ -40,7 +42,7 @@ test("the featured book and every rail also open details", () => {
 
 test("explicit open actions still open the held book", () => {
   const detail = discover.slice(discover.indexOf("  function detailAction("), discover.indexOf("  function renderCard("));
-  assert.match(detail, /if \(m\.state === "on"\)[^]*?if \(m\.book\)[^]*?setDetailId\(""\);\s*onOpen\(m\.book\.id\);/);
+  assert.match(detail, /if \(m\.state === "on"\)[^]*?if \(m\.book\) onOpen\(m\.book\.id\);/);
   assert.match(discover, /onAction=\{\(\) => detailRow && detailAction\(detailRow\)\}/);
   assert.match(browse, /onClick=\{onAction\}[^]*?data-detail-action=\{model\.state\}/);
   assert.match(card, /<AddToShelfButton\b[^]*?onOpen=\{\(\) => book && onOpen\(book\.id\)\}/);

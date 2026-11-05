@@ -110,6 +110,7 @@ export type DiscoverRow = {
   series: string;
   seriesNumber: number;
   category: ContentCategory;
+  genres?: import("@/lib/book-genres").BookGenre[];
   oldFashioned: boolean;
   oldFashionedReason: string;
   coverUrl?: string;

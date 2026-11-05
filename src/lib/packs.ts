@@ -37,6 +37,7 @@ import { applyPackGlossary, hashBytes } from "@/lib/pack-glossary";
 import { booksUrl } from "@/lib/books-base";
 import { isbnDigits, readSeries } from "@/lib/book-meta";
 import { readContentCategory, type ContentCategory } from "@/lib/content-category";
+import { readBookGenres, type BookGenre } from "@/lib/book-genres";
 import { lexileMeasure } from "@/lib/lexile";
 import { noteCatalogIds } from "@/lib/catalog-index";
 import type { CatalogName } from "@/lib/catalog-id";
@@ -78,6 +79,8 @@ export type CatalogPack = {
    * Set by hand in info.json as "speech".
    */
   category: ContentCategory;
+  /** Optional editorial genres; never part of the book/list revision. */
+  genres: BookGenre[];
   /** English that is too old for a beginner. Set by hand in info.json. */
   oldFashioned: boolean;
   /** Short English reason. "" when the book is not flagged, or when no reason was written. */
@@ -169,6 +172,7 @@ export function parseCatalog(value: unknown): Catalog | null {
         return { series: series.series, seriesNumber: series.seriesNumber };
       })(),
       category: readContentCategory(row.category),
+      genres: readBookGenres(row.genres),
       oldFashioned: row.oldFashioned === true,
       oldFashionedReason: row.oldFashioned === true ? text(row.oldFashionedReason, 240) : "",
       updated: readUpdated(row.updated),

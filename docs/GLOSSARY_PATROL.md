@@ -519,7 +519,9 @@ Keep §2's coordinated exclusive window. Follow the
    - Set `previousUpdated` to the old `updated` only when an existing glossary hash changes;
      otherwise preserve it. Set row `updated` and top-level `updated` to now (ISO time).
    - Public book: also set `rev` and `glossary.rev` to the first 12 hex digits of the new SHA-256.
-   Keep every other row, field and order exactly. Use one-space JSON indent and a final newline.
+   Keep every other row, field and order exactly, including this row's `genres`, `series`,
+   `seriesNumber`, category and editorial metadata. Patrol does not classify books or clear
+   classification when publishing a glossary. Use one-space JSON indent and a final newline.
 3. **Verify before §7:** GET the glossary and catalog back through the authenticated R2 API.
    Compare exact bytes and metadata with the intended writes, recompute the glossary byte length
    and SHA-256, check counts/revisions and all preserved rows/fields, and confirm each intended fix

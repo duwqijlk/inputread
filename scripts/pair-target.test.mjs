@@ -18,6 +18,7 @@ let gate;
 let extras = new Map();
 let recordGate;
 const mocks = {
+  "book-genres": "export const readBookGenres = () => [];",
   "list-updated": "export const readUpdated = () => '';",
   "book-db": `const m = globalThis.__pairTarget; export const requestPersistentStorage = async () => false;
     export const listPackRecords = async () => { await m.recordGate(); return m.records(); };

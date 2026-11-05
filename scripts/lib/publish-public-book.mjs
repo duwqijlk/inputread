@@ -61,6 +61,7 @@ export function mergePublicCatalog(live, rows, updated = new Date().toISOString(
     }
     const nextRow = { ...row, zip: null };
     const index = packs.findIndex((item) => item.id === row.id);
+    // keepAdded also retains live genres; a frozen incoming row is not their authority.
     if (index >= 0) packs[index] = keepAdded(packs[index], nextRow);
     else packs.push({ ...nextRow, added: typeof row.added === "string" && row.added ? row.added : updated });
   }

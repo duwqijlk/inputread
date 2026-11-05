@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, Search } from "lucide-react";
 import { BookTag, BookTags, OldFashionedTag } from "@/components/cover-marks";
 import { BookCover, coverLookOf } from "@/components/book-cover";
 import { AddToShelfButton, ShelfCardStatus, type ShelfState } from "@/components/shelf-actions";
-import { DifficultyControls, matchesBand, type BandChoice, type SortChoice } from "@/components/lexile-ui";
+import { type BandChoice, type SortChoice } from "@/components/lexile-ui";
 import {
   bookCardShell,
-  FilterMenu,
-  ListFilters,
   type SeriesChoice,
 } from "@/components/list-filters";
 import { btn, cn, field, subTabs, TabInk } from "@/components/ui";
@@ -17,7 +15,8 @@ import { BUNDLED_CATALOG_URL, loadCatalog, resolveAgainst } from "@/lib/packs";
 import { askToSignIn, useCanAddBooks } from "@/lib/can-add";
 import { useDownloads } from "@/lib/downloads";
 import { errorText, useT } from "@/lib/i18n";
-import { compareLexile, lexileMeasure } from "@/lib/lexile";
+import { lexileMeasure } from "@/lib/lexile";
+import { filterDiscover } from "@/lib/discover-filter";
 import { placeWordList } from "@/lib/place-word-list";
 import type { CatalogName } from "@/lib/catalog-id";
 import { discoverShelfBook } from "@/lib/discover-shelf";
@@ -26,7 +25,9 @@ import { bookHasUserWork } from "@/lib/shelf-work";
 import { useShelfRemove } from "@/lib/shelf-remove";
 import type { Book } from "@/lib/vocab-model";
 import { useVocab } from "@/lib/vocab-store";
-import { navigate } from "@/lib/router";
+import { navigate, discoverPosition, rememberDiscoverPosition } from "@/lib/router";
+import { discoverSearch, type DiscoverView } from "@/lib/discover-route";
+import { DiscoverGenres } from "@/components/discover-genres";
 import { useDiscoverIntent } from "@/lib/tutorial";
 import { countFromBook } from "@/lib/wordbook";
 import { loadWordListCatalog, WORD_LIST_CATALOG_URL, type WordListPack } from "@/lib/word-list-catalog";
@@ -34,9 +35,9 @@ import { CONTENT_CATEGORIES, type ContentCategory } from "@/lib/content-category
 import { placesLeft, quotaFor, useGlossaryQuota } from "@/lib/glossary-quota";
 import { WeeklyQuota } from "@/components/weekly-quota";
 import { newestUpdates } from "@/lib/discover-recent";
-import { browseRails, compareSeriesPlace, RAIL_MIN, RAIL_SIZE, railsFor, type DiscoverRailSpec } from "@/lib/discover-rails";
+import { browseRails, compareSeriesPlace, railsFor, type DiscoverRailSpec } from "@/lib/discover-rails";
 import { loadDiscoverRailFile } from "@/lib/discover-rail-config";
-import { BookDetail, BookRail, FeaturedBook, rowCatalogRef, type CardModel, type DiscoverRow } from "@/components/discover-browse";
+import { BookDetail, BookRail, rowCatalogRef, type CardModel, type DiscoverRow } from "@/components/discover-browse";
 import { holdOffersUpdate, type ListHoldWhy } from "@/lib/word-list-plan";
 import {
   autoUpdateWordLists,
@@ -93,7 +94,7 @@ function CardSkeleton() {
 }
 
 type Row = DiscoverRow;
-const discoverSnapshot = sessionSnapshot<{ rows: Row[]; rails: DiscoverRailSpec[] | null }>();
+const discoverSnapshot = sessionSnapshot<{ rows: Row[]; rails: DiscoverRailSpec[] | null; complete: boolean }>();
 
 /**
  * Every book we have, from the books host. The two catalog files are one fetch each. Covers load as
@@ -104,6 +105,7 @@ export function DiscoverScreen({
   onOpen,
   onNeedsEpub,
   routeCategory,
+  routeBrowse,
   routeBookId,
 }: {
   shelf: Book[];
@@ -111,31 +113,48 @@ export function DiscoverScreen({
   onNeedsEpub: (bookId: string) => void;
   /** The tab in the address (/discover/novels/, /discover/speeches/), when it names one. */
   routeCategory?: ContentCategory;
+  routeBrowse?: DiscoverView;
   /** A catalog book id from /book/<id>/: its detail opens once the catalogs are read. */
   routeBookId?: string;
 }) {
   const { t, tn } = useT();
   const [initial] = useState(() => discoverSnapshot.read());
   const [rows, setRows] = useState<Row[]>(() => initial?.rows ?? []);
-  /** null: no saved list, so the biggest series stay automatic. */
+  /** null: no saved editorial selection; the homepage never invents series entries. */
   const [railSpecs, setRailSpecs] = useState<DiscoverRailSpec[] | null>(() => initial?.rails ?? null);
   const [ready, setReady] = useState(Boolean(initial));
   const [records, setRecords] = useState<DiscoverRecord[]>([]);
   const [customPacks, setCustomPacks] = useState<ReadonlySet<string>>(() => new Set());
-  const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortChoice>("listed");
-  const [band, setBand] = useState<BandChoice>("all");
-  const [author, setAuthor] = useState("all");
-  const [series, setSeries] = useState<SeriesChoice>("all");
-  const [category, setCategory] = useState<ContentCategory>(routeCategory ?? "novel");
-  // Back and forward between /discover/novels/ and /discover/speeches/ change the tab too.
-  useEffect(() => {
-    if (routeCategory) setCategory(routeCategory);
-  }, [routeCategory]);
-  /** A row opened with "See all": "new", "classic", "series:<name>" or "curated:<name>". "" is the browse page. */
-  const [collection, setCollection] = useState("");
-  /** The row key of the book in the detail sheet. */
-  const [detailId, setDetailId] = useState("");
+  const view = routeBrowse ?? {};
+  const category = routeCategory ?? (routeBookId ? rows.find((row) => row.id === routeBookId)?.category : undefined) ?? "novel";
+  const query = view.q ?? "";
+  const sort: SortChoice = view.sort ?? "listed";
+  const band: BandChoice = view.band ?? "all";
+  const author = view.author ?? "all";
+  const series: SeriesChoice = view.series ?? "all";
+  const genre = category === "novel" ? view.genre : undefined;
+  const collection = view.collection ?? "";
+  const [linkedDetail, setLinkedDetail] = useState("");
+  const detailId = routeBookId ? linkedDetail : view.detail ?? "";
+  function changeView(patch: Partial<DiscoverView>, replace = false) {
+    rememberDiscoverPosition(limit);
+    const origin = replace ? window.history.state?.discoverOrigin : `${window.location.pathname}${window.location.search}`;
+    navigate({ kind: "discover", category, browse: { ...view, view: "results", ...patch } }, { replace, state: origin ? { discoverOrigin: origin } : null });
+  }
+  function setQuery(q: string) {
+    changeView({ q: q || undefined, genre: undefined, collection: undefined, author: undefined, series: undefined, band: undefined, sort: undefined, detail: undefined }, Boolean(view.q));
+  }
+  const closingDetail = useRef(false);
+  useEffect(() => { if (detailId) closingDetail.current = false; }, [detailId]);
+  function setDetailId(key: string) {
+    if (!key && (!detailId || closingDetail.current)) return;
+    if (!key) closingDetail.current = true;
+    if (routeBookId) { setLinkedDetail(key); return; }
+    rememberDiscoverPosition(limit);
+    const detailOrigin = `${window.location.pathname}${window.location.search}`;
+    if (!key && window.history.state?.detailOrigin) { window.history.back(); return; }
+    navigate({ kind: "discover", category, browse: { ...view, detail: key || undefined } }, { replace: !key, state: key ? { detailOrigin } : undefined });
+  }
   const [error, setError] = useState("");
   const [listError, setListError] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState("");
@@ -176,6 +195,7 @@ export function DiscoverScreen({
           series: pack.series,
           seriesNumber: pack.seriesNumber,
           category: pack.category,
+          genres: pack.genres,
           oldFashioned: pack.oldFashioned,
           oldFashionedReason: pack.oldFashionedReason,
           // The version in the address (the cover's sha256) makes a replaced cover a new address, so the
@@ -196,6 +216,7 @@ export function DiscoverScreen({
           series: pack.series,
           seriesNumber: pack.seriesNumber,
           category: pack.category,
+          genres: pack.genres,
           oldFashioned: pack.oldFashioned,
           oldFashionedReason: pack.oldFashionedReason,
           coverUrl: pack.cover?.url ? coverAddress(resolveAgainst(WORD_LIST_CATALOG_URL, pack.cover.url), pack.cover.sha256) : undefined,
@@ -203,7 +224,7 @@ export function DiscoverScreen({
           added: pack.added,
           list: pack,
         })) : discoverSnapshot.read()?.rows.filter((row) => row.kind === "list") ?? [];
-        const next = { rows: [...classics, ...words], rails: railFile === undefined ? discoverSnapshot.read()?.rails ?? null : railFile };
+        const next = { rows: [...classics, ...words], rails: railFile === undefined ? discoverSnapshot.read()?.rails ?? null : railFile, complete: Boolean(lists) };
         if (!discoverSnapshot.publish(ticket, next)) return;
         setRows(next.rows);
         setRailSpecs(next.rails);
@@ -262,12 +283,11 @@ export function DiscoverScreen({
     const row = rows.find((item) => item.key === `classic:${routeBookId}`) ?? rows.find((item) => item.key === `list:${routeBookId}`);
     if (!row) return;
     openedFor.current = routeBookId;
-    setCategory(row.category);
-    setDetailId(row.key);
+    setLinkedDetail(row.key);
   }, [routeBookId, rows]);
 
   const inCategory = useMemo(() => rows.filter((item) => item.category === category), [rows, category]);
-  const newest = useMemo(() => newestUpdates(inCategory, new Date(), RAIL_SIZE), [inCategory]);
+  const newest = useMemo(() => newestUpdates(inCategory, new Date(), 12), [inCategory]);
   // The admin saves rows per tab. No saved file at all keeps the automatic series rows.
   const rails = useMemo(
     () => browseRails(inCategory, railSpecs === null ? null : railsFor(railSpecs, category)),
@@ -291,31 +311,10 @@ export function DiscoverScreen({
     if (!pendingSeries || rows.length === 0) return;
     const name = useDiscoverIntent.getState().take();
     if (!name) return;
-    setCategory("novel");
-    setCollection(`series:${name}`);
-    window.scrollTo({ top: 0 });
+    navigate({ kind: "discover", category: "novel", browse: { view: "results", collection: `series:${name}` } });
   }, [pendingSeries, rows.length]);
-  const authors = useMemo(
-    () => [...new Set(inCategory.map((item) => item.author).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [inCategory],
-  );
-  const seriesNames = useMemo(
-    () => [...new Set(inCategory.map((item) => item.series).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [inCategory],
-  );
-  const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let list = inCollection.filter((item) => matchesBand(item.lexile, band));
-    if (q) list = list.filter((item) => `${item.title} ${item.author}`.toLowerCase().includes(q));
-    if (author !== "all") list = list.filter((item) => item.author === author);
-    if (series === "none") list = list.filter((item) => !item.series);
-    else if (series !== "all" && series !== "grouped") list = list.filter((item) => item.series === series);
-    if (sort === "listed" || sort === "recent" || series === "grouped") return list;
-    const copy = [...list];
-    if (sort === "title") copy.sort((a, b) => a.title.localeCompare(b.title) || a.kind.localeCompare(b.kind));
-    else copy.sort((a, b) => compareLexile(a.lexile, b.lexile, sort) || a.title.localeCompare(b.title));
-    return copy;
-  }, [inCollection, query, band, author, series, sort]);
+  const scoped = useMemo(() => genre ? inCollection.filter((row) => row.genres?.includes(genre)) : inCollection, [inCollection, genre]);
+  const shown = useMemo(() => filterDiscover(scoped, { query, band, author, series, sort, interleave: Boolean(genre) && !collection }), [scoped, query, band, author, series, sort, genre, collection]);
 
   const groups = useMemo(() => {
     if (series !== "grouped") return [];
@@ -332,13 +331,26 @@ export function DiscoverScreen({
     return blocks;
   }, [shown, series]);
 
-  const filterKey = `${category}\0${collection}\0${query}\0${sort}\0${band}\0${author}\0${series}`;
-  const [windowState, setWindowState] = useState({ key: filterKey, limit: DISCOVER_PAGE });
-  if (windowState.key !== filterKey) setWindowState({ key: filterKey, limit: DISCOVER_PAGE });
+  const filterKey = `${category}\0${collection}\0${genre}\0${view.view}\0${query}\0${sort}\0${band}\0${author}\0${series}`;
+  const [windowState, setWindowState] = useState({ key: filterKey, limit: Math.max(DISCOVER_PAGE, discoverPosition()?.limit ?? 0) });
+  if (windowState.key !== filterKey) setWindowState({ key: filterKey, limit: Math.max(DISCOVER_PAGE, discoverPosition()?.limit ?? 0) });
   const limit = windowState.key === filterKey ? windowState.limit : DISCOVER_PAGE;
   const visible = shown.slice(0, limit);
   const hasMore = visible.length < shown.length;
   const moreRef = useRef<HTMLDivElement | null>(null);
+  const addressKey = `${category}${discoverSearch(view)}${routeBookId ?? ""}`;
+  const restoredAddress = useRef("");
+  useLayoutEffect(() => {
+    if (!ready || restoredAddress.current === addressKey) return;
+    restoredAddress.current = addressKey;
+    const saved = discoverPosition();
+    if (!detailId) window.scrollTo({ top: saved?.y ?? 0 });
+  }, [ready, addressKey, detailId, limit]);
+  useEffect(() => {
+    const save = () => { if (!detailId) rememberDiscoverPosition(limit); };
+    window.addEventListener("scroll", save, { passive: true });
+    return () => window.removeEventListener("scroll", save);
+  }, [limit, detailId]);
   const visibleGroups = useMemo(() => {
     let left = limit;
     const out: typeof groups = [];
@@ -540,13 +552,9 @@ export function DiscoverScreen({
     const m = cardModel(row);
     if (m.ambiguous || m.state === "busy") return;
     if (m.state === "on") {
-      if (m.book) {
-        setDetailId("");
-        onOpen(m.book.id);
-      }
+      if (m.book) onOpen(m.book.id);
       return;
     }
-    if (!canAdd && m.state === "off") setDetailId("");
     add(row, m.book, m.updateReady);
   }
 
@@ -611,10 +619,15 @@ export function DiscoverScreen({
               {row.title}
             </button>
           </h3>
-          {/* Cover, title and author only: the Lexile measure and the kind of book are in the detail. */}
+          {/* Keep series navigation separate from the cover's book-detail action. */}
           <p className="truncate text-[0.8125rem] leading-5 text-faint" lang="en">
             {row.author}
           </p>
+          {row.series ? (
+            <button type="button" className="min-h-11 w-full break-words text-left text-xs leading-snug text-muted hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" onClick={() => openCollection(`series:${row.series}`)} aria-label={t("browse.openSeries", { name: row.series })} data-card-series={row.series}>
+              {row.seriesNumber ? t("series.book", { name: row.series, n: row.seriesNumber }) : row.series}
+            </button>
+          ) : null}
           {needs || row.oldFashioned ? (
             <BookTags>
               {needs ? (
@@ -640,16 +653,7 @@ export function DiscoverScreen({
     );
   }
 
-  const browsing =
-    ready &&
-    !error &&
-    !collection &&
-    !query.trim() &&
-    band === "all" &&
-    author === "all" &&
-    series === "all" &&
-    sort === "listed" &&
-    inCategory.length > 0;
+  const showNewBooks = ready && !error && category === "novel" && !genre && !query.trim() && !collection && band === "all" && author === "all" && series === "all" && sort === "listed";
   const detailRow = detailId ? (rows.find((row) => row.key === detailId) ?? null) : null;
   function railTitle(id: string): string {
     if (id === "new") return t("discover.recent");
@@ -659,8 +663,10 @@ export function DiscoverScreen({
     return t("browse.all");
   }
   function openCollection(id: string) {
-    setCollection(id);
-    window.scrollTo({ top: 0 });
+    changeView({ collection: id === "all" ? undefined : id, genre: undefined, q: undefined, band: undefined, author: undefined, series: undefined, sort: undefined, detail: undefined });
+  }
+  function clearFilters() {
+    changeView({ genre: undefined, q: undefined, band: undefined, author: undefined, series: undefined, sort: undefined, detail: undefined });
   }
 
   return (
@@ -694,9 +700,6 @@ export function DiscoverScreen({
                 data-discover-category-tab={id}
                 className={cn(subTabs.tab, on ? subTabs.on : subTabs.off)}
                 onClick={() => {
-                  setCategory(id);
-                  setAuthor("all");
-                  setSeries("all");
                   // One address per tab, so a tab can be linked and found by a search engine.
                   navigate({ kind: "discover", category: id }, { replace: true });
                 }}
@@ -708,6 +711,10 @@ export function DiscoverScreen({
         </div>
         <WeeklyQuota />
       </div>
+      {category === "novel" ? <DiscoverGenres genre={genre} onSelect={(value) => {
+        if (value) changeView({ genre: value, q: undefined, collection: undefined, author: undefined, series: undefined, detail: undefined });
+        else changeView({ genre: undefined, collection: undefined, q: undefined, band: undefined, author: undefined, series: undefined, sort: undefined, detail: undefined });
+      }} /> : null}
       {!ready || inCategory.length > 0 ? (
         <div className="flex items-center gap-2">
           <label className="relative block min-w-0 flex-1">
@@ -722,15 +729,6 @@ export function DiscoverScreen({
               data-discover-search
             />
           </label>
-          <FilterMenu
-            active={sort !== "listed" || band !== "all" || author !== "all" || series !== "all"}
-            render={() => (
-              <>
-                <DifficultyControls sort={sort} sorts={["listed", "easy", "hard", "title"]} onSort={setSort} band={band} onBand={setBand} />
-                <ListFilters authors={authors} seriesNames={seriesNames} author={author} series={series} onAuthor={setAuthor} onSeries={setSeries} />
-              </>
-            )}
-          />
         </div>
       ) : null}
       <div
@@ -739,41 +737,18 @@ export function DiscoverScreen({
         aria-labelledby={`discover-cat-${category}`}
         className="grid gap-5 sm:gap-6"
       >
-        {browsing ? (
-          <>
-            {newest[0] ? <FeaturedBook row={newest[0]} onOpen={(row) => setDetailId(row.key)} /> : null}
-            {newest.length >= RAIL_MIN ? (
-              <BookRail
-                rail="new"
-                title={railTitle("new")}
-                rows={newest}
-                onOpen={(row) => setDetailId(row.key)}
-                onSeeAll={() => openCollection("new")}
-                action={(row) => renderAdd(row as Row)}
-              />
-            ) : null}
-            {rails.map((rail) => (
-              <BookRail
-                key={rail.id}
-                rail={rail.id}
-                title={railTitle(rail.id)}
-                rows={rail.rows}
-                onOpen={(row) => setDetailId(row.key)}
-                onSeeAll={rail.all.length > rail.rows.length ? () => openCollection(rail.id) : undefined}
-                action={(row) => renderAdd(row as Row)}
-              />
-            ))}
-            <h2 className="pt-2 font-bold tracking-[-0.02em] text-[1.15rem] leading-tight sm:text-[1.3rem]" data-discover-all>
-              {t("browse.all")}
-            </h2>
-          </>
-        ) : ready ? (
-          <div className="flex min-w-0 items-center gap-2" data-discover-results-head>
+        {showNewBooks && newest.length > 0 ? (
+          <div data-discover-new>
+            <BookRail rail="new" title={t("discover.recent")} rows={newest} onOpen={(row) => setDetailId(row.key)} onSeeAll={() => openCollection("new")} action={renderAdd} />
+          </div>
+        ) : null}
+        {ready ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-2" data-discover-results-head>
             {collection ? (
               <button
                 type="button"
                 className={cn(btn.icon, "-ml-2 shrink-0")}
-                onClick={() => setCollection("")}
+                onClick={() => { if (window.history.state?.discoverOrigin) window.history.back(); else navigate({ kind: "discover", category }); }}
                 aria-label={t("browse.back")}
                 data-collection-back
               >
@@ -781,12 +756,13 @@ export function DiscoverScreen({
               </button>
             ) : null}
             <h2
-              className="min-w-0 truncate font-bold tracking-[-0.02em] text-[1.15rem] sm:text-[1.3rem]"
+              className="min-w-0 flex-1 basis-28 break-words font-bold tracking-[-0.02em] text-[1.15rem] sm:text-[1.3rem]"
               lang={collection.startsWith("series:") || collection.startsWith("curated:") ? "en" : undefined}
             >
-              {collection ? railTitle(collection) : t("browse.results")}
+              {genre ? t(`genre.${genre}`) : collection ? railTitle(collection) : t("browse.all")}
             </h2>
             <span className="shrink-0 text-sm text-muted tabular-nums">{tn("count.book", shown.length)}</span>
+            {genre || query || band !== "all" || author !== "all" || series !== "all" || sort !== "listed" ? <button className={cn(btn.quiet, "ml-auto")} onClick={clearFilters} data-clear-discover>{t("browse.clearFilters")}</button> : null}
           </div>
         ) : null}
         {error ? (
@@ -806,13 +782,14 @@ export function DiscoverScreen({
             </ul>
           </div>
         ) : shown.length === 0 ? (
-          <p className="py-10 text-center text-muted" data-discover-empty={category}>
-            {inCategory.length === 0 && category === "speech"
+          <div className="grid justify-items-center gap-3 py-10 text-center text-muted" data-discover-empty={category}>
+            <p>{inCategory.length === 0 && category === "speech"
               ? t("discover.empty.speech")
               : query.trim()
                 ? t("shelf.noMatch", { query: query.trim() })
-                : t("shelf.series.empty")}
-          </p>
+                : t("shelf.series.empty")}</p>
+            <button className={btn.quiet} onClick={clearFilters}>{t("browse.clearFilters")}</button>
+          </div>
         ) : series === "grouped" ? (
           <div className="grid gap-8">
             {visibleGroups.map((group) => (
@@ -854,7 +831,6 @@ export function DiscoverScreen({
           if (!detailRow) return;
           const m = cardModel(detailRow);
           if (!m.held || !m.book) return;
-          setDetailId("");
           onOpen(m.book.id);
         }}
         onRemove={() => {
