@@ -503,7 +503,7 @@ export function MarginApp() {
       {bare ? null : <SiteNotice />}
       {bare ? null : (
         <header ref={topBar} className="chrome-bar chrome-top sticky top-0 z-40" data-top-bar>
-          <div className="relative mx-auto flex h-14 max-w-6xl items-center gap-1 px-2 sm:gap-2 sm:px-6">
+          <div className="relative mx-auto flex h-14 max-w-6xl items-center gap-1 px-2 sm:gap-2 sm:px-4">
             <span className="chrome-title text-ink sm:hidden" aria-hidden data-top-title />
             <button
               type="button"
