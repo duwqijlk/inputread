@@ -22,12 +22,14 @@ export function requestScope(parent?: AbortSignal, deadline = 30000) {
   let rejectWait: ((error: Error) => void) | undefined;
   const stopped = new Promise<never>((_, reject) => { rejectWait = reject; });
   void stopped.catch(() => undefined);
+  let timedOut = false;
   const stop = () => { controller.abort(); rejectWait?.(abortError()); };
-  const timer = setTimeout(stop, deadline);
+  const timer = setTimeout(() => { timedOut = true; stop(); }, deadline);
   parent?.addEventListener("abort", stop);
   if (parent?.aborted) stop();
   return {
     signal: controller.signal,
+    get timedOut() { return timedOut; },
     run<T>(work: Promise<T>): Promise<T> { return Promise.race([work, stopped]); },
     dispose() { clearTimeout(timer); parent?.removeEventListener("abort", stop); },
   };

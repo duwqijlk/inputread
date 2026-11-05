@@ -2994,6 +2994,38 @@ test("word feedback: submit too_hard / wrong_meaning, deduplicate, and admin que
   assert.equal((await upgradedResp.json()).saved, true);
 });
 
+test("word feedback: old-revision explanations stay reviewable after no-change resolution", async () => {
+  const db = openDb();
+  const env = envOf(db);
+  const cookie = await readerCookie(env);
+  const base = { bookId: "wonder", word: "quite", chapter: 1, occurrence: 1, reason: "wrong_meaning", glossaryRev: "old-rev" };
+  const send = (patch, at, ip) => handleWordFeedbackPost(postJson("/api/feedback/word", cookie, { ...base, ...patch }, ip), env, { now: at });
+  assert.equal((await send({}, NOW, "192.0.2.10")).status, 200);
+  db.raw.prepare("UPDATE word_feedback SET status='resolved', resolution='no_change', resolved_at=?, resolved_rev='verified-live'").run(NOW + 100);
+  assert.equal((await send({}, NOW + 200, "192.0.2.11")).status, 200);
+  assert.equal(db.raw.prepare("SELECT status FROM word_feedback ORDER BY id DESC LIMIT 1").get().status, "resolved", "plain old-client suppression remains");
+  const suggestion = "Completely, with nothing left out.";
+  const prepare = db.prepare;
+  let historyReads = 0;
+  db.prepare = (sql) => {
+    if (sql.includes("SELECT DISTINCT glossary_rev")) historyReads++;
+    return prepare(sql);
+  };
+  try {
+    assert.equal((await send({ suggestion }, NOW + 300, "192.0.2.11")).status, 200);
+    assert.equal(historyReads, 0, "new explanations never need the old-version suppression scan");
+  } finally { db.prepare = prepare; }
+  const fresh = db.raw.prepare("SELECT status,resolution,accepted_at,suggestion FROM word_feedback ORDER BY id DESC LIMIT 1").get();
+  assert.equal(fresh.status, "reopened");
+  assert.equal(fresh.resolution, "", "new report cannot inherit the old review outcome");
+  assert.equal(fresh.accepted_at, 0);
+  assert.equal(fresh.suggestion, suggestion);
+  assert.equal((await send({ suggestion: "  \n " }, NOW + 400, "192.0.2.12")).status, 200);
+  assert.equal(db.raw.prepare("SELECT status FROM word_feedback ORDER BY id DESC LIMIT 1").get().status, "resolved", "empty cleaned suggestion cannot bypass suppression");
+  assert.equal((await send({ glossaryRev: "verified-live" }, NOW + 500, "192.0.2.13")).status, 200);
+  assert.equal(db.raw.prepare("SELECT status FROM word_feedback ORDER BY id DESC LIMIT 1").get().status, "reopened");
+});
+
 test("word feedback: a reader's own meaning is cleaned, capped and kept for review", async () => {
   const db = openDb();
   const env = envOf(db);

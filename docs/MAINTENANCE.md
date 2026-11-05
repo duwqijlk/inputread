@@ -284,19 +284,25 @@ restore D1, R2, or device data; verify schema and data compatibility before sele
 | Glossary representation and anchoring | [Glossary format](https://github.com/duwqijlk/inputread/blob/main/docs/GLOSSARY_FORMAT.md) and its linked schema |
 | Mandatory coding/UI constraints | [AGENTS.md](https://github.com/duwqijlk/inputread/blob/main/AGENTS.md) |
 
-**Authority on every run:** reread the owning task playbook, this map and the required source
-specifications, not a previous summary, old copy or authoring ZIP. With a checkout, use its actual
-`docs/` files and record resolved path/commit/dirty state; without one, reload the hosted playbooks
-and linked specifications and record URLs/retrieval times. Never guess a local path. Local source
-and hosted instructions are different evidence: record original-byte SHA-256 and compare only
-comparable raw Markdown bytes. If not checked, label local/hosted parity **unverified**; if
-mismatched, reconcile governing instructions/app version before writes. Do not claim a deploy or
-live equivalence from a local preview. Missing required instructions means stop before writes.
-Detailed per-run provenance steps and report fields live in Book upload and Patrol.
+**Authority on every run:** reread the owning task playbook, this map and required source
+specifications, not an old summary or authoring ZIP. Missing required instructions means stop
+before writes; never claim a deploy or live equivalence from a local preview.
+
+For the daily patrol, the hosted originals actually read for the run are the operational
+authority, even with a checkout. Record URLs/retrieval times and original-byte SHA-256 when
+available (otherwise **unverified**), plus checkout path/commit/dirty state if used. An old
+checkout need not equal the hosted files; do not mix its procedures into the run. This does not
+waive file-byte, identity, publication or credit verification.
+
+For other maintenance, use the checkout's actual task sources when available and record its
+path/commit/dirty state; otherwise fetch the hosted playbooks and linked specifications afresh.
+When comparing local/hosted sources, compare original bytes, never converted text; record parity
+as verified or **unverified**, and reconcile actual mismatches before writes. Task-specific
+provenance steps and report fields live in Book upload and Patrol.
 
 Patrol's topic is only a device-local open-overlap aid, not a global catalog identity. Read every
 report individually through a fixed topic/id cutoff with pagination, then resolve only reviewed,
-answered ids; no whole-topic UPDATE. Word feedback may be `reopened`; passage inserts are
+verified ids with an explicit `fixed`, `already_covered` or `no_change` outcome; no whole-topic UPDATE. Word feedback may be `reopened`; passage inserts are
 `pending` and later work can start a new topic; resolved taps do not auto-reopen. Patrol owns the
 exact SQL, tap snapshot guards and unchanged contribution aggregation.
 

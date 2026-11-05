@@ -15,15 +15,17 @@ sections used below before reviewing reports or writing. Do not operate from a p
 summary, an old copied page or the authoring ZIP. Do not guess a local checkout or specification
 path. If a required source is unreadable, stay read-only and report it.
 
-With a checkout, read its actual `docs/GLOSSARY_PATROL.md`, `docs/MAINTENANCE.md` and the required
-source specs; record the resolved checkout path, branch/commit and dirty state. Without one, read
-the hosted patrol/maintenance URLs above and their specification links afresh; record the actual
-URLs and retrieval times. A local checkout is not proof of the deployed instructions or app.
-Record SHA-256 of each source's **original bytes** where available. Compare local `.md` and its
-hosted `.md` only as comparable raw bytes, never HTML, a summary or reconstructed text. Record
-both sources/hashes and equality/mismatch if verified; otherwise explicitly record **unverified**.
-A mismatch needs reconciliation of the governing instructions/app version before writes, not an
-assumption that either copy is newer. No repository or Node is required to read the hosted sources.
+The hosted patrol and maintenance originals read for this run are the operational authority.
+Record their URLs and retrieval times, plus SHA-256 of their **original bytes** when available.
+If a tool returns only converted text, mark the original-byte hash **unverified**; never hash
+that text and call it the source hash. This does not waive the file-byte/credit checks before
+publishing: if the runtime cannot perform those checks, stay read-only.
+Read the required format/specification links afresh and record their actual sources too. A local
+checkout is optional: record its resolved path, commit and dirty state if used, but an old checkout
+need not match the hosted playbook. Do not mix its older procedures into this run. No local/hosted
+hash-equality ceremony, extra version table or authoring ZIP is required.
+Before using the new resolution SQL, confirm migration `0025_feedback_resolution.sql` is present
+in D1's migration history. If missing, stay read-only and ask the operator; never migrate from patrol.
 See [documentation authority](https://inputread.site/kit/maintenance.md#ownership).
 
 ## 1. The job
@@ -59,7 +61,9 @@ words. Three things tell you a list needs work:
   - `suggested`: only the reader's explanation, in `suggestion` (plain text, at most 600
     characters: room to say what a sentence means and why).
 
-Once a day you read the open items, fix the word lists, publish them, and mark the items done.
+Once a day review reader reports first; use taps as a bounded signal list, not a backlog to clear.
+Fix and publish only when needed. A reviewed report may be closed without publishing when the
+verified current list already answers it or no change is warranted; record the outcome in §7.
 You may **add** entries and **fix** existing ones: rewrite a meaning that is too hard, correct one
 that is wrong, add or move an anchor, add a sense, and remove a wrong phrase match. Example: in
 The Wonderful Wizard of Oz the phrase "even to" was matched in "want to kill anybody, even to see
@@ -320,16 +324,21 @@ is the entry schema. The parts you need:
   `context` come from the row; the chapter is the one in the **list's** edition that holds that
   text (see "Chapter numbers"). When the row's `chapters` differs from the list's, count the
   occurrence in the list's chapter, not in the reader's.
-- `senseOnly: true` entries apply only at their anchors. Phrases live in `"phrases"`, keyed by the
-  phrase, with their own `forms` and `anchors`.
+- `senseOnly: true` word entries apply only at their anchors. Phrases live in `"phrases"`, keyed by
+  the phrase, with `forms`; phrase entries do not support per-place anchors or multiple senses.
 
-What to do with each kind of item:
+Keep the sources' lifecycles separate:
 
-| Item | Usual fix | Leave it open |
+| Source | Review action | When no edit is needed |
 | --- | --- | --- |
-| Tap or `missing_meaning` | Add the entry, or add this place as an anchor to an existing sense | Very common words tapped to hear them (`said`, `top`); character and place names (`annie`) |
-| `too_hard` | Rewrite `meaning` (and `here`) in easier words, same sense | The meaning is already as easy as it can be |
-| `wrong_meaning` | Point the anchor at the right sense, add a sense, or remove the wrong phrase match / anchor | You cannot tell the right meaning without guessing the plot |
+| Tap signal | Inspect high-ranked locations; add a genuinely missing meaning if verified | Common words and names remain signals, not unfinished reports. Do not resolve just to reduce counts. |
+| `missing_meaning` reader report | Add the entry or the missing sense anchor | Verified existing coverage: `already_covered`; an ordinary word/name needing no help: `no_change`. |
+| `too_hard` reader report | Make the same meaning easier | Already sufficiently simple: `no_change`. |
+| `wrong_meaning` / `suggested` reader report | Correct the sense or phrase match; consider a genuinely better suggestion | Existing correct coverage: `already_covered`; same-sense suggestion not better or unsuitable: `no_change`. |
+
+For reports, these are individual review outcomes (§7), not automatic filters based on word length
+or a name list. Unknown identity, missing text or a meaning that would require guessing stays open;
+report the missing evidence to the operator. Items not reached within this run's budget stay open too.
 
 What to do with a passage report. Find the place by its text: one paragraph of the book must
 contain `before` + `selected` + `after` (spaces may differ). `chapter` and `paragraph` narrow the
@@ -343,7 +352,9 @@ Then write the smallest note that helps:
 | Several sentences of one paragraph | a `paragraphs` note (7.1) on that paragraph: `mainIdea` and `simple` | When the reader asked about the whole paragraph (or most of it), or no sentence note would do. |
 | `wrong` | fix the phrase, sentence or paragraph note shown there, or remove a wrong phrase match | |
 
-Leave it open when the selection is a single easy word, a name, or text you cannot find in the book.
+A verified easy word or name that needs no note is `no_change`; verified existing help is
+`already_covered`. Text you cannot locate, or a book you cannot identify safely, stays open with
+the missing evidence in the run report. Do not force a decision after a number of runs.
 Never copy more of the book than a note's `context` needs.
 
 **Where readers see each note.** A paragraph note and a sentence note open from the same place:
@@ -396,11 +407,11 @@ review them together:
    "a new suggestion when a meaning already exists" below applies here too: a different sense of a
    different part is its own note and its own credit; the same sense said better replaces the text
    and moves the credit.
-4. **Decide per reviewed report id, never close by topic.** After verified publication, resolve
-   only the ids read through the saved cutoff whose individual questions and book associations
-   your notes answer. Mark `accepted` only the reports whose explanation you really used, one
-   credit per note. Unanswered, unverified, mismatched and post-cutoff reports stay open. A topic
-   is a review aid, not authorization for a bulk UPDATE.
+4. **Decide per reviewed report id, never close by topic.** Use §7's `fixed`, `already_covered`
+   or `no_change` outcome for each individually verified report read through the cutoff. Only
+   `fixed` requires a new verified publication; only explanations actually adopted with credit
+   can be accepted. Unreviewed, unidentified, unlocated and post-cutoff reports stay open. A
+   topic is a review aid, not authorization for a bulk UPDATE.
 
 A topic is closed only when all its reports are resolved. A later report that survives duplicate
 suppression starts a new `pending` topic if no overlapping unresolved report is found; otherwise
@@ -413,8 +424,8 @@ Reviewing a reader's `suggestion`:
   sentence, write the entry in your own simple English (rules below). Do not copy it word for
   word: it may be copied from a dictionary, and it may be Chinese, which a word list must not hold.
 - **Reject** it when it does not fit the sentence, guesses at the plot, is a joke, spam, a link,
-  or anything other than a meaning. Then fix the item as if no suggestion was given, or leave it
-  open.
+  or anything other than a meaning. Review the underlying question separately; an unsuitable
+  suggestion does not require leaving a verified no-change report open.
 - Several readers suggesting the same sense for one place is a strong signal. One reader alone
   is a hint, not proof: check it against the sentence.
 - Never put a reader's text, name, or anything personal into the word list or your report beyond
@@ -434,10 +445,10 @@ suggestion arrives from reader B, compare B's with the meaning shown **at this p
 
 | B's suggestion | What to do | Credit | Mark B's report |
 | --- | --- | --- | --- |
-| A **different sense** that fits this sentence (A's fits other places) | Add a new sense with an anchor for this place; leave A's sense as it is | New sense: B | resolved + accepted |
-| The **same sense, said clearly better** (simpler, closer to this sentence, or A's was wrong) | Rewrite that sense's `meaning` | Switch the sense's `credit` to B | resolved + accepted |
-| The same sense, **not better** | Change nothing | Keep A | resolved, **not** accepted |
-| Does not fit the sentence | Change nothing | Keep A | resolved, not accepted |
+| A **different sense** that fits this sentence (A's fits other places) | Add an anchored word sense; preserve A's sense | New sense: B | `fixed` + accepted |
+| The **same sense, said clearly better** (simpler, closer to this sentence, or A's was wrong) | Rewrite that sense's `meaning` | Switch the sense's `credit` to B | `fixed` + accepted |
+| The same sense, **not better** | Change nothing | Keep A | `no_change`, not accepted |
+| Does not fit the sentence | Change nothing after verifying the selected place | Keep A | `no_change`, not accepted |
 
 - A's past help still counts: the rank counts accepted reports, not the credits shown now, so A
   keeps their place after B improves the sense.
@@ -523,10 +534,24 @@ is not silently replaced.
 
 ## 7. Mark items done
 
-Only after §6's R2 readback verifies the fix (and credit for an accepted suggestion), mark items
-that the verified live list answers, with its **verified revision**. If the current list already
-fixed an older report, verify that live list and catalog in the same way before resolving it;
-there is no need to rewrite identical bytes.
+For reader reports, `resolved` means **review completed**, not necessarily a repaired word list.
+Use exactly one `resolution`:
+
+- `fixed`: this run changed content, and §6's R2 readback verified the fix and any adopted credit.
+- `already_covered`: verified current content already answers the report; do not republish identical bytes.
+- `no_change`: verified the book/place and deliberately found no worthwhile edit (name, ordinary word,
+  sufficiently simple meaning, or a suggestion that is not better or does not fit).
+
+All three use the **verified current live revision** as `resolved_rev`, even without a new publish.
+Do not invent a revision or leave it empty because no file changed. If identity, content or revision
+cannot be verified, leave the report open. Historical blank `resolution` means unknown, not `fixed`.
+No bulk cleanup is authorized: only individually reviewed ids may be closed. A duplicate is not by
+itself proof that both reports were answered.
+
+Taps have no resolution column. Resolve a tap only when a verified live fix covers its exact place,
+using its full primary key and read-time snapshots below, never to clear common-word/name signals.
+The old admin grouped resolve action leaves resolution blank and is not the patrol's per-id review
+tool; do not use it to assign outcomes to unseen reports.
 
 ```sql
 UPDATE book_word_taps SET status = 'resolved', resolved_at = ?1, resolved_rev = ?2
@@ -534,11 +559,13 @@ UPDATE book_word_taps SET status = 'resolved', resolved_at = ?1, resolved_rev = 
    AND catalog_id = ?7 AND glossary_rev = ?8 AND last_tapped_at = ?9
    AND in_glossary = 0 AND status != 'resolved';
 
-UPDATE word_feedback SET status = 'resolved', resolved_at = ?1, resolved_rev = ?2
- WHERE id = ?3;
+UPDATE word_feedback SET status = 'resolved', resolved_at = ?1, resolved_rev = ?2, resolution = ?4
+ WHERE id = ?3 AND status != 'resolved' AND length(trim(?2)) > 0
+   AND ?4 IN ('fixed', 'already_covered', 'no_change');
 
-UPDATE passage_feedback SET status = 'resolved', resolved_at = ?1, resolved_rev = ?2
- WHERE id = ?3 AND topic = ?4 AND id <= ?5 AND status != 'resolved';
+UPDATE passage_feedback SET status = 'resolved', resolved_at = ?1, resolved_rev = ?2, resolution = ?6
+ WHERE id = ?3 AND topic = ?4 AND id <= ?5 AND status != 'resolved' AND length(trim(?2)) > 0
+   AND ?6 IN ('fixed', 'already_covered', 'no_change');
 ```
 
 `?1` = now in milliseconds, `?2` = verified live revision. For **taps**, bind `?3`–`?6` to the
@@ -549,27 +576,44 @@ the current live revision for `?8`. Execute once per verified location, never a 
 batch. Zero changed rows means the row changed or is already resolved: reread and re-evaluate,
 not a reason to broaden the WHERE. These guards avoid resolving a new tap or a changed catalog/list
 on that device while you worked. Word feedback `?3` is its individually reviewed `id`.
+Word feedback adds `?4` = its explicit resolution; passage feedback adds `?6` = its explicit
+resolution. Existing id/topic/cutoff positions are unchanged.
 For passage feedback, execute **once per reviewed, answered id**: `?3` = that id, `?4` = its
 original topic, `?5` = the saved topic cutoff from §3. Do not use `WHERE topic = ...` as an
 alternative UPDATE, even when you believe you answered a whole topic: unseen/new rows can arrive
 while you work. Do not construct the id list from a fresh broad query after publishing. Zero changed
 rows requires a reread/re-evaluation, not a broader WHERE. Acceptance below also uses only these
 individually reviewed ids, after their resolution and credit have been verified.
+New word feedback carrying an explanation always remains reviewable (`pending` or `reopened`),
+even from an old revision; only suggestion-free old-client reports can be automatically suppressed.
 Word feedback may return as `reopened`; passage feedback instead inserts `pending` and joins an
 open overlap or starts a new topic. **Missing-word taps do not currently reopen automatically**:
 the tap upsert keeps a resolved status even when its revision/time changes. Do not treat absence from the open-taps query
 as proof that a previously resolved word is now covered; investigate repeat reports separately.
 
-For each **accepted** suggestion, also record it (this is what the rank counts):
+For each actually adopted suggestion whose `fixed` resolution and credit were verified, record
+acceptance (this is what the rank counts). `already_covered` and `no_change` never gain acceptance.
+Existing historical accepted rows keep their credit/counts; do not infer a missing old resolution:
 
 ```sql
-UPDATE word_feedback SET accepted_at = ?1, accepted_rev = ?2 WHERE id = ?3 AND suggestion != '';
+UPDATE word_feedback SET accepted_at = ?1, accepted_rev = ?2
+ WHERE id = ?3 AND suggestion != '' AND status = 'resolved' AND resolution = 'fixed'
+   AND resolved_rev = ?2 AND accepted_at = 0;
 
-UPDATE passage_feedback SET accepted_at = ?1, accepted_rev = ?2 WHERE id = ?3 AND suggestion != '';
+UPDATE passage_feedback SET accepted_at = ?1, accepted_rev = ?2
+ WHERE id = ?3 AND suggestion != '' AND status = 'resolved' AND resolution = 'fixed'
+   AND resolved_rev = ?2 AND accepted_at = 0;
 ```
 
 An accepted passage suggestion is credited like a word one: `"credit": "<suggested_by>"` on the phrase
 entry, sentence note or paragraph note whose text came from it (GLOSSARY_FORMAT.md 7.1-7.3).
+
+The authority for contributor rebuilding is `functions/lib/contributors.ts` and
+`functions/lib/book-maintainers.ts`. The token-only SQL procedure below is a temporary compatible
+copy: keep it aligned with those implementations and test it when aggregation changes. It remains
+necessary until a controlled runner can reuse the implementation; the admin rebuild endpoint needs
+a site-admin session, which a Cloudflare API token does not supply. Do not add a privileged endpoint
+or put EPUB/large-file validation into a Pages Free request to replace this procedure.
 
 Then, once per run after the last accepted suggestion, refresh the public credit file. Read the
 rows with this query and write them as `contributors.json` to bucket `margin-words-books`
@@ -649,7 +693,7 @@ another writer's changes. Report a failed credit-file refresh; do not claim the 
 
 - At most 10 books per run; reopened word feedback and reported items first (word and passage
   reports), then the words at the top of the ranked tap list in §3 (most readers first). Fully read a passage topic through its saved cutoff before
-  deciding; resolve only its individually verified, answered ids. Defer it if review is incomplete.
+  deciding; resolve only its individually verified ids with a §7 outcome. Defer it if review is incomplete.
 - D1 is on the Free plan (100,000 row writes a day for the whole site). The queries above read a
   few thousand rows; each resolve writes a few. Use only the bounded topic discovery, the independent
   zero-topic anomaly lane and finite topic/cutoff pagination in §3; do not poll, rerun discovery
@@ -657,7 +701,9 @@ another writer's changes. Report a failed credit-file refresh; do not claim the 
 - No other SQL that writes. No `DELETE`, `DROP` or `ALTER`. No R2 writes except a glossary, its
   catalog, and `contributors.json`. Never write to `margin-words-private`, and never touch
   `avatars/`.
-- Skipped items stay open and come back the next day. That is fine.
+- Unreviewed or evidence-blocked reader reports stay open; state which they are. Individually
+  verified no-change reports may be closed under §7. Low-priority taps remain signals, not debt.
+- Do not run schema migrations, backfill old resolution reasons, or bulk-close the historical queue.
 
 ## 9. Report
 
@@ -671,5 +717,8 @@ for next-run continuation. Also report the zero-topic anomaly count at sweep sta
 fixed cutoff, start/end anomaly id cursor, reviewed/deferred ids and any operator repair needed.
 Include each topic's saved cutoff, reviewed ids, resolved/accepted ids and
 unreviewed/deferred rows; do not claim the topic is closed from a partial query. Record the
-instruction sources, retrieval times, checkout commit/dirty state when applicable, original-byte
-hashes and comparable local/hosted result (or **unverified**). Say so if nothing was open.
+instruction source URLs/retrieval times and original-byte hashes (or **unverified**), plus optional
+checkout commit/dirty state. Local/hosted equality is not a patrol prerequisite.
+Finish with separate counts: reader reports reviewed by `fixed` / `already_covered` / `no_change`,
+reports not reached, reports blocked by missing evidence, and tap signals selected/examined/fixed.
+Do not label the total tap row count as an unresolved-report backlog. Say so if no reports were open.

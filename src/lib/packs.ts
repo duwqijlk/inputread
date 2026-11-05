@@ -698,7 +698,7 @@ export async function downloadPack(
         : await fetchBytes(glossaryUrl, pack.glossary.bytes, () => undefined);
       const sha = await hashBytes(bytes);
       if (pack.glossary.sha256 && sha && pack.glossary.sha256 !== sha)
-        throw new Error(tr("err.damaged"));
+        throw new Error(tr("err.glossaryMismatch"));
       glossaryText = new TextDecoder().decode(bytes);
     }
     // The same EPUB file is skipped above. A word list that turns blockquote

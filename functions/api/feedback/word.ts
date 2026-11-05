@@ -120,30 +120,26 @@ export async function handleWordFeedbackPost(
 
     let status = "pending";
     if (priorResolved && priorResolved.resolved_at > 0 && now > priorResolved.resolved_at) {
-      const resolvedRev = priorResolved.resolved_rev || "";
+      status = "reopened";
+      if (!suggestion) {
+        const resolvedRev = priorResolved.resolved_rev || "";
+        const priorReports = await env.DB.prepare(
+          `SELECT DISTINCT glossary_rev FROM word_feedback
+           WHERE book_id = ? AND word = ? AND chapter = ? AND occurrence = ? AND reason = ?
+             AND created_at <= ? AND glossary_rev != ''`,
+        )
+          .bind(bookId, rawWord, chapter, occurrence, reason, priorResolved.resolved_at)
+          .all<{ glossary_rev: string }>();
 
-      const priorReports = await env.DB.prepare(
-        `SELECT DISTINCT glossary_rev FROM word_feedback
-         WHERE book_id = ? AND word = ? AND chapter = ? AND occurrence = ? AND reason = ?
-           AND created_at <= ? AND glossary_rev != ''`,
-      )
-        .bind(bookId, rawWord, chapter, occurrence, reason, priorResolved.resolved_at)
-        .all<{ glossary_rev: string }>();
+        const preResolutionRevs = new Set(
+          (priorReports.results ?? []).map((r) => r.glossary_rev).filter(Boolean),
+        );
 
-      const preResolutionRevs = new Set(
-        (priorReports.results ?? []).map((r) => r.glossary_rev).filter(Boolean),
-      );
-
-      // Simple Occam's razor:
-      // An incoming report is only suppressed as an outdated client if its revision
-      // explicitly matches one of the known pre-resolution buggy revisions (and != resolvedRev).
-      // All other cases (reproduced on resolvedRev, on any newer revision, or unknown) trigger 'reopened'.
-      const isOutdatedClient =
-        Boolean(glossaryRev) &&
-        preResolutionRevs.has(glossaryRev) &&
-        glossaryRev !== resolvedRev;
-
-      status = isOutdatedClient ? "resolved" : "reopened";
+        // Only a plain report needs the historical version scan. New explanations stay open.
+        const isOutdatedClient = Boolean(glossaryRev) &&
+          preResolutionRevs.has(glossaryRev) && glossaryRev !== resolvedRev;
+        status = isOutdatedClient ? "resolved" : "reopened";
+      }
     }
 
     await env.DB.prepare(

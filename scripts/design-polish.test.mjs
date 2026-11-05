@@ -14,6 +14,13 @@ test("the continue card stops at the book: no last-read quote, no icon in Keep r
   assert.doesNotMatch(css, /\.continue-last\b/);
 });
 
+test("desktop top navigation compensates button padding without changing the mobile gutters", () => {
+  const app = read("src/components/margin-app.tsx");
+  const header = app.slice(app.indexOf("<header ref={topBar}"), app.indexOf("</header>", app.indexOf("<header ref={topBar}")));
+  assert.match(header, /h-14 max-w-6xl[^"\n]*px-2 sm:gap-2 sm:px-4/);
+  assert.match(header, /data-brand/);
+});
+
 test("quotes are not read aloud yet: no speaker on a quote card (design system QuoteBook)", () => {
   const book = read("src/components/quote-book.tsx");
   assert.doesNotMatch(book, /speakEnglish|QuoteSpeak|Volume2/);
