@@ -43,7 +43,9 @@ const addedOf = (row) => (row && typeof row.added === "string" ? row.added : "")
  */
 export function keepAdded(prior, row) {
   const added = addedOf(prior);
-  const kept = added ? { ...row, added } : row;
+  let kept = added ? { ...row, added } : row;
+  // Retired snapshot helpers must not erase live editorial classification.
+  if (Object.hasOwn(prior ?? {}, "genres")) kept = { ...kept, genres: prior.genres };
   // The live cover is the one shown (moved to covers/ by scripts/move-covers.mjs, or uploaded in the
   // admin page). A list republished from git keeps it rather than pointing back at an old file.
   if (prior?.cover?.url && /^https:\/\//.test(prior.cover.url)) return { ...kept, cover: prior.cover };

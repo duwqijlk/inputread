@@ -13,6 +13,7 @@ export function ListFilters({
   series,
   onAuthor,
   onSeries,
+  allowGrouping = true,
 }: {
   authors: string[];
   seriesNames: string[];
@@ -20,6 +21,7 @@ export function ListFilters({
   series: SeriesChoice;
   onAuthor: (value: string) => void;
   onSeries: (value: SeriesChoice) => void;
+  allowGrouping?: boolean;
 }) {
   const { t } = useT();
   if (authors.length < 2 && seriesNames.length === 0) return null;
@@ -50,7 +52,7 @@ export function ListFilters({
           onChange={(event) => onSeries(event.target.value)}
         >
           <option value="all">{t("shelf.series.all")}</option>
-          <option value="grouped">{t("shelf.series.grouped")}</option>
+          {allowGrouping ? <option value="grouped">{t("shelf.series.grouped")}</option> : null}
           <option value="none">{t("shelf.series.none")}</option>
           {seriesNames.map((name) => (
             <option key={name} value={name}>

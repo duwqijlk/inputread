@@ -8,13 +8,14 @@ import { BooksAdmin } from "@/components/books-admin";
 import { SponsorTab } from "@/components/sponsor-admin";
 import { UsersAdmin } from "@/components/users-admin";
 import { SeriesAdmin } from "@/components/series-admin";
+import { BookMetadataAdmin } from "@/components/book-metadata-admin";
 import { QqGroupsAdmin } from "@/components/qq-groups-admin";
 import { WordListAdmin } from "@/components/wordlist-admin";
 import { WordTapsAdmin } from "@/components/word-taps-admin";
 import { BlurbAdmin } from "@/components/blurb-admin";
-import { btn, cn, Segmented } from "@/components/ui";
+import { btn, cn } from "@/components/ui";
 
-type AdminTab = "thanks" | "lists" | "books" | "blurbs" | "series" | "users" | "taps" | "qq";
+type AdminTab = "thanks" | "lists" | "books" | "blurbs" | "series" | "metadata" | "users" | "taps" | "qq";
 
 /** The /admin page: gift requests, the word-list publisher, whole-book uploads, and user roles. */
 export function AdminPage() {
@@ -82,6 +83,7 @@ export function AdminPage() {
               { value: "taps" as const, label: t("admin.tab.taps") },
               { value: "books" as const, label: t("admin.tab.books") },
               { value: "blurbs" as const, label: t("admin.tab.blurbs") },
+              { value: "metadata" as const, label: t("admin.tab.metadata") },
               { value: "series" as const, label: t("admin.tab.series") },
               { value: "users" as const, label: t("admin.tab.users") },
               { value: "qq" as const, label: t("admin.tab.qq") },
@@ -118,6 +120,8 @@ export function AdminPage() {
               <BooksAdmin />
             ) : tab === "blurbs" ? (
               <BlurbAdmin />
+            ) : tab === "metadata" ? (
+              <BookMetadataAdmin />
             ) : tab === "series" ? (
               <SeriesAdmin />
             ) : tab === "qq" ? (

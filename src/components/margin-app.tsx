@@ -650,6 +650,7 @@ export function MarginApp() {
               onOpen={openBook}
               onNeedsEpub={askForEpub}
               routeCategory={screen.kind === "discover" ? screen.category : undefined}
+              routeBrowse={screen.kind === "discover" ? screen.browse : undefined}
               routeBookId={screen.kind === "book" ? screen.bookId : undefined}
             />
           ) : screen.kind === "words" ? (

@@ -33,7 +33,7 @@ export function pageMeta(route: Route, hasBookTitle = false): PageMeta {
       return {
         titleKey: route.category === "speech" ? "seo.title.discoverSpeeches" : route.category === "novel" ? "seo.title.discoverNovels" : "seo.title.discover",
         canonical: `${SITE}${pathFor(route)}`,
-        index: true,
+        index: !route.browse || Object.keys(route.browse).length === 0,
       };
     case "book":
       return { titleKey: null, canonical: `${SITE}${pathFor(route)}`, index: true };
