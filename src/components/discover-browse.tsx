@@ -29,6 +29,7 @@ import { useBookBlurb } from "@/lib/book-blurbs";
 import { BookMaintainerList, BookMaintainers } from "@/components/book-maintainers";
 import { catalogRef } from "@/lib/catalog-id";
 import { SITE } from "@/lib/page-meta";
+import { readBookGenres } from "@/lib/book-genres";
 
 /** A Lexile measure as a number like the detail's other numbers: "790" with a smaller "L" ("BR100L", "HL600L" keep their prefix). */
 function LexileNumber({ measure }: { measure: string }) {
@@ -442,6 +443,7 @@ export function BookDetail({
   // The detail shows only a well-formed measure (790L, BR100L, HL600L); anything else, no Lexile tile.
   const lexile = model ? lexileMeasure(model.lexile) : "";
   const speech = row?.category === "speech";
+  const genres = speech ? [] : readBookGenres(row?.genres);
   const tone = useBookTone(row?.coverUrl, row && speech && !row.coverUrl ? talkCoverTone(row.title, row.author) : undefined);
   // Adding (busy -> on): the main button turns into "Open this book" with a small spring.
   const actionRef = useRef<HTMLButtonElement | null>(null);
@@ -471,9 +473,9 @@ export function BookDetail({
           ref={sheet}
           className={cn(
             // A phone gets a bottom sheet (rounded top, a drag bar, at most 88% high); wider screens a centred panel.
-            "fixed z-50 grid max-h-[88dvh] gap-5 overflow-y-auto border border-float-edge bg-float p-5 pt-0 text-ink shadow-lift",
+            "no-scrollbar fixed z-50 grid max-h-[88dvh] gap-5 overflow-y-auto border border-float-edge bg-float p-5 pt-0 text-ink shadow-lift",
             "inset-x-0 bottom-0 rounded-t-sheet pb-[max(1.25rem,env(safe-area-inset-bottom))] anim-sheet",
-            "sm:inset-auto sm:top-1/2 sm:left-1/2 sm:max-h-[calc(100dvh-2rem)] sm:w-[min(36rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:p-6 sm:anim-pop",
+            "sm:inset-auto sm:top-1/2 sm:left-1/2 sm:h-[min(44rem,calc(100dvh-2rem))] sm:max-h-[calc(100dvh-2rem)] sm:auto-rows-max sm:content-start sm:w-[min(36rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:p-6 sm:anim-pop",
           )}
           data-book-detail={row?.id}
         >
@@ -492,13 +494,14 @@ export function BookDetail({
                 <div className="tone-cover relative w-28 shrink-0 sm:w-36" data-tilt>
                   <BookCover title={row.title} author={row.author} cover={row.coverUrl} look={coverLookOf(row.category, row.series)} />
                 </div>
-                <div className="grid min-w-0 flex-1 content-start gap-1.5">
+                <div className="grid min-w-0 flex-1 content-start gap-1.5 sm:pr-9">
                   <div className="flex items-start justify-between gap-2">
                     <span className="pt-1 text-[0.8125rem] font-bold text-[var(--book-deep)]">
                       {row.kind === "classic" ? t("shelf.classic") : t("discover.kindList")}
                     </span>
                     <Dialog.Close
-                      className={cn(btn.icon, "-mt-2 -mr-2")}
+                      className={cn(btn.icon, "-mt-2 -mr-2 sm:absolute sm:top-3 sm:right-3 sm:m-0")}
+                      data-detail-close
                       aria-label={t("common.close")}
                     >
                       <X className="size-5" aria-hidden />
@@ -513,6 +516,58 @@ export function BookDetail({
                   <p className="text-[0.9375rem] text-muted" lang="en">
                     {row.author}
                   </p>
+                  {/* Whole buttons wrap to the next line when they do not fit; their text never wraps (English
+                      labels run about twice as long as Chinese ones). */}
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 pt-2" data-detail-actions>
+                    <button
+                      ref={actionRef}
+                      type="button"
+                      className={cn(
+                        btn.primary,
+                        "relative min-w-0 w-full max-w-full flex-none overflow-hidden px-2 text-[0.8125rem] sm:w-auto sm:px-3 sm:text-sm",
+                        // Adding: the progress shows inside the button, with a line along its bottom edge.
+                        model.state === "busy" && "disabled:opacity-100 bg-accent-soft text-accent",
+                      )}
+                      onClick={onAction}
+                      disabled={model.blocked || model.state === "busy"}
+                      aria-busy={model.state === "busy" || undefined}
+                      data-detail-action={model.state}
+                    >
+                      {model.state === "busy" || model.state === "on" ? null : <Icon className="size-5" aria-hidden />}
+                      {actionLabel(model, canAdd, t)}
+                      {model.state === "busy" ? (
+                        <span className="absolute inset-x-0 bottom-0 h-[3px] bg-accent/20" aria-hidden>
+                          <span
+                            className={cn("block h-full bg-accent transition-[width] duration-200", model.fraction == null && "w-1/3 animate-pulse")}
+                            style={model.fraction == null ? undefined : { width: `${Math.round(Math.min(1, Math.max(0, model.fraction)) * 100)}%` }}
+                          />
+                        </span>
+                      ) : null}
+                    </button>
+                    {model.held && model.state !== "on" ? (
+                      <button
+                        type="button"
+                        className={cn(btn.quiet, "min-w-0 w-full max-w-full px-2 text-[0.8125rem] sm:w-auto sm:px-3 sm:text-sm")}
+                        onClick={onOpen}
+                        data-detail-open
+                      >
+                        <BookOpen className="size-4" aria-hidden />
+                        {model.needs ? t("discover.addEpub") : t("discover.openBook")}
+                      </button>
+                    ) : null}
+                    {model.held ? (
+                      <button
+                        type="button"
+                        className={cn(btn.icon, "text-warn hover:bg-warn-soft/60 hover:text-warn")}
+                        onClick={onRemove}
+                        aria-label={t("discover.remove")}
+                        data-detail-remove
+                      >
+                        <Trash2 className="size-5" aria-hidden />
+                      </button>
+                    ) : null}
+                    <ShareBookLink id={row.id} title={row.title} />
+                  </div>
                   <BookMaintainerList bookRef={rowCatalogRef(row)} />
                   {row.series ? (
                     <p className="text-sm text-muted" data-detail-series>
@@ -521,6 +576,14 @@ export function BookDetail({
                         ? ` · ${t("browse.bookNumber", { n: row.seriesNumber })}`
                         : ""}
                     </p>
+                  ) : null}
+                  {genres.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-xs text-muted" data-detail-genres>
+                      <span>{t("browse.genreLabel")}</span>
+                      <ul className="flex flex-wrap gap-x-2 gap-y-1" aria-label={t("browse.genreLabel")}>
+                        {genres.map((genre) => <li key={genre} className="rounded border border-ink/15 px-1.5 py-0.5" data-detail-genre={genre}>{t(`genre.${genre}`)}</li>)}
+                      </ul>
+                    </div>
                   ) : null}
                 </div>
               </div>
@@ -577,58 +640,6 @@ export function BookDetail({
                 </p>
               ) : null}
 
-              {/* Whole buttons wrap to the next line when they do not fit; their text never wraps (English
-                  labels run about twice as long as Chinese ones). */}
-              <div className="flex flex-wrap items-center gap-2" data-detail-actions>
-                <button
-                  ref={actionRef}
-                  type="button"
-                  className={cn(
-                    btn.primary,
-                    "relative min-w-0 flex-1 overflow-hidden px-6 sm:flex-none sm:min-w-48",
-                    // Adding: the progress shows inside the button, with a line along its bottom edge.
-                    model.state === "busy" && "disabled:opacity-100 bg-accent-soft text-accent",
-                  )}
-                  onClick={onAction}
-                  disabled={model.blocked || model.state === "busy"}
-                  aria-busy={model.state === "busy" || undefined}
-                  data-detail-action={model.state}
-                >
-                  {model.state === "busy" || model.state === "on" ? null : <Icon className="size-5" aria-hidden />}
-                  {actionLabel(model, canAdd, t)}
-                  {model.state === "busy" ? (
-                    <span className="absolute inset-x-0 bottom-0 h-[3px] bg-accent/20" aria-hidden>
-                      <span
-                        className={cn("block h-full bg-accent transition-[width] duration-200", model.fraction == null && "w-1/3 animate-pulse")}
-                        style={model.fraction == null ? undefined : { width: `${Math.round(Math.min(1, Math.max(0, model.fraction)) * 100)}%` }}
-                      />
-                    </span>
-                  ) : null}
-                </button>
-                {model.held && model.state !== "on" ? (
-                  <button
-                    type="button"
-                    className={cn(btn.quiet, "flex-[1_0_auto] sm:flex-none")}
-                    onClick={onOpen}
-                    data-detail-open
-                  >
-                    <BookOpen className="size-4" aria-hidden />
-                    {model.needs ? t("discover.addEpub") : t("discover.openBook")}
-                  </button>
-                ) : null}
-                {model.held ? (
-                  <button
-                    type="button"
-                    className={cn(btn.icon, "text-warn hover:bg-warn-soft/60 hover:text-warn")}
-                    onClick={onRemove}
-                    aria-label={t("discover.remove")}
-                    data-detail-remove
-                  >
-                    <Trash2 className="size-5" aria-hidden />
-                  </button>
-                ) : null}
-                <ShareBookLink id={row.id} title={row.title} />
-              </div>
             </>
           ) : null}
         </Dialog.Content>

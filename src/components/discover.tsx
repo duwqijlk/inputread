@@ -19,7 +19,7 @@ import { lexileMeasure } from "@/lib/lexile";
 import { filterDiscover } from "@/lib/discover-filter";
 import { placeWordList } from "@/lib/place-word-list";
 import type { CatalogName } from "@/lib/catalog-id";
-import { discoverShelfBook } from "@/lib/discover-shelf";
+import { createDiscoverShelfLookup } from "@/lib/discover-shelf";
 import { useProgress } from "@/lib/progress-store";
 import { bookHasUserWork } from "@/lib/shelf-work";
 import { useShelfRemove } from "@/lib/shelf-remove";
@@ -471,11 +471,14 @@ export function DiscoverScreen({
     );
   }
 
+  const shelfLookup = useMemo(() => {
+    const targets = new Map(rows.map((row) => [row.key, { ...row, catalog: (row.kind === "classic" ? "public-books" : "word-lists") as CatalogName }]));
+    const lookup = createDiscoverShelfLookup(shelf, records, [...targets.values()]);
+    return (row: Row) => lookup(targets.get(row.key)!);
+  }, [rows, shelf, records]);
+
   function cardModel(row: Row) {
-    const { record, book, ambiguous } = discoverShelfBook(shelf, records, {
-      ...row, catalog: row.kind === "classic" ? "public-books" : "word-lists",
-      catalogCollision: rows.some((other) => other.id === row.id && other.kind !== row.kind),
-    });
+    const { record, book, ambiguous } = shelfLookup(row);
     const held = Boolean(book && pendingId !== book.id);
     const needs = Boolean(held && book?.needsEpub);
     const item = row.kind === "classic" ? items[row.id] : undefined;
@@ -560,8 +563,8 @@ export function DiscoverScreen({
   }
 
   /** The add-to-shelf button on a cover's corner, in the grid and in the rows. */
-  function renderAdd(row: Row) {
-    const { book, ambiguous, item, busy, updateReady, state } = cardModel(row);
+  function renderAdd(row: Row, model = cardModel(row)) {
+    const { book, ambiguous, item, busy, updateReady, state } = model;
     return (
       <fieldset disabled={ambiguous} className="contents" data-identity-ambiguous={ambiguous ? "" : undefined}>
         <AddToShelfButton
@@ -578,7 +581,8 @@ export function DiscoverScreen({
   }
 
   function renderCard(row: Row) {
-    const { needs, item, busy, cardError, why, note, reason, lexile, state } = cardModel(row);
+    const model = cardModel(row);
+    const { needs, item, busy, cardError, why, note, reason, lexile, state } = model;
     return (
       <li
         key={row.key}
@@ -608,7 +612,7 @@ export function DiscoverScreen({
           {/* Who maintains the word list, on the cover's top-left: the same place on every card,
               whatever the title's length or the tags below. The add button keeps the bottom-right. */}
           <BookMaintainers bookRef={rowCatalogRef(row)} />
-          <div className="absolute right-1.5 bottom-1.5 z-[2]">{renderAdd(row)}</div>
+          <div className="absolute right-1.5 bottom-1.5 z-[2]">{renderAdd(row, model)}</div>
         </div>
         <div className="grid min-w-0 flex-1 content-start gap-0.5">
           <h3 className={discoverTitle} lang="en" title={row.title}>

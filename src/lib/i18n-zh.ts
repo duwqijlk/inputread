@@ -107,6 +107,7 @@ export const zh: Record<Key, string> = {
   "genre.animals": "动物故事",
   "genre.horror-thriller": "惊悚恐怖",
   "genre.nonfiction": "传记纪实",
+  "browse.genreLabel": "题材",
   "browse.genres": "按题材选书",
   "browse.carousel.label": "新书上架",
   "browse.carousel.role": "轮播",

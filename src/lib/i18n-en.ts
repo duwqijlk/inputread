@@ -104,6 +104,7 @@ export const en = {
   "genre.animals": "Animal stories",
   "genre.horror-thriller": "Horror & thrillers",
   "genre.nonfiction": "Biography & nonfiction",
+  "browse.genreLabel": "Genres",
   "browse.genres": "Find your next story",
   "browse.carousel.label": "New books",
   "browse.carousel.role": "carousel",
