@@ -1,5 +1,5 @@
-import { Heart, Image as ImageIcon, Menu, Sparkles, X } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Heart, Image as ImageIcon, Sparkles, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import merriamWebsterLogo from "@/assets/merriam-webster-logo.png";
 import { countSurface, type OtherMeaning } from "@/lib/glossary-format";
 import { useT, type Key } from "@/lib/i18n";
@@ -12,6 +12,7 @@ import { cn, SpeakButton } from "@/components/ui";
 import { WordMeaning } from "@/components/word-feedback";
 import { WordSensePanel, type WordSensePanelProps } from "@/components/word-sense-panel";
 import { WordIpa } from "@/components/word-ipa";
+import { WordLookupMenu } from "@/components/word-lookup-menu";
 import { version as localIpaVersion } from "virtual:local-ipa-data";
 
 export type CardState = {
@@ -184,7 +185,6 @@ export function WordCard({
   const { t } = useT();
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [lookupsOpen, setLookupsOpen] = useState(false);
-  const lookupsId = useId();
   const activePhrase = targetMode === "phrase" ? phrase : null;
   const target = activePhrase?.key ?? state.key;
   const targetMeaning = activePhrase ? activePhrase.entry.meaning : state.meaning;
@@ -256,17 +256,7 @@ export function WordCard({
           </div>
           <div className="flex shrink-0 items-center gap-1" data-word-actions>
             {compactLookups ? (
-              <button
-                type="button"
-                className="inline-flex size-11 shrink-0 items-center justify-center rounded text-muted hover:bg-sheet hover:text-ink"
-                aria-label={t("card.senses.more")}
-                aria-expanded={lookupsOpen}
-                aria-controls={lookupsId}
-                onClick={() => setLookupsOpen((value) => !value)}
-                data-word-more
-              >
-                <Menu className="size-5" aria-hidden />
-              </button>
+              <WordLookupMenu word={target} open={lookupsOpen} onOpenChange={setLookupsOpen} />
             ) : null}
             <button
               type="button"
@@ -340,17 +330,6 @@ export function WordCard({
         ) : null}
       </div>
       <div ref={bodyRef} className={cn("mb-1.5", compactLookups && "!mb-0 !pb-3")} data-word-body>
-        {compactLookups ? (
-          <div
-            id={lookupsId}
-            hidden={!lookupsOpen}
-            className="border-b border-line pb-3 mb-3"
-            data-word-lookup-menu
-          >
-            <p className="mb-2 text-xs text-muted">{t("card.lookTitle")}</p>
-            <LookupLinks word={target} />
-          </div>
-        ) : null}
         <div className="grid gap-3" data-word-content>
           {activePhrase ? (
             <WordIpa key={`${selectionId}:${target}`} word={target} phrase />

@@ -953,6 +953,7 @@ export const en = {
   "card.sentenceFrom": "Sentence from the book",
   "card.look.longman": "Longman",
   "card.look.webster": "Webster",
+  "card.look.websterFull": "Merriam-Webster",
   "card.look.images": "Pictures",
   "card.lookTitle": "Other dictionaries",
   "card.lookTargetPhrase": "Whole phrase",

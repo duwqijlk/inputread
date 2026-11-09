@@ -100,8 +100,8 @@ test("prototype entry is DEV-only and the normal WordMeaning path is preserved",
   assert.match(card, /meaningContent \?\?/);
   assert.match(card, /<WordMeaning/);
   assert.match(card, /compactLookups = true/);
-  assert.match(card, /aria-expanded=\{lookupsOpen\}/);
-  assert.match(card, /hidden=\{!lookupsOpen\}/);
+  assert.match(card, /<WordLookupMenu word=\{target\} open=\{lookupsOpen\} onOpenChange=\{setLookupsOpen\}/);
+  assert.doesNotMatch(card, /hidden=\{!lookupsOpen\}/);
   assert.match(card, /!compactLookups \? \(/);
   assert.match(card, /compactLookups && "!mb-0 !pb-3"/, "reserve the inline feedback hit area so short content does not overflow");
   assert.doesNotMatch(

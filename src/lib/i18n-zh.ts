@@ -935,6 +935,7 @@ export const zh: Record<Key, string> = {
   "card.sentenceFrom": "书中的句子",
   "card.look.longman": "朗文",
   "card.look.webster": "韦氏",
+  "card.look.websterFull": "韦氏词典",
   "card.look.images": "看图片",
   "card.lookTitle": "其他词典",
   "card.lookTargetPhrase": "整个短语",

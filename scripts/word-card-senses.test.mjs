@@ -25,6 +25,9 @@ const stubs = {
   "@/components/word-feedback": { WordMeaning: (props) => { received.community = props; return React.createElement("div", { "data-test-community": true }, props.meaning); } },
   "@/components/word-sense-panel": { WordSensePanel: (props) => { received.panel = props; const [tab, setTab] = React.useState("recommended"); return React.createElement("button", { "data-test-panel": true, onClick: () => setTab("dictionary") }, tab); } },
   "@/components/word-ipa": { WordIpa: () => null },
+  "@/components/word-lookup-menu": { WordLookupMenu: ({ word, open, onOpenChange }) => React.createElement("div", null,
+    React.createElement("button", { "data-word-more": true, "aria-expanded": open, onClick: () => onOpenChange(!open) }),
+    open ? React.createElement("nav", { "data-word-lookup-menu": true }, ...["longman", "webster", "images"].map(site => React.createElement("a", { key: site, "data-lookup": site, href: `https://example.invalid/${site}/${word}` }))) : null) },
   "virtual:local-ipa-data": { version: "test" },
 };
 const module = { exports: {} };
@@ -59,12 +62,12 @@ test("real WordCard retains community identity and accepts a typed sense panel",
     assert.equal(received.community.target.occurrence, 4);
     assert.equal(received.community.target.paragraph, 7);
     assert.equal(container.querySelector("[data-word-footer]"), null);
-    assert.equal(container.querySelector("[data-word-lookup-menu]").hidden, true);
+    assert.equal(container.querySelector("[data-word-lookup-menu]"), null);
     await click(container.querySelector("[data-word-more]"));
-    assert.equal(container.querySelector("[data-word-lookup-menu]").hidden, false);
+    assert.ok(container.querySelector("[data-word-lookup-menu]"));
     assert.equal(container.querySelectorAll("[data-lookup]").length, 3);
     await render({ selectionId: 2 });
-    assert.equal(container.querySelector("[data-word-lookup-menu]").hidden, true);
+    assert.equal(container.querySelector("[data-word-lookup-menu]"), null);
 
     const phrase = { key: "river bank", matched: "river bank", entry: { meaning: "Land beside a river.", pos: "noun", credit: "phrase123456" } };
     await render({ phrase, targetMode: "phrase" });

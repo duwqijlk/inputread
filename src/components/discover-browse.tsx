@@ -386,7 +386,7 @@ export function FeaturedBook({
             </span>
           ) : null}
           {facts.length || carouselFooter ? (
-            <span className={cn("flex flex-wrap gap-x-4 gap-y-1 text-[0.8125rem] text-faint", carouselFooter && "h-[4.25rem] content-start overflow-hidden leading-5 sm:h-11")} data-featured-facts>
+            <span className={cn("flex flex-wrap gap-x-4 gap-y-1 text-[0.8125rem] text-faint", carouselFooter && "h-11 content-start overflow-hidden leading-5")} data-featured-facts>
               {facts.map((fact) => (
                 <span key={fact}>{fact}</span>
               ))}

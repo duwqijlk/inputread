@@ -31,7 +31,8 @@ test("carousel banners reserve title, author, late blurb and optional facts spac
   assert.match(featured, /blurb \|\| carouselFooter/);
   assert.match(featured, /carouselFooter && "h-\[4\.95em\] sm:h-\[3\.3em\]"/);
   assert.match(featured, /facts\.length \|\| carouselFooter/);
-  assert.match(featured, /h-\[4\.25rem\] content-start overflow-hidden leading-5 sm:h-11/);
+  assert.match(featured, /h-11 content-start overflow-hidden leading-5/);
+  assert.doesNotMatch(featured, /h-\[4\.25rem\]/, "mobile facts reserve two lines, not three");
 });
 
 test("real React carousel timers, pauses, catalog identities and dynamic motion preferences", async (t) => {
