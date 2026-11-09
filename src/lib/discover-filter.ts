@@ -23,6 +23,11 @@ export function interleaveDiscoverSeries<T extends FilterBook>(rows: readonly T[
   return out;
 }
 
+/** Search the full combined catalog; browsing filters and category never restrict a query. */
+export function searchDiscover<T extends FilterBook>(rows: readonly T[], query: string): T[] {
+  return filterDiscover(rows, { query, band: "all", author: "all", series: "all", sort: "listed" });
+}
+
 /** A book stays one row even when it belongs to several genres. */
 export function filterDiscover<T extends FilterBook>(rows: readonly T[], conditions: DiscoverConditions): T[] {
   const { genre, query, band, author, series, sort } = conditions;
