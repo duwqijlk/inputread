@@ -20,6 +20,10 @@ test("genre navigation reuses existing text-and-underline tabs, not filled butto
   assert.match(source, /data-genres-prev/);
   assert.match(source, /data-genres-next/);
   assert.match(source, /node\.scrollLeft/);
+  assert.match(source, /subTabs\.tab\.replace\("text-\[0\.9375rem\]", "text-\[0\.8125rem\]"\)/);
+  assert.match(source, /whitespace-nowrap sm:min-h-9/);
+  assert.match(source, /disabled:opacity-30 sm:size-9/);
+  assert.equal((source.match(/className="size-3\.5"/g) ?? []).length, 2);
 });
 
 test("third-level genres remain above search in both discovery states", () => {

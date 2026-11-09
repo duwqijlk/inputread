@@ -15,11 +15,14 @@ export function DiscoverGenres({ genre, onSelect }: {
   useEffect(() => {
     const node = strip.current;
     if (!node) return;
-    const measure = () => setEdges({
-      overflow: node.scrollWidth > node.clientWidth + 1,
-      left: node.scrollLeft > 1,
-      right: node.scrollLeft + node.clientWidth < node.scrollWidth - 1,
-    });
+    const measure = () => {
+      const next = {
+        overflow: node.scrollWidth > node.clientWidth + 1,
+        left: node.scrollLeft > 1,
+        right: node.scrollLeft + node.clientWidth < node.scrollWidth - 1,
+      };
+      setEdges((old) => old.overflow === next.overflow && old.left === next.left && old.right === next.right ? old : next);
+    };
     const selected = node.querySelector<HTMLElement>('[aria-pressed="true"]');
     if (selected) {
       const viewport = node.getBoundingClientRect();
@@ -48,16 +51,16 @@ export function DiscoverGenres({ genre, onSelect }: {
   return (
     <div className="flex min-w-0 items-center gap-2 border-b border-line" role="group" aria-label={t("browse.genres")} data-discover-genres>
       {edges.overflow ? (
-        <button type="button" className={cn(btn.icon, "shrink-0 disabled:opacity-30")} disabled={!edges.left} aria-label={t("browse.previousGenres")} onClick={() => move(-1)} data-genres-prev>
-          <ChevronLeft className="size-4" aria-hidden />
+        <button type="button" className={cn(btn.icon, "shrink-0 disabled:opacity-30 sm:size-9")} disabled={!edges.left} aria-label={t("browse.previousGenres")} onClick={() => move(-1)} data-genres-prev>
+          <ChevronLeft className="size-3.5" aria-hidden />
         </button>
       ) : null}
-      <div ref={strip} className="no-scrollbar flex min-w-0 flex-1 gap-6 overflow-x-auto overflow-y-hidden" data-genre-strip>
+      <div ref={strip} className="no-scrollbar flex min-w-0 flex-1 gap-5 overflow-x-auto overflow-y-hidden" data-genre-strip>
         {[undefined, ...BOOK_GENRES].map((value) => {
           const selected = genre === value;
           return (
             <button key={value ?? "all"} type="button" aria-pressed={selected} data-genre-tab={value ?? "all"} onClick={() => onSelect(value)} className={cn(
-              subTabs.tab, "whitespace-nowrap",
+              subTabs.tab.replace("text-[0.9375rem]", "text-[0.8125rem]"), "whitespace-nowrap sm:min-h-9",
               selected ? subTabs.on : subTabs.off,
             )}>
               {value ? t(`genre.${value}`) : t("browse.genreAll")}
@@ -66,8 +69,8 @@ export function DiscoverGenres({ genre, onSelect }: {
         })}
       </div>
       {edges.overflow ? (
-        <button type="button" className={cn(btn.icon, "shrink-0 disabled:opacity-30")} disabled={!edges.right} aria-label={t("browse.nextGenres")} onClick={() => move(1)} data-genres-next>
-          <ChevronRight className="size-4" aria-hidden />
+        <button type="button" className={cn(btn.icon, "shrink-0 disabled:opacity-30 sm:size-9")} disabled={!edges.right} aria-label={t("browse.nextGenres")} onClick={() => move(1)} data-genres-next>
+          <ChevronRight className="size-3.5" aria-hidden />
         </button>
       ) : null}
     </div>

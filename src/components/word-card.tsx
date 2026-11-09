@@ -1,5 +1,5 @@
 import { Heart, Image as ImageIcon, Sparkles, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import merriamWebsterLogo from "@/assets/merriam-webster-logo.png";
 import { countSurface, type OtherMeaning } from "@/lib/glossary-format";
 import { useT, type Key } from "@/lib/i18n";
@@ -10,7 +10,9 @@ import { SentenceHint } from "@/components/help-panels";
 import { SIDE_PANEL } from "@/components/side-panel";
 import { cn, SpeakButton } from "@/components/ui";
 import { WordMeaning } from "@/components/word-feedback";
+import { WordSensePanel, type WordSensePanelProps } from "@/components/word-sense-panel";
 import { WordIpa } from "@/components/word-ipa";
+import { WordLookupMenu } from "@/components/word-lookup-menu";
 import { version as localIpaVersion } from "virtual:local-ipa-data";
 
 export type CardState = {
@@ -36,7 +38,6 @@ export type CardState = {
   chapter?: number;
   glossaryRev?: string;
 };
-
 
 /** The whole sentence around a tapped word, and where that word starts inside it. */
 export function locateSentence(
@@ -149,6 +150,9 @@ export function WordCard({
   onClose,
   onToggle,
   onSentenceHelp,
+  meaningContent,
+  sensePanel,
+  compactLookups = true,
 }: {
   state: CardState;
   phrase: PhraseHit | null;
@@ -172,13 +176,21 @@ export function WordCard({
   onToggle: () => void;
   /** Opens the paragraph panel with this sentence's note. Absent: no sentence hint. */
   onSentenceHelp?: () => void;
+  /** Backend-independent view data and actions, already resolved for this exact target. */
+  sensePanel?: WordSensePanelProps;
+  /** Optional demo presentation; normal readers use sensePanel or the existing community meaning. */
+  meaningContent?: ReactNode;
+  compactLookups?: boolean;
 }) {
   const { t } = useT();
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [lookupsOpen, setLookupsOpen] = useState(false);
   const activePhrase = targetMode === "phrase" ? phrase : null;
   const target = activePhrase?.key ?? state.key;
   const targetMeaning = activePhrase ? activePhrase.entry.meaning : state.meaning;
-  const targetPos = (activePhrase ? activePhrase.entry.pos : state.status === "ready" ? state.pos : "")?.trim();
+  const targetPos = (
+    activePhrase ? activePhrase.entry.pos : state.status === "ready" ? state.pos : ""
+  )?.trim();
   // A sentence note belongs to a chapter, or to a recovered extra by its id. The tapped place's
   // own chapter is the reader's edition index; for an extra, that id is the only usable key.
   const sentenceChapter =
@@ -188,6 +200,7 @@ export function WordCard({
     if (!body) return;
     for (const details of body.querySelectorAll("details")) details.open = false;
     body.scrollTop = 0;
+    setLookupsOpen(false);
   }, [selectionId, targetMode, target]);
   const report = {
     bookId,
@@ -201,7 +214,7 @@ export function WordCard({
     paragraph: state.paragraph ?? 0,
     context: state.context ?? "",
     sentence: state.fullSentence ?? state.sentence,
-    senseIndex: activePhrase ? -1 : state.senseIndex ?? -1,
+    senseIndex: activePhrase ? -1 : (state.senseIndex ?? -1),
     senseMeaning: targetMeaning,
     glossaryRev: state.glossaryRev,
   };
@@ -218,6 +231,7 @@ export function WordCard({
         "word-sheet-plain",
         "inset-x-0 bottom-0 rounded-t-sheet border-t pt-3.5 pb-5 md:pb-6",
         SIDE_PANEL,
+        compactLookups && "!pb-2",
       )}
     >
       <div data-word-header>
@@ -240,7 +254,10 @@ export function WordCard({
               {target}
             </h2>
           </div>
-          <div className="flex shrink-0 items-center gap-2" data-word-actions>
+          <div className="flex shrink-0 items-center gap-1" data-word-actions>
+            {compactLookups ? (
+              <WordLookupMenu word={target} open={lookupsOpen} onOpenChange={setLookupsOpen} />
+            ) : null}
             <button
               type="button"
               className={cn(
@@ -281,7 +298,9 @@ export function WordCard({
               aria-pressed={targetMode === "phrase"}
               className={cn(
                 "px-2.5 py-1 text-[0.75rem] transition-colors duration-100",
-                targetMode === "phrase" ? "bg-accent-soft font-bold text-accent" : "text-muted hover:bg-sheet hover:text-ink",
+                targetMode === "phrase"
+                  ? "bg-accent-soft font-bold text-accent"
+                  : "text-muted hover:bg-sheet hover:text-ink",
               )}
               data-look-target="phrase"
             >
@@ -293,7 +312,9 @@ export function WordCard({
               aria-pressed={targetMode === "word"}
               className={cn(
                 "px-2.5 py-1 text-[0.75rem] transition-colors duration-100",
-                targetMode === "word" ? "bg-accent-soft font-bold text-accent" : "text-muted hover:bg-sheet hover:text-ink",
+                targetMode === "word"
+                  ? "bg-accent-soft font-bold text-accent"
+                  : "text-muted hover:bg-sheet hover:text-ink",
               )}
               data-look-target="word"
               lang="en"
@@ -308,29 +329,56 @@ export function WordCard({
           </div>
         ) : null}
       </div>
-      <div ref={bodyRef} className="mb-1.5" data-word-body>
+      <div ref={bodyRef} className={cn("mb-1.5", compactLookups && "!mb-0 !pb-3")} data-word-body>
         <div className="grid gap-3" data-word-content>
           {activePhrase ? (
             <WordIpa key={`${selectionId}:${target}`} word={target} phrase />
           ) : localIpaVersion ? (
             // Drawn from the first frame, also while the phrase check runs, so the card keeps its
             // height: the IPA used to appear a beat later and push the meaning down under the finger.
-            <WordIpa key={`${selectionId}:${state.key}`} word={state.key} surface={state.surface} pending={phrasePending} />
+            <WordIpa
+              key={`${selectionId}:${state.key}`}
+              word={state.key}
+              surface={state.surface}
+              pending={phrasePending}
+            />
           ) : null}
           {/* The current target's part of speech, meaning, credit and feedback. Sentence notes
               stay in the paragraph panel; examples and other meanings are not shown here. */}
-          <WordMeaning
-            key={`${bookId}:${selectionId}:${targetMode}:${target}:${state.chapter ?? chapter}:${state.occurrence ?? 1}`}
-            meaning={targetMeaning}
-            pos={targetPos}
-            credit={activePhrase ? activePhrase.entry.credit : state.status === "ready" ? state.credit : undefined}
-            missing={missing}
-            noList={noList}
-            part={activePhrase ? "phrase-meaning" : "word-meaning"}
-            target={report}
-          >
-            {!activePhrase && state.coined ? <CoinedBadge /> : null}
-          </WordMeaning>
+          {sensePanel ? (
+            <WordSensePanel
+              key={`${bookId}:${selectionId}:${targetMode}:${target}`}
+              {...sensePanel}
+            />
+          ) : (
+            (meaningContent ?? (
+              <div data-community-explanation>
+                {!missing ? (
+                  <p className="mb-2 font-sans text-sm leading-5 text-muted">
+                    {t("card.senses.community")}
+                  </p>
+                ) : null}
+                <WordMeaning
+                  key={`${bookId}:${selectionId}:${targetMode}:${target}:${state.chapter ?? chapter}:${state.occurrence ?? 1}`}
+                  meaning={targetMeaning}
+                  pos={targetPos}
+                  credit={
+                    activePhrase
+                      ? activePhrase.entry.credit
+                      : state.status === "ready"
+                        ? state.credit
+                        : undefined
+                  }
+                  missing={missing}
+                  noList={noList}
+                  part={activePhrase ? "phrase-meaning" : "word-meaning"}
+                  target={report}
+                >
+                  {!activePhrase && state.coined ? <CoinedBadge /> : null}
+                </WordMeaning>
+              </div>
+            ))
+          )}
           {/* One small line when the word list has a note for this sentence; the note opens in
               the paragraph panel. It shows nothing when there is none. */}
           {onSentenceHelp ? (
@@ -343,10 +391,12 @@ export function WordCard({
           ) : null}
         </div>
       </div>
-      <div className="grid gap-2 border-t border-line pt-3" data-word-footer>
-        <span className="text-xs text-faint">{t("card.lookTitle")}</span>
-        <LookupLinks word={target} />
-      </div>
+      {!compactLookups ? (
+        <div className="grid gap-2 border-t border-line pt-3" data-word-footer>
+          <span className="text-xs text-faint">{t("card.lookTitle")}</span>
+          <LookupLinks word={target} />
+        </div>
+      ) : null}
     </FloatingAside>
   );
 }

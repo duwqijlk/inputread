@@ -6,6 +6,27 @@ type ShelfBook = Identity & { id: string; source?: string; needsEpub?: boolean }
 type InstallRecord = { bookId: string; packId: string; catalog?: CatalogName; listSource?: string };
 type Wanted = Identity & { id: string; catalog?: CatalogName; catalogCollision?: boolean };
 
+/** One catalog/shelf snapshot serves every filter visit; matching rules remain in one place. */
+export function createDiscoverShelfLookup<B extends ShelfBook, R extends InstallRecord, W extends Wanted>(
+  shelf: B[], records: R[], catalog: W[],
+): (wanted: W) => ReturnType<typeof discoverShelfBook<B, R>> {
+  const kinds = new Map<string, Set<CatalogName | undefined>>();
+  for (const row of catalog) {
+    const group = kinds.get(row.id) ?? new Set<CatalogName | undefined>();
+    group.add(row.catalog);
+    kinds.set(row.id, group);
+  }
+  const cache = new Map<W, ReturnType<typeof discoverShelfBook<B, R>>>();
+  return (wanted) => {
+    let result = cache.get(wanted);
+    if (!result) {
+      result = discoverShelfBook(shelf, records, { ...wanted, catalogCollision: wanted.catalogCollision || (kinds.get(wanted.id)?.size ?? 0) > 1 });
+      cache.set(wanted, result);
+    }
+    return result;
+  };
+}
+
 /** Shelf membership survives sync; an ambiguous target is not an invitation to install. */
 export function discoverShelfBook<B extends ShelfBook, R extends InstallRecord>(
   shelf: B[], records: R[], wanted: Wanted,

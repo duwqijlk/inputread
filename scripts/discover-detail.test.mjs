@@ -41,6 +41,31 @@ test("All has one original-style new-books carousel, not the cover rail", () => 
   }
 });
 
+test("desktop close is anchored to the header corner without changing the phone layout", () => {
+  assert.match(browse, /-mt-2 -mr-2 sm:absolute sm:top-3 sm:right-3 sm:m-0/);
+  assert.match(browse, /data-detail-close/);
+  assert.match(browse, /content-start gap-1\.5 sm:pr-9/);
+});
+
+test("desktop detail reserves a viewport-bounded height before the summary loads", () => {
+  assert.match(browse, /sm:h-\[min\(44rem,calc\(100dvh-2rem\)\)\]/);
+  assert.match(browse, /sm:auto-rows-max sm:content-start/);
+  assert.match(browse, /no-scrollbar fixed z-50 grid/);
+  assert.doesNotMatch(browse, /overflow-y-scroll|scrollbar-gutter/);
+  assert.match(browse, /max-h-\[88dvh\]/, "phone sheet keeps its existing height constraint");
+});
+
+test("detail actions follow the author inside the cover header, not the bottom of the description", () => {
+  const detail = browse.slice(browse.indexOf("export function BookDetail("));
+  const author = detail.indexOf("{row.author}");
+  const actions = detail.indexOf("data-detail-actions");
+  const credits = detail.indexOf("<BookMaintainerList");
+  const blurb = detail.indexOf("data-detail-blurb");
+  assert.ok(author < actions && actions < credits && credits < blurb);
+  assert.equal((detail.match(/data-detail-actions/g) ?? []).length, 1);
+  assert.doesNotMatch(detail, /sm:min-w-48/);
+});
+
 test("explicit open actions still open the held book", () => {
   const detail = discover.slice(discover.indexOf("  function detailAction("), discover.indexOf("  function renderCard("));
   assert.match(detail, /if \(m\.state === "on"\)[^]*?if \(m\.book\) onOpen\(m\.book\.id\);/);
@@ -65,7 +90,7 @@ test("Discover state uses the selected record, including empty installed revisio
   const end = discover.indexOf("  function detailModel(", start);
   assert.ok(end > start);
   const body = ts.transpileModule(discover.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  const model = new Function("discoverShelfBook", "shelf", "records", "pendingId", "items", "busyId", "listError", "wordListRev", "updateHolds", "updateFailures", "customPacks", "holdOffersUpdate", "canAdd", "quota", "quotaFor", "placesLeft", "t", "lexileMeasure", "rows", `${body}; return cardModel;`);
+  const model = new Function("shelfLookup", "shelf", "records", "pendingId", "items", "busyId", "listError", "wordListRev", "updateHolds", "updateFailures", "customPacks", "holdOffersUpdate", "canAdd", "quota", "quotaFor", "placesLeft", "t", "lexileMeasure", "rows", `${body}; return cardModel;`);
   const make = ({ record = { bookId: "chosen", packId: "sample", rev: "", sha256: "same" }, hold, custom = false, needs = false, catalogRev = "new" } = {}) => model(
     () => ({ book: { id: "chosen", needsEpub: needs }, record }), [], [], "", {}, "", {},
     () => "new", { "book:chosen": hold }, {}, new Set(custom ? ["chosen"] : []),

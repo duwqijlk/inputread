@@ -16,18 +16,24 @@ installPolyfills();
 // Kept in the built file so this version cannot reuse a script name the edge cached as the app page.
 performance.mark("mw-boot");
 
-// A sign-out asked for this device to be cleared: do it before the app reads any storage.
-void finishDeviceWipe()
-  .catch(() => false)
-  .finally(() => {
-    createRoot(document.getElementById("root") as HTMLElement).render(
-      <StrictMode>
-        <ErrorBoundary>
-          <MarginApp />
-        </ErrorBoundary>
-      </StrictMode>,
-    );
+if (import.meta.env.DEV && window.location.pathname === "/shelf/" && new URLSearchParams(window.location.search).get("demo") === "word-senses") {
+  void import("./dev/word-senses-demo").then(({ WordSensesDemo }) => {
+    createRoot(document.getElementById("root") as HTMLElement).render(<StrictMode><ErrorBoundary><WordSensesDemo /></ErrorBoundary></StrictMode>);
   });
+} else {
+  // A sign-out asked for this device to be cleared: do it before the app reads any storage.
+  void finishDeviceWipe()
+    .catch(() => false)
+    .finally(() => {
+      createRoot(document.getElementById("root") as HTMLElement).render(
+        <StrictMode>
+          <ErrorBoundary>
+            <MarginApp />
+          </ErrorBoundary>
+        </StrictMode>,
+      );
+    });
+}
 
 /** Survives a reload. Cleared only after the page has stayed up (see the load handler). */
 const RELOAD_KEY = "cibian-reloaded";

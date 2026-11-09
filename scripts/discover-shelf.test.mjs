@@ -16,11 +16,41 @@ const identityUrl = dataUrl(compile(identitySource)
   .replace('"@/lib/shelf-identity"', JSON.stringify(dataUrl(compile(readFileSync(new URL("../src/lib/shelf-identity.ts", import.meta.url), "utf8"))
     .replace('"@/lib/book-meta"', JSON.stringify(dataUrl(compile(readFileSync(new URL("../src/lib/book-meta.ts", import.meta.url), "utf8")))))))));
 const { sameCatalogBook, planSafeShelfMerges, uniqueBookRecord } = await import(identityUrl);
-const { discoverShelfBook } = await import(dataUrl(compile(source)
+const { discoverShelfBook, createDiscoverShelfLookup } = await import(dataUrl(compile(source)
   .replace('"@/lib/catalog-shelf-identity"', JSON.stringify(identityUrl))));
 
 const row = { id: "sample", title: "The Lantern Seller", author: "A. Sample Writer" };
 const book = (extra = {}) => ({ ...row, id: "synced-card", source: "epub", ...extra });
+
+test("snapshot lookup reuses matches across genre visits and retains collision guards", () => {
+  const mine = book();
+  const wanted = { ...row, catalog: "word-lists" };
+  const lookup = createDiscoverShelfLookup([mine], [], [wanted]);
+  const first = lookup(wanted);
+  assert.equal(first.book, mine);
+  assert.equal(lookup(wanted), first, "the same snapshot does not rematch a book on each render");
+  const next = createDiscoverShelfLookup([], [], [wanted]);
+  assert.equal(next(wanted).book, undefined, "changed shelf data gets a fresh lookup");
+  const other = { ...row, catalog: "public-books" };
+  const collision = createDiscoverShelfLookup([mine], [], [wanted, other]);
+  assert.equal(collision(wanted).ambiguous, true);
+  assert.equal(collision(other).ambiguous, true);
+});
+
+test("repeated filter visits do not rescan a large shelf snapshot", () => {
+  let titleReads = 0;
+  const shelf = Array.from({ length: 150 }, (_, index) => ({
+    id: `shelf-${index}`, source: "epub", author: "Writer",
+    get title() { titleReads++; return `Book ${index}`; },
+  }));
+  const catalog = Array.from({ length: 260 }, (_, index) => ({ id: `catalog-${index}`, title: `Book ${index}`, author: "Writer", catalog: "word-lists" }));
+  const lookup = createDiscoverShelfLookup(shelf, [], catalog);
+  for (const row of catalog.slice(0, 24)) lookup(row);
+  const initialReads = titleReads;
+  assert.ok(initialReads > 0);
+  for (let visit = 0; visit < 20; visit++) for (const row of catalog.slice(0, 24)) lookup(row);
+  assert.equal(titleReads, initialReads, "already seen cards reuse safe identity matches instead of rescanning shelf titles");
+});
 
 test("a synced shelf book remains held with no local install record", () => {
   for (const extra of [{}, { source: "notes", needsEpub: true }]) {
