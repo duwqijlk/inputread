@@ -16,7 +16,7 @@ import { askToSignIn, useCanAddBooks } from "@/lib/can-add";
 import { useDownloads } from "@/lib/downloads";
 import { errorText, useT } from "@/lib/i18n";
 import { lexileMeasure } from "@/lib/lexile";
-import { filterDiscover } from "@/lib/discover-filter";
+import { filterDiscover, searchDiscover } from "@/lib/discover-filter";
 import { placeWordList } from "@/lib/place-word-list";
 import type { CatalogName } from "@/lib/catalog-id";
 import { createDiscoverShelfLookup } from "@/lib/discover-shelf";
@@ -315,7 +315,8 @@ export function DiscoverScreen({
     navigate({ kind: "discover", category: "novel", browse: { view: "results", collection: `series:${name}` } });
   }, [pendingSeries, rows.length]);
   const scoped = useMemo(() => genre ? inCollection.filter((row) => row.genres?.includes(genre)) : inCollection, [inCollection, genre]);
-  const shown = useMemo(() => filterDiscover(scoped, { query, band, author, series, sort, interleave: Boolean(genre) && !collection }), [scoped, query, band, author, series, sort, genre, collection]);
+  // Search the combined catalog; category/genre/collection only scope ordinary browsing.
+  const shown = useMemo(() => query.trim() ? searchDiscover(rows, query) : filterDiscover(scoped, { query, band, author, series, sort, interleave: Boolean(genre) && !collection }), [rows, scoped, query, band, author, series, sort, genre, collection]);
 
   const groups = useMemo(() => {
     if (series !== "grouped") return [];
@@ -720,7 +721,7 @@ export function DiscoverScreen({
         if (value) changeView({ genre: value, q: undefined, collection: undefined, author: undefined, series: undefined, detail: undefined });
         else changeView({ genre: undefined, collection: undefined, q: undefined, band: undefined, author: undefined, series: undefined, sort: undefined, detail: undefined });
       }} /> : null}
-      {!ready || inCategory.length > 0 ? (
+      {!ready || rows.length > 0 ? (
         <div className="flex items-center gap-2">
           <label className="relative block min-w-0 flex-1">
             <span className="sr-only">{t("discover.search")}</span>
@@ -764,9 +765,9 @@ export function DiscoverScreen({
               className="min-w-0 flex-1 basis-28 break-words font-bold tracking-[-0.02em] text-[1.15rem] sm:text-[1.3rem]"
               lang={collection.startsWith("series:") || collection.startsWith("curated:") ? "en" : undefined}
             >
-              {genre ? t(`genre.${genre}`) : collection ? railTitle(collection) : t("browse.all")}
+              {query.trim() ? t("discover.searchResults") : genre ? t(`genre.${genre}`) : collection ? railTitle(collection) : t("browse.all")}
             </h2>
-            <span className="shrink-0 text-sm text-muted tabular-nums">{tn("count.book", shown.length)}</span>
+            <span className="shrink-0 text-sm text-muted tabular-nums">{tn(query.trim() ? "discover.result" : "count.book", shown.length)}</span>
             {genre || query || band !== "all" || author !== "all" || series !== "all" || sort !== "listed" ? <button className={cn(btn.quiet, "ml-auto")} onClick={clearFilters} data-clear-discover>{t("browse.clearFilters")}</button> : null}
           </div>
         ) : null}
@@ -788,10 +789,10 @@ export function DiscoverScreen({
           </div>
         ) : shown.length === 0 ? (
           <div className="grid justify-items-center gap-3 py-10 text-center text-muted" data-discover-empty={category}>
-            <p>{inCategory.length === 0 && category === "speech"
-              ? t("discover.empty.speech")
-              : query.trim()
-                ? t("shelf.noMatch", { query: query.trim() })
+            <p>{query.trim()
+              ? t("shelf.noMatch", { query: query.trim() })
+              : inCategory.length === 0 && category === "speech"
+                ? t("discover.empty.speech")
                 : t("shelf.series.empty")}</p>
             <button className={btn.quiet} onClick={clearFilters}>{t("browse.clearFilters")}</button>
           </div>

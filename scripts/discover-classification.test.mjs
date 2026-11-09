@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { filterDiscover, interleaveDiscoverSeries } from "../src/lib/discover-filter.ts";
+import { filterDiscover, interleaveDiscoverSeries, searchDiscover } from "../src/lib/discover-filter.ts";
+import { readFileSync } from "node:fs";
 
 const base = { query: "", band: "all", author: "all", series: "all", sort: "listed" };
 const rows = [
@@ -32,6 +33,29 @@ test("genre browsing interleaves series volumes and ungrouped books without hidi
   assert.deepEqual(filterDiscover(catalog, { ...base, interleave: true }), ordered);
   assert.deepEqual(filterDiscover(catalog, { ...base, query: "a", interleave: true }).map((row) => row.key), ["a3", "a1", "a2"], "search does not interleave");
   assert.deepEqual(filterDiscover(catalog, { ...base, series: "A", interleave: true }).map((row) => row.key), ["a1", "a2", "a3"]);
+});
+
+test("global Discover search covers books and speeches in both catalogs", () => {
+  const catalog = [
+    { ...rows[0], key: "list:shared", title: "River Journey", category: "novel" },
+    { ...rows[1], key: "list:speech", title: "River Speech", category: "speech" },
+    { ...rows[2], key: "classic:shared", title: "River Classic", category: "novel" },
+    { ...rows[2], key: "classic:speech", title: "An address", author: "River Speaker", category: "speech" },
+  ];
+  const result = searchDiscover([...catalog, catalog[0]], " RIVER ");
+  assert.deepEqual(result.map(row => row.key), catalog.map(row => row.key));
+  assert.deepEqual(searchDiscover(catalog, "speech").map(row => row.key), ["list:speech"]);
+  assert.deepEqual(searchDiscover(catalog, "journey").map(row => row.key), ["list:shared"]);
+  assert.deepEqual(searchDiscover(catalog, "missing"), []);
+  assert.deepEqual(catalog.map(row => row.key), ["list:shared", "list:speech", "classic:shared", "classic:speech"]);
+});
+
+test("Discover uses all rows for search and leaves the input visible on an empty category", () => {
+  const source = readFileSync(new URL("../src/components/discover.tsx", import.meta.url), "utf8");
+  assert.match(source, /query\.trim\(\) \? searchDiscover\(rows, query\) : filterDiscover\(scoped,/);
+  assert.match(source, /!ready \|\| rows\.length > 0/);
+  assert.match(source, /query\.trim\(\) \? t\("discover.searchResults"\)/);
+  assert.match(source, /<p>\{query\.trim\(\)/, "search no-match takes priority over empty speech category");
 });
 
 test("named series defaults to volume order while explicit difficulty sorting wins", () => {
