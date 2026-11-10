@@ -74,7 +74,8 @@ export function useFloatingCard(
       const panel = panelRef.current;
       const vw = document.documentElement.clientWidth;
       const vh = window.innerHeight;
-      const width = Math.min(desktopWidth, Math.max(220, vw - 24));
+      // Broad dictionary cards are desktop-only; keep tablet cards comfortably narrow.
+      const width = Math.min(desktopWidth, vw < 1024 ? 384 : desktopWidth, Math.max(220, vw - 24));
       // The word body scrolls independently. Measure its unconstrained content and
       // padding/borders so expanding AND collapsing details resize the whole card.
       const content = panel?.querySelector<HTMLElement>("[data-word-content]");

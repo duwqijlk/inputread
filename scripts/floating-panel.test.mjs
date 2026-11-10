@@ -102,6 +102,22 @@ for (const [viewportWidth, viewportHeight] of [[1024, 768], [1280, 800], [1280, 
   });
 }
 
+for (const [viewportWidth, viewportHeight] of [[1024, 768], [1280, 800], [1440, 900]]) {
+  test(`512px dictionary card remains inside the viewport and clear of the word at ${viewportWidth}px`, () => {
+    for (const anchor of [
+      { left: 12, top: 90, width: 70, height: 28 },
+      { left: viewportWidth / 2, top: 280, width: 60, height: 28 },
+      { left: viewportWidth - 90, top: viewportHeight - 100, width: 70, height: 28 },
+    ]) {
+      const place = placeFloatingPanel({ anchor, width: 512, height: 650, maxViewportRatio: 0.9, viewportWidth, viewportHeight });
+      assert.ok(place.width <= 512);
+      assert.ok(place.left >= 12 && place.left + place.width <= viewportWidth - 12 + 0.5);
+      assert.ok(place.top >= 12 && place.top + Math.min(650, place.maxHeight) <= viewportHeight - 12 + 0.5);
+      assert.equal(overlaps(place, anchor, 650), false);
+    }
+  });
+}
+
 for (const viewportWidth of [1024, 1280]) {
   test(`fixed card chrome gets a readable body in a short ${viewportWidth}px window`, () => {
     const anchor = { left: 430, top: 225, width: 48, height: 28 };
