@@ -42,7 +42,21 @@ test("manifest gates requests, duplicate lookup coalesces, and sense IDs are nev
     assert.equal(first.kind, "unmapped");
     assert.equal(first.senses.length, 2);
     assert.equal(first.senses[0].id, "bank%1:14:00::");
+    assert.equal(first.senses[0].pos, "noun");
     assert.deepEqual(urls, ["https://books.test.invalid/dictionary/current.json", "https://books.test.invalid/dictionary/releases/oewn-2025-test/words/62/62616e6b.json"]);
+  } finally { globalThis.fetch = original; }
+});
+
+test("all OEWN part-of-speech codes expand without changing sense identities or meanings", async () => {
+  const original = globalThis.fetch;
+  const codes = ["n", "v", "a", "s", "r", "noun", "verb", "adjective", "adverb", "", "phrase", "toString"];
+  const meanings = codes.map((pos, i) => ({ id: `source-sense-${i}`, pos, meaning: `Meaning ${i}`, originalMeaning: `Original ${i}` }));
+  globalThis.fetch = async url => url.endsWith("current.json") ? manifest : response({ schema: "oewn-r2-entry-v1", release: "oewn-2025-test", lookupKey: "hotel", senses: meanings });
+  try {
+    const result = await load().lookupStandardWord("hotel");
+    assert.equal(result.kind, "unmapped");
+    assert.deepEqual(result.senses.map(s => s.pos), ["noun", "verb", "adjective", "adjective", "adverb", "noun", "verb", "adjective", "adverb", "", "phrase", "toString"]);
+    assert.deepEqual(result.senses.map(s => [s.id, s.meaning]), meanings.map(s => [s.id, s.meaning]));
   } finally { globalThis.fetch = original; }
 });
 
@@ -97,6 +111,65 @@ test("case index errors, mismatches and ambiguity fail closed; no stemming", asy
     globalThis.fetch = async url => url.endsWith("current.json") ? indexedManifest : url.includes("case-indexes") ? caseResponse(api, "walked", {}) : response({}, 404);
     assert.equal((await api.lookupStandardWord("walked")).kind, "missing");
     assert.equal(api.dictionaryCaseShard("İ"), api.dictionaryCaseShard("i̇"));
+  } finally { globalThis.fetch = original; }
+});
+
+test("source forms and validated regular inflections resolve without fabricated meanings", async () => {
+  const original = globalThis.fetch;
+  try {
+    const forms = {
+      children: [{ lemma: "child", pos: "n" }],
+      went: [{ lemma: "go", pos: "v" }],
+      running: [{ lemma: "run", pos: "v" }],
+      stopped: [{ lemma: "stop", pos: "v" }],
+      axes: [{ lemma: "axe", pos: "n" }, { lemma: "axis", pos: "n" }],
+    };
+    const words = {
+      learner: ["n"], child: ["n"], go: ["n", "v"], run: ["n", "v"], learn: ["v"],
+      large: ["a"], stop: ["v"], axe: ["n"], axis: ["n"],
+      news: ["n"], new: ["a"], stopped: ["a"], running: ["n", "a"],
+    };
+    const { dictionaryCaseShard, dictionaryRegularForms } = load();
+    assert.ok(dictionaryRegularForms("learners").some(c => c.lemma === "learner" && c.pos === "n"));
+    assert.deepEqual(dictionaryRegularForms("km/h"), []);
+    for (const [word, expected, expectedPos] of [
+      ["learners", "unmapped", "noun"], ["Learners", "unmapped", "noun"],
+      ["children", "unmapped", "noun"], ["went", "unmapped", "verb"],
+      ["running", "unmapped"], ["stopped", "unmapped"], ["learned", "unmapped", "verb"],
+      ["larger", "unmapped", "adjective"], ["axes", "ambiguous"],
+      ["news", "unmapped", "noun"], ["quuxstones", "missing"],
+    ]) {
+      const api = load();
+      globalThis.fetch = async url => {
+        if (url.endsWith("current.json")) return response({schema:"oewn-r2-current-v1",release:"oewn-2025-test",caseIndex:"case-v1-0123456789ab",formsIndex:"forms-v1-0123456789ab"});
+        const shard = url.split("/").at(-1).replace(".json", "");
+        if (url.includes("form-indexes")) return response({schema:"oewn-form-index-v1",release:"oewn-2025-test",indexVersion:"forms-v1-0123456789ab",shard,entries:Object.fromEntries(Object.entries(forms).filter(([key])=>dictionaryCaseShard(key)===shard))});
+        if (url.includes("case-indexes")) return caseResponse(api, Object.keys(words).find(key=>dictionaryCaseShard(key)===shard) ?? word, Object.fromEntries(Object.keys(words).filter(key=>dictionaryCaseShard(key)===shard).map(key=>[key,[key]])), {shard});
+        const hex = url.split("/").at(-1).replace(".json", "");
+        const key = Buffer.from(hex,"hex").toString();
+        return words[key] ? response({schema:"oewn-r2-entry-v1",release:"oewn-2025-test",lookupKey:key,senses:words[key].map((pos,i)=>({id:`${key}-source-${i}`,pos,meaning:`${key} meaning`,originalMeaning:`${key} original`}))}) : response({},404);
+      };
+      const result = await api.lookupStandardWord(word);
+      assert.equal(result.kind, expected, word);
+      if (expectedPos) assert.ok(result.senses.every(s=>s.pos===expectedPos), word+" filters only source POS");
+      if (word.toLowerCase() === "learners") assert.equal(result.senses[0].id, "learner-source-0");
+      if (word === "running") assert.deepEqual(result.senses.map(s=>s.pos), ["noun", "adjective", "verb"], "independent entry and inflected verb coexist");
+      if (word === "stopped") assert.deepEqual(result.senses.map(s=>s.pos), ["adjective", "verb"]);
+    }
+  } finally { globalThis.fetch = original; }
+});
+
+test("form index identity errors cannot silently fall back to suffix guesses", async () => {
+  const original = globalThis.fetch;
+  try {
+    const api = load();
+    globalThis.fetch = async url => {
+      if (url.endsWith("current.json")) return response({schema:"oewn-r2-current-v1",release:"oewn-2025-test",caseIndex:"case-v1-0123456789ab",formsIndex:"forms-v1-0123456789ab"});
+      if (url.includes("case-indexes")) return caseResponse(api,"learners",{});
+      if (url.includes("form-indexes")) return response({schema:"oewn-form-index-v1",release:"wrong",indexVersion:"forms-v1-0123456789ab",shard:api.dictionaryCaseShard("learners"),entries:{}});
+      return response({},404);
+    };
+    assert.equal((await api.lookupStandardWord("learners")).kind,"error");
   } finally { globalThis.fetch = original; }
 });
 
