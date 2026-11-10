@@ -116,6 +116,14 @@ for (const viewportWidth of [1024, 1280]) {
   });
 }
 
+test("content-rich sense panels may use more desktop viewport without breaking the edge", () => {
+  const anchor = { left: 430, top: 120, width: 48, height: 28 };
+  const place = placeFloatingPanel({ anchor, width: 384, height: 720, maxViewportRatio: 0.9, ...view });
+  assert.ok(place.maxHeight > 0.72 * view.viewportHeight);
+  assert.ok(place.top >= 12 && place.top + Math.min(720, place.maxHeight) <= view.viewportHeight - 12 + 0.5);
+  assert.equal(overlaps(place, anchor, 720), false);
+});
+
 test("a collapsed card only reserves its actual content height", () => {
   const anchor = { left: 430, top: 200, width: 48, height: 28 };
   const place = placeFloatingPanel({

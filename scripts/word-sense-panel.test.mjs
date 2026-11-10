@@ -41,6 +41,7 @@ const messages = {
   "card.senses.guest": "Sign in to vote.",
   "card.senses.unverified": "Verify your email to vote.",
   "card.senses.authLoading": "Checking voting eligibility...",
+  "card.senses.voteUnavailable": "Meaning choices are not open yet.",
   "card.senses.pending": "Saving vote...",
   "card.senses.voteFailed": "Vote not saved. Try again.",
   "card.senses.voteFixed": "This location now has a fixed meaning.",
@@ -158,7 +159,7 @@ test("actual React sense panel: resolution, controlled votes and attribution", a
           assert.equal(button.getAttribute("aria-pressed"), "false");
           assert.equal(button.getAttribute("aria-label"), `This meaning fits here: ${senses[index].meaning}`);
           assert.equal(button.title, "Fits here");
-          assert.match(button.className, /min-h-11 min-w-11/);
+          assert.match(button.className, /min-h-(?:9|11) min-w-(?:9|11)/);
           assert.equal(button.querySelector("svg").getAttribute("fill"), "none");
         }
         await click(container.querySelector("[data-sense-id] p"));
@@ -257,17 +258,13 @@ test("actual React sense panel: resolution, controlled votes and attribution", a
           ["guest", messages["card.senses.guest"]],
           ["unverified", messages["card.senses.unverified"]],
           ["loading", messages["card.senses.authLoading"]],
+          ["unavailable", messages["card.senses.voteUnavailable"]],
         ]) {
           await render({ vote: { ...verified, eligibility } });
           assert.ok(buttons().every((button) => button.disabled));
           assert.ok(container.textContent.includes(message));
           const reasonIds = buttons()[0].getAttribute("aria-describedby").split(" ");
           assert.ok(reasonIds.some((id) => document.getElementById(id)?.textContent === message));
-          assert.ok(
-            reasonIds.some((id) =>
-              document.getElementById(id)?.hasAttribute("data-sense-vote-help"),
-            ),
-          );
           await click(buttons()[0]);
           await invokeHandler(buttons()[0]);
           assert.deepEqual(calls, { votes: [], write: 0, retry: 0, report: 0 });

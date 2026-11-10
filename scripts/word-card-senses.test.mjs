@@ -15,6 +15,7 @@ const stubs = {
   "lucide-react": { Heart: icon, Image: icon, Menu: icon, Sparkles: icon, X: icon },
   "@/assets/merriam-webster-logo.png": "logo.png",
   "@/lib/glossary-format": { countSurface: (word) => word.toLowerCase() },
+  "@/lib/standard-dictionary": { lookupStandardWord: async () => null },
   "@/lib/i18n": { useT: () => ({ t: (key) => key }) },
   "@/lib/lookup-links": { LOOKUP_SITES: ["longman", "webster", "images"], lookupUrl: (site, word) => `https://example.invalid/${site}/${word}` },
   "@/lib/text": { surfaceOffset: () => 0 },

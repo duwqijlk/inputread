@@ -19,11 +19,13 @@ export type CommunityExplanation = {
 export type WordSensePanelProps = {
   resolution: SenseResolution;
   community?: CommunityExplanation;
+  /** Existing book-list feedback/credit renderer, when a real community explanation exists. */
+  communityContent?: ReactNode;
   communityEditor?: ReactNode;
   /** Render a resolved public contributor credit, never a raw public id or email. */
   communityCredit?: ReactNode;
   vote: {
-    eligibility: "verified" | "guest" | "unverified" | "loading";
+    eligibility: "verified" | "guest" | "unverified" | "loading" | "unavailable";
     selectedId: string | null;
     pending: boolean;
     acknowledged?: boolean;
@@ -43,6 +45,7 @@ const label = "font-sans text-sm leading-5 text-muted";
 export function WordSensePanel({
   resolution,
   community,
+  communityContent,
   communityEditor,
   communityCredit,
   vote,
@@ -65,10 +68,12 @@ export function WordSensePanel({
       ? resolution.senses
       : [];
   const unresolved = resolution.kind === "unmapped" && senses.length > 0;
-  const recommended = Boolean(explanation) || mapped;
-  const tabs = Boolean(explanation) && unresolved;
+  const hasCommunityContent = Boolean(communityContent);
+  const recommended = Boolean(explanation) || hasCommunityContent || mapped;
+  const tabs = (Boolean(explanation) || hasCommunityContent) && unresolved;
   const active = tabs ? selectedTab : recommended ? "recommended" : "dictionary";
   const canVote = vote.eligibility === "verified" && !vote.pending && vote.error !== "fixed";
+  const compactCandidates = unresolved && !explanation;
   const reason = !unresolved
     ? undefined
     : vote.eligibility === "guest"
@@ -77,7 +82,9 @@ export function WordSensePanel({
         ? t("card.senses.unverified")
         : vote.eligibility === "loading"
           ? t("card.senses.authLoading")
-          : undefined;
+          : vote.eligibility === "unavailable"
+            ? t("card.senses.voteUnavailable")
+            : undefined;
   function choose(senseId: string) {
     if (!unresolved || !canVote || !senses.some((sense) => sense.id === senseId)) return;
     onVote(vote.selectedId === senseId ? null : senseId);
@@ -146,70 +153,74 @@ export function WordSensePanel({
           hidden={active !== "recommended"}
           data-recommended-meanings
         >
-          {explanation ? (
+          {explanation || communityContent ? (
             <section data-community-explanation aria-labelledby={`${id}-community`}>
               <div id={`${id}-community`} className={label}>
                 {t("card.senses.community")}
               </div>
-              {explanation.pos ? (
-                <p className="mt-2 text-sm italic text-muted" lang="en">
-                  {explanation.pos}
-                </p>
-              ) : null}
-              <p className="mt-2 break-words font-display text-xl leading-relaxed">
-                {explanation.meaning}
-                <button
-                  type="button"
-                  className={cn(
-                    "relative ml-1 -my-1.5 inline-grid size-6 place-items-center rounded align-[-3px] text-faint after:absolute after:-inset-2 after:content-[''] hover:bg-sheet hover:text-ink",
-                    focus,
-                  )}
-                  aria-label={t("card.feedbackPrompt")}
-                  aria-expanded={feedback}
-                  aria-controls={feedback ? `${id}-feedback` : undefined}
-                  onClick={() => setFeedback((value) => !value)}
-                  data-community-feedback
-                >
-                  <HelpCircle className="size-4" aria-hidden />
-                </button>
-              </p>
-              {communityCredit ??
-                (explanation.author ? (
-                  <p className={cn(label, "mt-1 break-words")}>
-                    {t("card.senses.from", { name: explanation.author })}
+              {explanation ? communityContent ?? (
+                <>
+                  {explanation.pos ? (
+                    <p className="mt-2 text-sm italic text-muted" lang="en">
+                      {explanation.pos}
+                    </p>
+                  ) : null}
+                  <p className="mt-2 break-words font-display text-xl leading-relaxed">
+                    {explanation.meaning}
+                    <button
+                      type="button"
+                      className={cn(
+                        "relative ml-1 -my-1.5 inline-grid size-6 place-items-center rounded align-[-3px] text-faint after:absolute after:-inset-2 after:content-[''] hover:bg-sheet hover:text-ink",
+                        focus,
+                      )}
+                      aria-label={t("card.feedbackPrompt")}
+                      aria-expanded={feedback}
+                      aria-controls={feedback ? `${id}-feedback` : undefined}
+                      onClick={() => setFeedback((value) => !value)}
+                      data-community-feedback
+                    >
+                      <HelpCircle className="size-4" aria-hidden />
+                    </button>
                   </p>
-                ) : null)}
-              {feedback ? (
-                <div
-                  id={`${id}-feedback`}
-                  className="mt-3 rounded-xl bg-sheet p-3"
-                  data-community-feedback-options
-                >
-                  <p className="text-xs font-bold text-muted">{t("card.feedbackQuestion")}</p>
-                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-                    {onReport ? (
-                      <>
-                        <button
-                          type="button"
-                          className={cn("min-h-11 text-sm text-ink", focus)}
-                          onClick={() => onReport("too_hard")}
-                        >
-                          {t("card.feedbackTooHard")}
-                        </button>
-                        <button
-                          type="button"
-                          className={cn("min-h-11 text-sm text-ink", focus)}
-                          onClick={() => onReport("wrong_meaning")}
-                        >
-                          {t("card.feedbackWrong")}
-                        </button>
-                      </>
-                    ) : null}
-                    {writeButton}
-                  </div>
-                </div>
-              ) : null}
-              {communityEditor}
+                  {communityCredit ??
+                    (explanation.author ? (
+                      <p className={cn(label, "mt-1 break-words")}>
+                        {t("card.senses.from", { name: explanation.author })}
+                      </p>
+                    ) : null)}
+                  {feedback ? (
+                    <div
+                      id={`${id}-feedback`}
+                      className="mt-3 rounded-xl bg-sheet p-3"
+                      data-community-feedback-options
+                    >
+                      <p className="text-xs font-bold text-muted">{t("card.feedbackQuestion")}</p>
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                        {onReport ? (
+                          <>
+                            <button
+                              type="button"
+                              className={cn("min-h-11 text-sm text-ink", focus)}
+                              onClick={() => onReport("too_hard")}
+                            >
+                              {t("card.feedbackTooHard")}
+                            </button>
+                            <button
+                              type="button"
+                              className={cn("min-h-11 text-sm text-ink", focus)}
+                              onClick={() => onReport("wrong_meaning")}
+                            >
+                              {t("card.feedbackWrong")}
+                            </button>
+                          </>
+                        ) : null}
+                        {writeButton}
+                      </div>
+                    </div>
+                  ) : null}
+                  {communityEditor}
+                </>
+              ) : communityContent}
             </section>
           ) : null}
           {mapped ? (
@@ -243,18 +254,22 @@ export function WordSensePanel({
               ) : null}
               {!explanation ? (
                 <section className="mt-2 border-t border-line pt-2" data-community-invitation>
-                  <p className={label}>{t("card.senses.communityInvite")}</p>
-                  <button
-                    type="button"
-                    onClick={onWrite}
-                    className={cn(
-                      "min-h-11 text-left font-sans text-sm font-bold text-accent",
-                      focus,
-                    )}
-                    data-write-community
-                  >
-                    {t("card.senses.writeCommunity")}
-                  </button>
+                  {!communityEditor ? (
+                    <>
+                      <p className={label}>{t("card.senses.communityInvite")}</p>
+                      <button
+                        type="button"
+                        onClick={onWrite}
+                        className={cn(
+                          "min-h-11 text-left font-sans text-sm font-bold text-accent",
+                          focus,
+                        )}
+                        data-write-community
+                      >
+                        {t("card.senses.writeCommunity")}
+                      </button>
+                    </>
+                  ) : null}
                   {communityEditor}
                 </section>
               ) : null}
@@ -273,28 +288,41 @@ export function WordSensePanel({
           <div className={label}>
             {t(unresolved ? "card.senses.candidates" : "card.senses.standard")}
           </div>
-          {unresolved ? (
-            <p
-              id={`${id}-vote-help`}
-              className="mt-1 text-xs leading-relaxed text-muted"
-              data-sense-vote-help
-            >
-              {t("card.senses.voteHelp")}
-            </p>
-          ) : null}
           {senses.length > 0 ? (
             <ul
               data-standard-senses
-              className="m-0 list-none divide-y divide-line p-0"
+              className={cn(
+                "m-0 list-none divide-y divide-line p-0",
+                compactCandidates && "text-[0.9375rem]",
+              )}
               aria-busy={vote.pending}
             >
               {senses.map((sense) => (
-                <li key={sense.id} data-sense-id={sense.id} className="flex items-start gap-3 py-3">
+                <li
+                  key={sense.id}
+                  data-sense-id={sense.id}
+                  className={cn(
+                    "flex items-start",
+                    compactCandidates ? "gap-1.5 py-1" : "gap-3 py-3",
+                  )}
+                >
                   <div className="min-w-0 flex-1">
                     {sense.pos ? (
-                      <div className="mb-1 text-xs leading-4 text-muted">{sense.pos}</div>
+                      <div
+                        className={cn(
+                          "mb-1 leading-4 text-muted",
+                          compactCandidates ? "mb-0 text-[0.6875rem]" : "text-xs",
+                        )}
+                      >
+                        {sense.pos}
+                      </div>
                     ) : null}
-                    <p className="break-words font-display text-lg leading-relaxed">
+                    <p
+                      className={cn(
+                        "break-words font-display leading-snug",
+                        compactCandidates ? "text-[0.9375rem]" : "text-lg leading-relaxed",
+                      )}
+                    >
                       {sense.meaning}
                     </p>
                   </div>
@@ -311,11 +339,16 @@ export function WordSensePanel({
                         : "card.senses.fitsHere",
                     )}
                     aria-pressed={vote.selectedId === sense.id}
-                    aria-describedby={`${id}-vote-help${reason ? ` ${id}-eligibility` : ""}`}
+                    aria-describedby={reason ? `${id}-eligibility` : undefined}
                     disabled={!canVote}
                     onClick={() => choose(sense.id)}
                     className={cn(
-                      "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded px-2 font-sans text-sm disabled:cursor-not-allowed",
+                      cn(
+                        "inline-flex shrink-0 items-center justify-center rounded font-sans disabled:cursor-not-allowed",
+                        compactCandidates
+                          ? "min-h-11 min-w-11"
+                          : "min-h-11 min-w-11 gap-1.5 px-2 text-sm",
+                      ),
                       focus,
                       vote.selectedId === sense.id
                         ? "bg-accent-soft text-accent"
@@ -377,6 +410,11 @@ export function WordSensePanel({
             </div>
           ) : null}
           {resolution.kind === "unmapped" || resolution.kind === "missing" ? noMatchButton : null}
+          {!explanation && communityEditor ? (
+            <section className="mt-3 border-t border-line pt-3" data-community-content>
+              {communityEditor}
+            </section>
+          ) : null}
         </div>
       ) : null}
     </div>

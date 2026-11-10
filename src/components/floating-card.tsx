@@ -42,6 +42,7 @@ export function useFloatingCard(
   panelRef: RefObject<HTMLElement | null>,
   onClose: () => void,
   desktopWidth = PANEL_WIDTH,
+  maxViewportRatio = 0.72,
 ): FloatState {
   const [active, setActive] = useState(desktopPanel);
   const [style, setStyle] = useState<CSSProperties | undefined>(undefined);
@@ -107,6 +108,7 @@ export function useFloatingCard(
         minHeight: content
           ? Math.ceil(measured - content.offsetHeight + Math.min(80, content.offsetHeight)) + 2
           : undefined,
+        maxViewportRatio,
         viewportWidth: vw,
         viewportHeight: vh,
       });
@@ -156,7 +158,7 @@ export function useFloatingCard(
       observer.disconnect();
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [active, anchor, panelRef, desktopWidth]);
+  }, [active, anchor, panelRef, desktopWidth, maxViewportRatio]);
 
   return { active, placed: Boolean(style), style: active ? style : undefined };
 }
@@ -520,6 +522,7 @@ export function FloatingAside({
   label,
   kind,
   desktopWidth,
+  maxViewportRatio,
   className,
   children,
 }: {
@@ -528,11 +531,13 @@ export function FloatingAside({
   label: string;
   kind: "word" | "para";
   desktopWidth?: number;
+  /** Optional wider desktop-height budget for content-rich word panels. */
+  maxViewportRatio?: number;
   className?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLElement | null>(null);
-  const float = useFloatingCard(anchor, ref, onClose, desktopWidth);
+  const float = useFloatingCard(anchor, ref, onClose, desktopWidth, maxViewportRatio);
   usePanelFocus(float.active && float.placed, ref, anchor);
   usePhoneSheetDismiss(ref, onClose);
   return (

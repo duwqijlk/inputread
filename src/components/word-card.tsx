@@ -2,6 +2,7 @@ import { Heart, Image as ImageIcon, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import merriamWebsterLogo from "@/assets/merriam-webster-logo.png";
 import { countSurface, type OtherMeaning } from "@/lib/glossary-format";
+import { lookupStandardWord, type DictionaryLookup } from "@/lib/standard-dictionary";
 import { useT, type Key } from "@/lib/i18n";
 import { LOOKUP_SITES, lookupUrl, type LookupSite } from "@/lib/lookup-links";
 import { surfaceOffset } from "@/lib/text";
@@ -185,6 +186,7 @@ export function WordCard({
   const { t } = useT();
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [lookupsOpen, setLookupsOpen] = useState(false);
+  const [standardLookup, setStandardLookup] = useState<DictionaryLookup | null>(null);
   const activePhrase = targetMode === "phrase" ? phrase : null;
   const target = activePhrase?.key ?? state.key;
   const targetMeaning = activePhrase ? activePhrase.entry.meaning : state.meaning;
@@ -202,6 +204,17 @@ export function WordCard({
     body.scrollTop = 0;
     setLookupsOpen(false);
   }, [selectionId, targetMode, target]);
+  useEffect(() => {
+    let alive = true;
+    setStandardLookup(null);
+    if (activePhrase || !target.trim()) return () => { alive = false; };
+    void lookupStandardWord(target).then((result) => {
+      if (alive) setStandardLookup(result);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [activePhrase, target]);
   const report = {
     bookId,
     bookTitle,
@@ -219,6 +232,33 @@ export function WordCard({
     glossaryRev: state.glossaryRev,
   };
   const missing = !activePhrase && state.status === "unknown";
+  const legacyMeaning = !activePhrase && state.ready ? (
+    <div data-community-explanation>
+      <WordMeaning
+        key={`${bookId}:${selectionId}:${targetMode}:${target}:${state.chapter ?? chapter}:${state.occurrence ?? 1}`}
+        meaning={targetMeaning}
+        pos={targetPos}
+        credit={state.status === "ready" ? state.credit : undefined}
+        missing={false}
+        noList={noList}
+        part="word-meaning"
+        target={report}
+      >
+        {state.coined ? <CoinedBadge /> : null}
+      </WordMeaning>
+    </div>
+  ) : null;
+  const staticSensePanel: WordSensePanelProps | undefined =
+    !activePhrase && standardLookup?.kind === "unmapped"
+      ? {
+          resolution: standardLookup,
+          community: legacyMeaning ? { kind: "community", meaning: targetMeaning, pos: targetPos } : undefined,
+          communityContent: legacyMeaning,
+          vote: { eligibility: "unavailable", selectedId: null, pending: false },
+          onVote: () => undefined,
+          onWrite: () => undefined,
+        }
+      : undefined;
   return (
     <FloatingAside
       anchor={anchor}
@@ -226,6 +266,7 @@ export function WordCard({
       label={t("card.aria", { word: target })}
       kind="word"
       desktopWidth={24 * 16}
+      maxViewportRatio={sensePanel || meaningContent ? 0.9 : 0.72}
       className={cn(
         "scroll-thin fixed z-40 overflow-y-auto overscroll-contain border-float-edge bg-float px-5 text-ink shadow-pop ",
         "word-sheet-plain",
@@ -349,6 +390,11 @@ export function WordCard({
             <WordSensePanel
               key={`${bookId}:${selectionId}:${targetMode}:${target}`}
               {...sensePanel}
+            />
+          ) : staticSensePanel ? (
+            <WordSensePanel
+              key={`${bookId}:${selectionId}:${targetMode}:${target}:standard`}
+              {...staticSensePanel}
             />
           ) : (
             (meaningContent ?? (
