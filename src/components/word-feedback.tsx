@@ -295,7 +295,7 @@ export function WordMeaning({
 
   return (
     <div className="grid gap-2" data-word-primary>
-      {pos ? <p className="break-words text-sm italic leading-snug text-muted" lang="en" data-word-pos>{pos}</p> : null}
+      {pos ? <p className="dictionary-pos break-words text-sm leading-snug" lang="en" data-pos={pos.toLowerCase()} data-word-pos>{pos}</p> : null}
       <p className="font-display text-[1.25rem] leading-normal text-ink" lang="en" data-part={part}>
         <span>{meaning}</span>
         {/* The ? sits after the last word: 24px drawn, 40px to tap, and it does not make the line taller. */}

@@ -858,6 +858,22 @@ html[data-ui-font="display"] [class~="[font-variant-numeric:tabular-nums]"] {
     animation: pop-in 0.16s ease-out;
   }
 
+  /* Dictionary typography: semantic ink, not decorative badges. Words still identify the POS. */
+  .dictionary-pos {
+    color: var(--muted);
+    font-family: var(--font-sans);
+    font-weight: 700;
+  }
+  .dictionary-pos[data-pos~="noun"] { color: #1d5caa; }
+  .dictionary-pos[data-pos~="verb"] { color: #a92f40; }
+  .dictionary-pos[data-pos~="adjective"] { color: #866000; }
+  .dictionary-pos[data-pos~="adverb"] { color: #7544a4; }
+  [data-theme="dark"] .dictionary-pos[data-pos~="noun"] { color: #8cbcff; }
+  [data-theme="dark"] .dictionary-pos[data-pos~="verb"] { color: #ff9daa; }
+  [data-theme="dark"] .dictionary-pos[data-pos~="adjective"] { color: #e6c16a; }
+  [data-theme="dark"] .dictionary-pos[data-pos~="adverb"] { color: #cfacff; }
+  [data-theme="eink"] .dictionary-pos[data-pos] { color: #000; }
+
   /* A quiet hierarchy, with actions outside the scrolling explanation on every screen. */
   [data-word-card].word-sheet-plain,
   [data-word-card].word-sheet-context {
@@ -922,6 +938,11 @@ html[data-ui-font="display"] [class~="[font-variant-numeric:tabular-nums]"] {
       [data-word-card] [data-word-body] {
         overflow-y: scroll;
       }
+    }
+  }
+  @media (min-width: 1024px) {
+    [data-word-card] [data-word-body] {
+      max-height: min(70vh, 34rem);
     }
   }
   [data-word-card] [data-look-target-group] {

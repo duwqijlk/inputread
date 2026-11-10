@@ -161,7 +161,7 @@ export function WordSensePanel({
               {explanation ? communityContent ?? (
                 <>
                   {explanation.pos ? (
-                    <p className="mt-2 text-sm italic text-muted" lang="en">
+                    <p className="dictionary-pos mt-2 text-sm" data-pos={explanation.pos.toLowerCase()} lang="en">
                       {explanation.pos}
                     </p>
                   ) : null}
@@ -235,7 +235,7 @@ export function WordSensePanel({
               <div data-standard-senses>
                 <div data-sense-id={resolution.sense.id} className="pt-2">
                   {resolution.sense.pos ? (
-                    <p className="mb-1 text-xs text-muted">{resolution.sense.pos}</p>
+                    <p className="dictionary-pos mb-1 text-xs" data-pos={resolution.sense.pos.toLowerCase()}>{resolution.sense.pos}</p>
                   ) : null}
                   <p className="break-words font-display text-xl leading-relaxed">
                     {resolution.sense.meaning}
@@ -310,9 +310,10 @@ export function WordSensePanel({
                     {sense.pos ? (
                       <div
                         className={cn(
-                          "mb-1 leading-4 text-muted",
-                          compactCandidates ? "mb-0 text-[0.6875rem]" : "text-xs",
+                          "dictionary-pos text-xs leading-4",
+                          compactCandidates ? "mb-0" : "mb-1",
                         )}
+                        data-pos={sense.pos.toLowerCase()}
                       >
                         {sense.pos}
                       </div>

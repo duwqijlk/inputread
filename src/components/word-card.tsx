@@ -269,7 +269,7 @@ export function WordCard({
       onClose={onClose}
       label={t("card.aria", { word: target })}
       kind="word"
-      desktopWidth={24 * 16}
+      desktopWidth={32 * 16}
       maxViewportRatio={sensePanel || staticSensePanel || meaningContent ? 0.9 : 0.72}
       className={cn(
         "scroll-thin fixed z-40 overflow-y-auto overscroll-contain border-float-edge bg-float px-5 text-ink shadow-pop ",

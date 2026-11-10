@@ -151,6 +151,8 @@ test("actual React sense panel: resolution, controlled votes and attribution", a
           senses.map((sense) => sense.id),
         );
         assert.equal(buttons().length, 3);
+        assert.deepEqual([...container.querySelectorAll('[data-pos]')].map(el => el.dataset.pos), ['noun', 'noun', 'verb']);
+        assert.ok([...container.querySelectorAll('[data-pos]')].every(el => el.classList.contains('dictionary-pos')));
         assert.deepEqual(
           buttons().map((button) => button.textContent),
           ["", "", ""],
