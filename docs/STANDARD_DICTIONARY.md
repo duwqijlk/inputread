@@ -37,6 +37,37 @@ hash selects a shard only; the complete lowercase string remains the key inside 
 Hash collisions therefore do not collapse entries. The index version covers the source release
 and the entire deterministic grouping. Never overwrite an immutable path with different bytes.
 
+## Inflected forms and part-of-speech labels
+
+`n`, `v`, `a`/`s`, and `r` are source codes, displayed as `noun`, `verb`, `adjective`,
+and `adverb` without changing the immutable entry bytes or sense IDs.
+
+When neither exact spelling nor a unique case spelling resolves, the optional `formsIndex`
+publication field enables inflection lookup. Build the explicit exceptions index with:
+
+```bash
+python -I scripts/build-dictionary-form-index.py --source <pinned-git-source> --release <release-directory> --out <new-directory>
+```
+
+The builder verifies the pinned source commit and YAML bytes, the entire released entry inventory,
+and every source sense/POS binding. Only source `form` arrays are indexed, e.g. `children`, `went`,
+`running`; source meanings and IDs are not edited. Outputs are 256 immutable shards under
+`dictionary/form-indexes/forms-v1-<digest12>/`, each mapping a normalized surface to exact
+`{lemma,pos}` candidates. Its manifest records every shard's byte length and SHA-256.
+
+Explicit source forms take precedence over WordNet Morphy suffix-detachment proposals for noun
+plurals, verb inflections, and adjective comparatives/superlatives. A regular proposal is not an
+accepted mapping until the source case inventory and actual entry confirm its lemma and POS.
+Only matching source POS senses are displayed. Competing source lemmas yield ambiguity, never
+an arbitrary selected meaning. This is lexical normalization, not context disambiguation or a
+claim of exhaustive English morphology. Exact senses always remain first (e.g. `news` is not `new`).
+An exact surface may also be an inflected verb: `running`, `learned`, and `stopped` keep their own
+noun/adjective senses and append the uniquely resolved base verb senses, retaining every source ID.
+Unknown, conflicting, malformed, and network-failed lookups remain distinct read-only outcomes.
+
+Publish and verify all form shards before updating `current.json` with `formsIndex`; deploy the
+compatible reader first, back up the old switch bytes and replace it using its current ETag.
+
 ## Publication order
 
 Follow `MAINTENANCE.md` for authorization, production build and Pages deployment.

@@ -7,7 +7,10 @@ export type DictionaryLookup =
   | { kind: "missing" }
   | { kind: "error" };
 
-type Publication = { release: string; caseIndex?: string };
+type Publication = { release: string; caseIndex?: string; formsIndex?: string };
+type FormCandidate = { lemma: string; pos: string };
+const formIndexes = new Map<string, Promise<Record<string, FormCandidate[]>>>();
+const FORMS_INDEX = /^forms-v1-[0-9a-f]{12}$/;
 const RELEASE = /^[a-z0-9][a-z0-9-]{0,79}$/;
 const CASE_INDEX = /^case-v1-[0-9a-f]{12}$/;
 const MAX_ENTRY_BYTES = 192 * 1024;
@@ -59,16 +62,26 @@ async function activeRelease(): Promise<Publication | null> {
         if (!raw || typeof raw !== "object") throw new Error("Invalid dictionary manifest");
         const manifest = raw as Record<string, unknown>;
         if (manifest.schema !== "oewn-r2-current-v1" || typeof manifest.release !== "string" || !RELEASE.test(manifest.release) ||
-          (manifest.caseIndex !== undefined && (typeof manifest.caseIndex !== "string" || !CASE_INDEX.test(manifest.caseIndex)))) {
+          (manifest.caseIndex !== undefined && (typeof manifest.caseIndex !== "string" || !CASE_INDEX.test(manifest.caseIndex))) ||
+          (manifest.formsIndex !== undefined && (typeof manifest.formsIndex !== "string" || !FORMS_INDEX.test(manifest.formsIndex) || !manifest.caseIndex))) {
           throw new Error("Invalid dictionary manifest");
         }
-        return { release: manifest.release, caseIndex: manifest.caseIndex as string | undefined };
+        return { release: manifest.release, caseIndex: manifest.caseIndex as string | undefined, formsIndex: manifest.formsIndex as string | undefined };
       });
     current = { request, expires: Date.now() + CURRENT_TTL };
     void request.catch(() => { if (current?.request === request) current = undefined; });
   }
   return current.request;
 }
+
+// OEWN stores POS codes; expose learner-facing names without rewriting source data.
+const POS_NAMES: Readonly<Record<string, string>> = {
+  n: "noun",
+  v: "verb",
+  a: "adjective",
+  s: "adjective", // adjective satellite is still an adjective for the reader
+  r: "adverb",
+};
 
 function parseEntry(value: unknown, release: string, lookupKey: string): DictionaryLookup {
   if (!value || typeof value !== "object") throw new Error("Invalid dictionary entry");
@@ -86,7 +99,8 @@ function parseEntry(value: unknown, release: string, lookupKey: string): Diction
       throw new Error("Invalid dictionary sense");
     }
     seen.add(sense.id);
-    return { id: sense.id, pos: sense.pos, meaning: sense.meaning };
+    const pos = sense.pos.trim();
+    return { id: sense.id, pos: Object.prototype.hasOwnProperty.call(POS_NAMES, pos) ? POS_NAMES[pos] : pos, meaning: sense.meaning };
   });
   return senses.length ? { kind: "unmapped", senses } : { kind: "missing" };
 }
@@ -144,7 +158,96 @@ async function caseCandidates(publication: Publication, word: string): Promise<s
   return Object.prototype.hasOwnProperty.call(groups, lower) ? groups[lower] : [];
 }
 
-/** Exact first. Only a unique source lemma may resolve a non-exact case variant. */
+// WordNet Morphy detachment rules propose candidates, never fabricate entries or senses.
+// Explicit source forms take precedence. Every proposal must exist with the matching POS.
+export function dictionaryRegularForms(word: string): FormCandidate[] {
+  const lower = word.normalize("NFC").toLowerCase().normalize("NFC");
+  if (!/^[a-z]+$/.test(lower)) return [];
+  const rules: Array<[string, string, string]> = [
+    ["s", "", "n"], ["ses", "s", "n"], ["xes", "x", "n"], ["zes", "z", "n"],
+    ["ches", "ch", "n"], ["shes", "sh", "n"], ["men", "man", "n"], ["ies", "y", "n"],
+    ["s", "", "v"], ["ies", "y", "v"], ["es", "e", "v"], ["es", "", "v"],
+    ["ed", "e", "v"], ["ed", "", "v"], ["ing", "e", "v"], ["ing", "", "v"],
+    ["er", "", "a"], ["est", "", "a"], ["er", "e", "a"], ["est", "e", "a"],
+  ];
+  const candidates = new Map<string, FormCandidate>();
+  for (const [suffix, replacement, pos] of rules) {
+    if (!lower.endsWith(suffix)) continue;
+    const lemma = lower.slice(0, -suffix.length) + replacement;
+    if (lemma.length < 2 || lemma === lower) continue;
+    candidates.set(`${lemma}/${pos}`, { lemma, pos });
+  }
+  return [...candidates.values()];
+}
+
+async function explicitForms(publication: Publication, word: string): Promise<FormCandidate[]> {
+  const shard = dictionaryCaseShard(word);
+  const path = `dictionary/form-indexes/${publication.formsIndex}/${shard}.json`;
+  let pending = formIndexes.get(path);
+  if (!pending) {
+    pending = fetch(booksUrl(path)).then(async response => {
+      if (!response.ok) throw new Error("Dictionary form index unavailable");
+      const raw = await jsonResponse(response, MAX_INDEX_BYTES);
+      if (!raw || typeof raw !== "object") throw new Error("Invalid form index");
+      const index = raw as Record<string, unknown>;
+      if (index.schema !== "oewn-form-index-v1" || index.release !== publication.release || index.indexVersion !== publication.formsIndex || index.shard !== shard ||
+        !index.entries || typeof index.entries !== "object" || Array.isArray(index.entries)) throw new Error("Form index identity mismatch");
+      for (const [form, candidates] of Object.entries(index.entries)) {
+        if (form !== form.normalize("NFC").toLowerCase().normalize("NFC") || dictionaryCaseShard(form) !== shard || !Array.isArray(candidates) || !candidates.length) throw new Error("Invalid form group");
+        const seen = new Set<string>();
+        for (const item of candidates) {
+          if (!item || typeof item !== "object" || typeof item.lemma !== "string" || item.lemma !== item.lemma.normalize("NFC") || !["n", "v", "a", "s", "r"].includes(item.pos)) throw new Error("Invalid form candidate");
+          keyHex(item.lemma);
+          const id = `${item.lemma}/${item.pos}`;
+          if (seen.has(id)) throw new Error("Duplicate form candidate");
+          seen.add(id);
+        }
+      }
+      return index.entries as Record<string, FormCandidate[]>;
+    });
+    formIndexes.set(path, pending);
+    trimCache(formIndexes);
+    void pending.catch(() => { if (formIndexes.get(path) === pending) formIndexes.delete(path); });
+  }
+  const groups = await pending;
+  const lower = word.toLowerCase().normalize("NFC");
+  return Object.prototype.hasOwnProperty.call(groups, lower) ? groups[lower] : [];
+}
+
+async function lookupForms(publication: Publication, word: string): Promise<DictionaryLookup> {
+  const explicit = await explicitForms(publication, word);
+  let proposals = explicit;
+  if (!proposals.length) {
+    // Resolve candidate spelling against the full source inventory before any entry request.
+    const regular = dictionaryRegularForms(word);
+    const resolved = await Promise.all(regular.map(async candidate => {
+      const lemmas = await caseCandidates(publication, candidate.lemma);
+      return lemmas.map(lemma => ({ lemma, pos: candidate.pos }));
+    }));
+    proposals = resolved.flat();
+  }
+  const byLemma = new Map<string, Set<string>>();
+  for (const { lemma, pos } of proposals) {
+    if (!byLemma.has(lemma)) byLemma.set(lemma, new Set());
+    byLemma.get(lemma)!.add(POS_NAMES[pos]);
+  }
+  const matches: StandardSense[][] = [];
+  for (const [lemma, parts] of byLemma) {
+    const result = await exactEntry(publication.release, lemma);
+    if (result.kind === "error") return result;
+    if (result.kind !== "unmapped") {
+      if (explicit.length) return { kind: "error" };
+      continue;
+    }
+    const senses = result.senses.filter(sense => parts.has(sense.pos));
+    if (!senses.length && explicit.length) return { kind: "error" };
+    if (senses.length) matches.push(senses);
+  }
+  if (matches.length > 1) return { kind: "ambiguous" };
+  return matches.length ? { kind: "unmapped", senses: matches[0] } : { kind: "missing" };
+}
+
+/** Exact, then unique case match, then source-backed morphology; ambiguity never selects a lemma. */
 export async function lookupStandardWord(word: string): Promise<DictionaryLookup | null> {
   const lookupKey = word.normalize("NFC");
   try { keyHex(lookupKey); } catch { return { kind: "missing" }; }
@@ -152,16 +255,26 @@ export async function lookupStandardWord(word: string): Promise<DictionaryLookup
   try { publication = await activeRelease(); } catch { return { kind: "error" }; }
   if (!publication) return null;
   const { release } = publication;
-  const cacheKey = `${release}/${publication.caseIndex ?? "exact"}/${lookupKey}`;
+  const cacheKey = `${release}/${publication.caseIndex ?? "exact"}/${publication.formsIndex ?? "no-forms"}/${lookupKey}`;
   let pending = requests.get(cacheKey);
   if (!pending) {
     pending = (async (): Promise<DictionaryLookup> => {
+      const withForms = async (base: DictionaryLookup): Promise<DictionaryLookup> => {
+        if (!publication.formsIndex || base.kind === "error" || base.kind === "ambiguous") return base;
+        const forms = await lookupForms(publication, lookupKey);
+        if (base.kind !== "unmapped") return forms;
+        // Inflections can also be independent nouns/adjectives (running, learned, stopped).
+        // Keep every exact sense and append only a uniquely resolved, source-backed form's POS senses.
+        if (forms.kind !== "unmapped") return base;
+        const seen = new Set(base.senses.map(sense => sense.id));
+        return { kind: "unmapped", senses: [...base.senses, ...forms.senses.filter(sense => !seen.has(sense.id))] };
+      };
       const exact = await exactEntry(release, lookupKey);
-      if (exact.kind !== "missing" || !publication.caseIndex) return exact;
+      if (exact.kind !== "missing" || !publication.caseIndex) return withForms(exact);
       const candidates = await caseCandidates(publication, lookupKey);
       if (candidates.length > 1) return { kind: "ambiguous" };
-      if (candidates.length === 0) return { kind: "missing" };
-      return exactEntry(release, candidates[0]);
+      if (candidates.length === 0) return withForms({ kind: "missing" });
+      return withForms(await exactEntry(release, candidates[0]));
     })().catch((): DictionaryLookup => ({ kind: "error" }));
     requests.set(cacheKey, pending);
     trimCache(requests);
