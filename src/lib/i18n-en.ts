@@ -31,6 +31,7 @@ export const en = {
   "card.senses.guest": "Sign in with a verified email to choose the meaning used here.",
   "card.senses.unverified": "Verify your email to choose the meaning used here.",
   "card.senses.authLoading": "Checking your account…",
+  "card.senses.voteUnavailable": "Meaning choices are not open yet.",
   "card.senses.pending": "Saving your choice…",
   "card.senses.voteFailed": "Your choice was not saved. Try again.",
   "card.senses.voteFixed": "This position now has a confirmed meaning.",

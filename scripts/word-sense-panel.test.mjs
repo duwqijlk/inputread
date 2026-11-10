@@ -41,6 +41,7 @@ const messages = {
   "card.senses.guest": "Sign in to vote.",
   "card.senses.unverified": "Verify your email to vote.",
   "card.senses.authLoading": "Checking voting eligibility...",
+  "card.senses.voteUnavailable": "Meaning choices are not open yet.",
   "card.senses.pending": "Saving vote...",
   "card.senses.voteFailed": "Vote not saved. Try again.",
   "card.senses.voteFixed": "This location now has a fixed meaning.",
@@ -257,6 +258,7 @@ test("actual React sense panel: resolution, controlled votes and attribution", a
           ["guest", messages["card.senses.guest"]],
           ["unverified", messages["card.senses.unverified"]],
           ["loading", messages["card.senses.authLoading"]],
+          ["unavailable", messages["card.senses.voteUnavailable"]],
         ]) {
           await render({ vote: { ...verified, eligibility } });
           assert.ok(buttons().every((button) => button.disabled));

@@ -34,6 +34,7 @@ export const zh: Record<Key, string> = {
   "card.senses.guest": "登录并验证邮箱后，可以选择这个位置的意思。",
   "card.senses.unverified": "验证邮箱后，可以选择这个位置的意思。",
   "card.senses.authLoading": "正在确认账号状态……",
+  "card.senses.voteUnavailable": "义项选择暂未开放。",
   "card.senses.pending": "正在保存选择……",
   "card.senses.voteFailed": "选择未保存，请重试。",
   "card.senses.voteFixed": "这个位置已确认标准释义。",
