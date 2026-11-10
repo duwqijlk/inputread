@@ -92,6 +92,31 @@ test("real WordCard retains community identity and accepts a typed sense panel",
     assert.equal(container.querySelector("[data-test-panel]").textContent, "recommended", "new selection remounts view state");
     await render({ compactLookups: false });
     assert.ok(container.querySelector("[data-word-footer]"), "explicit old footer remains supported");
+
+    const pending = new Map(); const lookups = [];
+    stubs["@/lib/standard-dictionary"].lookupStandardWord = (word) => {
+      lookups.push(word);
+      return new Promise(resolve => pending.set(word, resolve));
+    };
+    await render({ state: { ...state, surface: "Bank", key: "bank" }, selectionId: 10 });
+    assert.equal(lookups.at(-1), "Bank", "query exact book spelling, never the legacy lowercase key");
+    assert.equal(container.querySelector("h2").textContent, "Bank");
+    const bankResult = { kind: "unmapped", senses: [{ id: "bank-existing", pos: "n", meaning: "Bank meaning" }] };
+    await act(async () => pending.get("Bank")(bankResult));
+    assert.equal(received.panel.resolution, bankResult);
+    assert.equal(received.panel.vote.eligibility, "unavailable");
+    assert.ok(received.panel.communityContent);
+    await render({ state: { ...state, surface: "London", key: "london" }, selectionId: 11 });
+    assert.equal(container.querySelector("[data-test-panel]"), null, "old result never renders for the new target");
+    await render({ state: { ...state, surface: "Us", key: "us" }, selectionId: 12 });
+    await act(async () => pending.get("London")({ kind: "unmapped", senses: [{ id: "london-existing", pos: "n", meaning: "London meaning" }] }));
+    assert.equal(container.querySelector("[data-test-panel]"), null, "late previous response is ignored");
+    await act(async () => pending.get("Us")({ kind: "ambiguous" }));
+    assert.equal(container.querySelector("[data-dictionary-status]").textContent, "card.senses.ambiguous");
+    assert.equal(container.querySelector("[data-test-panel]"), null);
+    await render({ state: { ...state, surface: "BANK", key: "bank", meaning: "", ready: false, status: "unknown" }, selectionId: 13 });
+    await act(async () => pending.get("BANK")(bankResult));
+    assert.ok(received.panel.communityEditor, "unknown words retain real missing-meaning feedback");
   } finally {
     await act(async () => root.unmount());
     dom.window.close();

@@ -186,7 +186,7 @@ export function WordCard({
   const { t } = useT();
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [lookupsOpen, setLookupsOpen] = useState(false);
-  const [standardLookup, setStandardLookup] = useState<DictionaryLookup | null>(null);
+  const [standardResult, setStandardResult] = useState<{ at: string; value: DictionaryLookup | null } | null>(null);
   const activePhrase = targetMode === "phrase" ? phrase : null;
   const target = activePhrase?.key ?? state.key;
   const targetMeaning = activePhrase ? activePhrase.entry.meaning : state.meaning;
@@ -204,17 +204,18 @@ export function WordCard({
     body.scrollTop = 0;
     setLookupsOpen(false);
   }, [selectionId, targetMode, target]);
+  // Prefer the exact spelling in the book, not resolveGlossKey's lowercase/heuristic stem.
+  const dictionaryKey = state.surface.normalize("NFC");
+  const dictionaryAt = `${bookId}:${selectionId}:${targetMode}:${dictionaryKey}`;
+  const standardLookup = standardResult?.at === dictionaryAt ? standardResult.value : null;
   useEffect(() => {
     let alive = true;
-    setStandardLookup(null);
-    if (activePhrase || !target.trim()) return () => { alive = false; };
-    void lookupStandardWord(target).then((result) => {
-      if (alive) setStandardLookup(result);
+    if (activePhrase || sensePanel || meaningContent || !dictionaryKey.trim()) return;
+    void lookupStandardWord(dictionaryKey).then((value) => {
+      if (alive) setStandardResult({ at: dictionaryAt, value });
     });
-    return () => {
-      alive = false;
-    };
-  }, [activePhrase, target]);
+    return () => { alive = false; };
+  }, [activePhrase, sensePanel, meaningContent, dictionaryKey, dictionaryAt]);
   const report = {
     bookId,
     bookTitle,
@@ -254,6 +255,9 @@ export function WordCard({
           resolution: standardLookup,
           community: legacyMeaning ? { kind: "community", meaning: targetMeaning, pos: targetPos } : undefined,
           communityContent: legacyMeaning,
+          communityEditor: missing ? (
+            <WordMeaning key={dictionaryAt} meaning="" missing noList={noList} part="word-meaning" target={report} />
+          ) : undefined,
           vote: { eligibility: "unavailable", selectedId: null, pending: false },
           onVote: () => undefined,
           onWrite: () => undefined,
@@ -266,7 +270,7 @@ export function WordCard({
       label={t("card.aria", { word: target })}
       kind="word"
       desktopWidth={24 * 16}
-      maxViewportRatio={sensePanel || meaningContent ? 0.9 : 0.72}
+      maxViewportRatio={sensePanel || staticSensePanel || meaningContent ? 0.9 : 0.72}
       className={cn(
         "scroll-thin fixed z-40 overflow-y-auto overscroll-contain border-float-edge bg-float px-5 text-ink shadow-pop ",
         "word-sheet-plain",
@@ -292,7 +296,7 @@ export function WordCard({
               )}
               lang="en"
             >
-              {target}
+              {activePhrase ? target : state.surface}
             </h2>
           </div>
           <div className="flex shrink-0 items-center gap-1" data-word-actions>
@@ -425,6 +429,11 @@ export function WordCard({
               </div>
             ))
           )}
+          {!activePhrase && !sensePanel && !meaningContent && standardLookup && standardLookup.kind !== "unmapped" ? (
+            <p className="font-sans text-sm leading-5 text-muted" role={standardLookup.kind === "error" ? "alert" : "status"} data-dictionary-status>
+              {t(standardLookup.kind === "ambiguous" ? "card.senses.ambiguous" : standardLookup.kind === "error" ? "card.senses.error" : "card.senses.missing")}
+            </p>
+          ) : null}
           {/* One small line when the word list has a note for this sentence; the note opens in
               the paragraph panel. It shows nothing when there is none. */}
           {onSentenceHelp ? (
