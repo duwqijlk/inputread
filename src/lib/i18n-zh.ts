@@ -28,6 +28,7 @@ export const zh: Record<Key, string> = {
   "card.senses.loading": "正在查询释义……",
   "card.senses.error": "暂时无法读取释义。",
   "card.senses.missing": "词典暂未收录这个词。",
+  "card.senses.ambiguous": "这个写法可能对应多个大小写不同的词条，暂不自动选择释义。",
   "card.senses.empty": "这个词暂无可显示的义项。",
   "card.senses.vote": "这个意思适用于此处：{meaning}",
   "card.senses.cancelVote": "取消我的选择：{meaning}",

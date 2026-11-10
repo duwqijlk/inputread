@@ -25,6 +25,7 @@ export const en = {
   "card.senses.loading": "Looking up meanings…",
   "card.senses.error": "Meanings could not be loaded.",
   "card.senses.missing": "This word is not in the dictionary yet.",
+  "card.senses.ambiguous": "This spelling could match more than one dictionary word. No meaning was chosen.",
   "card.senses.empty": "No meanings are available for this word.",
   "card.senses.vote": "This meaning fits here: {meaning}",
   "card.senses.cancelVote": "Remove my choice: {meaning}",
