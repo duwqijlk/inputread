@@ -100,7 +100,7 @@ function parseEntry(value: unknown, release: string, lookupKey: string): Diction
     }
     seen.add(sense.id);
     const pos = sense.pos.trim();
-    return { id: sense.id, pos: Object.prototype.hasOwnProperty.call(POS_NAMES, pos) ? POS_NAMES[pos] : pos, meaning: sense.meaning };
+    return { id: sense.id, pos: Object.prototype.hasOwnProperty.call(POS_NAMES, pos) ? POS_NAMES[pos] : pos, meaning: sense.meaning, source: { lemma: lookupKey, release } };
   });
   return senses.length ? { kind: "unmapped", senses } : { kind: "missing" };
 }

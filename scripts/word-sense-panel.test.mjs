@@ -287,7 +287,7 @@ test("actual React sense panel: resolution, controlled votes and attribution", a
         assert.deepEqual(calls.votes, []);
         await render({ vote: { ...verified, selectedId: senses[0].id, error: "failed" } });
         assert.equal(
-          container.querySelector('[aria-live="polite"]').textContent,
+          container.querySelector('[aria-live="polite"] p').textContent,
           messages["card.senses.voteFailed"],
         );
         assert.equal(buttons()[0].getAttribute("aria-pressed"), "true");

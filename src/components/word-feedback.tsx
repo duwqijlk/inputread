@@ -27,10 +27,10 @@ export type FeedbackTarget = {
   glossaryRev?: string;
 };
 
-async function send(target: FeedbackTarget, reason: FeedbackReason, suggestion?: string): Promise<void> {
+async function send(target: FeedbackTarget, reason: FeedbackReason, suggestion?: string): Promise<boolean> {
   const { catalogId, ...rest } = target;
   try {
-    await fetch("/api/feedback/word", {
+    const response = await fetch("/api/feedback/word", {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
@@ -41,8 +41,9 @@ async function send(target: FeedbackTarget, reason: FeedbackReason, suggestion?:
         ...(suggestion ? { suggestion: suggestion.slice(0, SUGGESTION_MAX) } : {}),
       }),
     });
+    return response.ok;
   } catch {
-    // A failed report still shows as received: the reader cannot do more about it.
+    return false;
   }
 }
 
@@ -86,6 +87,7 @@ export function WordMeaning({
   part,
   target,
   children,
+  compactMissing = false,
 }: {
   meaning: string;
   pos?: string;
@@ -94,6 +96,8 @@ export function WordMeaning({
   missing: boolean;
   /** The book has no word list at all: one more line under the missing message. */
   noList?: boolean;
+  /** A standard dictionary list is visible: offer a quiet, collapsed community writing action. */
+  compactMissing?: boolean;
   part: "word-meaning" | "phrase-meaning";
   target: FeedbackTarget;
   /** Shown under the meaning and its credit (the coined-word badge). */
@@ -106,6 +110,7 @@ export function WordMeaning({
   const [step, setStep] = useState<Step>({ kind: "choose" });
   const [busy, setBusy] = useState<FeedbackReason | null>(null);
   const [text, setText] = useState("");
+  const [sendFailed, setSendFailed] = useState(false);
   const sentSomething = step.kind === "reason" || step.kind === "wrote";
 
   // Esc closes the box and gives focus back to the ?.
@@ -124,8 +129,10 @@ export function WordMeaning({
   async function sendReason(reason: "too_hard" | "wrong_meaning" | "missing_meaning") {
     if (busy) return;
     setBusy(reason);
-    await send(target, reason);
+    setSendFailed(false);
+    const ok = await send(target, reason);
     setBusy(null);
+    if (!ok) { setSendFailed(true); return; }
     setStep({ kind: "reason", reason });
   }
 
@@ -134,23 +141,29 @@ export function WordMeaning({
     if (!value || busy) return;
     const reason: FeedbackReason = missing ? "missing_meaning" : "suggested";
     setBusy(reason);
-    await send(target, reason, value);
+    setSendFailed(false);
+    const ok = await send(target, reason, value);
     setBusy(null);
+    if (!ok) { setSendFailed(true); return; }
     setText("");
     setStep({ kind: "wrote" });
   }
 
-  const startWriting = () =>
+  const startWriting = () => {
+    setSendFailed(false);
     setStep((now) => ({
       kind: "writing",
       back: now.kind === "reason" ? "reason" : "choose",
       reason: now.kind === "reason" ? now.reason : undefined,
     }));
+  };
   const cancelWriting = () => {
     setText("");
+    setSendFailed(false);
     setStep((now) =>
       now.kind === "writing" && now.back === "reason" && now.reason ? { kind: "reason", reason: now.reason } : { kind: "choose" },
     );
+    if (compactMissing) requestAnimationFrame(() => helpRef.current?.focus());
   };
 
   const choice = (label: string, onClick: () => void, data: Record<string, string>, extra?: string, icon?: ReactNode) => (
@@ -278,6 +291,29 @@ export function WordMeaning({
     );
   })();
 
+  if (missing && compactMissing) {
+    return (
+      <div className="grid gap-2" data-word-primary data-community-compose>
+        {step.kind === "choose" ? (
+          <button
+            ref={helpRef}
+            type="button"
+            onClick={startWriting}
+            aria-expanded={false}
+            className="inline-flex min-h-11 items-center gap-2 justify-self-start rounded px-1 font-sans text-sm font-bold text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            data-feedback-add-meaning
+          >
+            <PenLine className="size-4" aria-hidden />
+            {t("card.feedbackAddMeaning")}
+          </button>
+        ) : (
+          <div className="rounded-xl border border-line p-3" data-feedback-options>{body}{sendFailed ? <p role="alert" className="mt-2 text-sm text-warn">{t("card.feedbackFailed")}</p> : null}</div>
+        )}
+        {children}
+      </div>
+    );
+  }
+
   if (missing) {
     return (
       <div className="grid gap-2.5 rounded-2xl bg-accent-soft p-3" data-word-primary>
@@ -286,7 +322,7 @@ export function WordMeaning({
           {noList ? <span className="mt-1 block text-muted">{t("card.noList")}</span> : null}
         </p>
         <div role="group" aria-label={t("card.feedbackPrompt")} data-feedback-options>
-          {body}
+          {body}{sendFailed ? <p role="alert" className="mt-2 text-sm text-warn">{t("card.feedbackFailed")}</p> : null}
         </div>
         {children}
       </div>
@@ -327,7 +363,7 @@ export function WordMeaning({
       {open ? (
         step.kind === "reason" || step.kind === "wrote" ? (
           <div id={boxId} className="anim-rise" data-feedback-options>
-            {body}
+            {body}{sendFailed ? <p role="alert" className="mt-2 text-sm text-warn">{t("card.feedbackFailed")}</p> : null}
           </div>
         ) : (
           <div
@@ -338,7 +374,7 @@ export function WordMeaning({
             data-feedback-options
           >
             {step.kind === "choose" ? <p className="text-[0.8125rem] font-bold text-muted">{t("card.feedbackQuestion")}</p> : null}
-            {body}
+            {body}{sendFailed ? <p role="alert" className="mt-2 text-sm text-warn">{t("card.feedbackFailed")}</p> : null}
           </div>
         )
       ) : null}

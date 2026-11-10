@@ -416,10 +416,22 @@ export async function handleExport(request: Request, env: Env, options?: Handler
     )
       .bind(user.id)
       .all<SyncRow>();
+    const dictionaryChoices = await env.DB.prepare(
+      "SELECT target_hash, target_json, choice_id, choice_lemma, choice_release, created_at, updated_at FROM dictionary_choices WHERE user_id = ? ORDER BY target_hash",
+    ).bind(user.id).all<{
+      target_hash: string; target_json: string; choice_id: string; choice_lemma: string;
+      choice_release: string; created_at: number; updated_at: number;
+    }>();
     return json({
       exportedAt: nowOf(options),
       account: { email: user.email, createdAt: user.created_at, nickname: user.nickname ?? null },
       items: items.results.map(rowToItem),
+      dictionaryChoices: dictionaryChoices.results.map((row) => ({
+        targetHash: row.target_hash, target: JSON.parse(row.target_json) as unknown,
+        choice: { id: row.choice_id, lemma: row.choice_lemma, release: row.choice_release },
+        createdAt: row.created_at, updatedAt: row.updated_at,
+        status: "pending-review", positionValidated: false,
+      })),
     });
   } catch (error) {
     return errorResponse(error);

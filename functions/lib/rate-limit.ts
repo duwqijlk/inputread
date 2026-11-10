@@ -25,11 +25,13 @@ export const RATE_LIMITS = {
   // plus an R2 get of a word list or a sync body - a cheap way to spend someone else's quota.
   "glossary:user": 120,
   "sync:user": 300,
+  // Strict shared count on every request, including reads and idempotent repeats.
+  "choices:user": 120,
 } as const;
 
 export type RateAction = "login" | "register" | "reset" | "sponsor" | "signup-code";
 export type IpRateAction = RateAction | "taps" | "feedback";
-export type UserRateAction = "glossary" | "sync" | "code-send" | "code-check";
+export type UserRateAction = "glossary" | "sync" | "code-send" | "code-check" | "choices";
 
 /**
  * Buckets that live a day rather than a window. They are kept out of the short prune: today's row
@@ -52,6 +54,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 export const DAILY_WRITE_BUDGET = {
   taps: 20_000,
+  // Raw dictionary selections have their own conservative fuse. The endpoint charges only
+  // actual mutations atomically with the write, not reads or repeated identical selections.
+  choices: 5_000,
 } as const;
 
 /**

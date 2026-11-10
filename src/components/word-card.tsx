@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import merriamWebsterLogo from "@/assets/merriam-webster-logo.png";
 import { countSurface, type OtherMeaning } from "@/lib/glossary-format";
 import { lookupStandardWord, type DictionaryLookup } from "@/lib/standard-dictionary";
+import { useDictionaryChoices } from "@/lib/dictionary-choices";
 import { useT, type Key } from "@/lib/i18n";
 import { LOOKUP_SITES, lookupUrl, type LookupSite } from "@/lib/lookup-links";
 import { surfaceOffset } from "@/lib/text";
@@ -249,6 +250,15 @@ export function WordCard({
       </WordMeaning>
     </div>
   ) : null;
+  const choiceActions = useDictionaryChoices(
+    !activePhrase && !sensePanel && !meaningContent && standardLookup?.kind === "unmapped" ? {
+      bookId, catalogId, chapter: state.chapter ?? chapter, chapters: chapters ?? 0,
+      paragraph: state.paragraph ?? 0, occurrence: state.occurrence ?? 1,
+      word: dictionaryKey, sentence: state.fullSentence ?? state.sentence,
+      context: state.context ?? "", glossaryRev: state.glossaryRev ?? "",
+    } : null,
+    standardLookup?.kind === "unmapped" ? standardLookup.senses : [],
+  );
   const staticSensePanel: WordSensePanelProps | undefined =
     !activePhrase && standardLookup?.kind === "unmapped"
       ? {
@@ -256,10 +266,9 @@ export function WordCard({
           community: legacyMeaning ? { kind: "community", meaning: targetMeaning, pos: targetPos } : undefined,
           communityContent: legacyMeaning,
           communityEditor: missing ? (
-            <WordMeaning key={dictionaryAt} meaning="" missing noList={noList} part="word-meaning" target={report} />
+            <WordMeaning key={dictionaryAt} meaning="" missing compactMissing noList={noList} part="word-meaning" target={report} />
           ) : undefined,
-          vote: { eligibility: "unavailable", selectedId: null, pending: false },
-          onVote: () => undefined,
+          ...choiceActions,
           onWrite: () => undefined,
         }
       : undefined;

@@ -28,6 +28,16 @@ Before using the new resolution SQL, confirm migration `0025_feedback_resolution
 in D1's migration history. If missing, stay read-only and ask the operator; never migrate from patrol.
 See [documentation authority](https://inputread.site/kit/maintenance.md#ownership).
 
+## Explicit-choice collection update
+
+Passive word taps are retired: `book_word_taps` is historical evidence only, and the old ingest
+endpoint writes nothing. New explicit dictionary thumbs are stored in `dictionary_choices` after
+migration 0026. They are **raw pending-review evidence**, not validated public position votes.
+Do not reuse tap counts as thumbs, turn source-ID membership into proof of a book coordinate,
+or auto-fix a mapping from a choice. See the source [choice contract](https://github.com/duwqijlk/inputread/blob/main/docs/DICTIONARY_CHOICES.md).
+This legacy glossary patrol is not a newly authorized canonical dictionary-mapping publisher.
+Its existing word/passage feedback review flow and historical tap procedures remain available.
+
 ## 1. The job
 
 Readers of inputread.site read English books with a word list (glossary) that explains hard
