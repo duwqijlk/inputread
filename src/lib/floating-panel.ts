@@ -46,6 +46,8 @@ export function placeFloatingPanel(input: {
   width: number;
   height: number;
   minHeight?: number;
+  /** Fraction of the viewport height a desktop overlay may use before its body scrolls. */
+  maxViewportRatio?: number;
   viewportWidth: number;
   viewportHeight: number;
 }): PanelPlace {
@@ -58,7 +60,10 @@ export function placeFloatingPanel(input: {
   const spaceRight = vw - aRight - GAP - PAD;
   const spaceLeft = anchor.left - GAP - PAD;
   const minimum = Math.min(height, input.minHeight ?? 72, Math.max(72, vh - PAD * 2));
-  const cap = Math.min(vh - PAD * 2, Math.max(minimum, Math.min(Math.round(vh * 0.72), 640)));
+  const cap = Math.min(
+    vh - PAD * 2,
+    Math.max(minimum, Math.min(Math.round(vh * (input.maxViewportRatio ?? 0.72)), 640)),
+  );
   const content = Math.max(1, height);
   const need = Math.min(content, cap);
   // Under the word when that gap can show the card. Otherwise the taller side, so a word

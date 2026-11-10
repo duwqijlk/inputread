@@ -69,6 +69,7 @@ export function WordSensePanel({
   const tabs = Boolean(explanation) && unresolved;
   const active = tabs ? selectedTab : recommended ? "recommended" : "dictionary";
   const canVote = vote.eligibility === "verified" && !vote.pending && vote.error !== "fixed";
+  const compactCandidates = unresolved && !explanation;
   const reason = !unresolved
     ? undefined
     : vote.eligibility === "guest"
@@ -273,28 +274,19 @@ export function WordSensePanel({
           <div className={label}>
             {t(unresolved ? "card.senses.candidates" : "card.senses.standard")}
           </div>
-          {unresolved ? (
-            <p
-              id={`${id}-vote-help`}
-              className="mt-1 text-xs leading-relaxed text-muted"
-              data-sense-vote-help
-            >
-              {t("card.senses.voteHelp")}
-            </p>
-          ) : null}
           {senses.length > 0 ? (
             <ul
               data-standard-senses
-              className="m-0 list-none divide-y divide-line p-0"
+              className={cn("m-0 list-none divide-y divide-line p-0", compactCandidates && "text-[0.9375rem]")}
               aria-busy={vote.pending}
             >
               {senses.map((sense) => (
-                <li key={sense.id} data-sense-id={sense.id} className="flex items-start gap-3 py-3">
+                <li key={sense.id} data-sense-id={sense.id} className={cn("flex items-start", compactCandidates ? "gap-1.5 py-1" : "gap-3 py-3")}>
                   <div className="min-w-0 flex-1">
                     {sense.pos ? (
-                      <div className="mb-1 text-xs leading-4 text-muted">{sense.pos}</div>
+                      <div className={cn("mb-1 leading-4 text-muted", compactCandidates ? "mb-0 text-[0.6875rem]" : "text-xs")}>{sense.pos}</div>
                     ) : null}
-                    <p className="break-words font-display text-lg leading-relaxed">
+                    <p className={cn("break-words font-display leading-snug", compactCandidates ? "text-[0.9375rem]" : "text-lg leading-relaxed")}>
                       {sense.meaning}
                     </p>
                   </div>
@@ -311,11 +303,14 @@ export function WordSensePanel({
                         : "card.senses.fitsHere",
                     )}
                     aria-pressed={vote.selectedId === sense.id}
-                    aria-describedby={`${id}-vote-help${reason ? ` ${id}-eligibility` : ""}`}
+                    aria-describedby={reason ? `${id}-eligibility` : undefined}
                     disabled={!canVote}
                     onClick={() => choose(sense.id)}
                     className={cn(
-                      "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded px-2 font-sans text-sm disabled:cursor-not-allowed",
+                      cn(
+                        "inline-flex shrink-0 items-center justify-center rounded font-sans disabled:cursor-not-allowed",
+                        compactCandidates ? "min-h-11 min-w-11" : "min-h-11 min-w-11 gap-1.5 px-2 text-sm",
+                      ),
                       focus,
                       vote.selectedId === sense.id
                         ? "bg-accent-soft text-accent"

@@ -14,7 +14,7 @@ export const zh: Record<Key, string> = {
   "card.senses.dictionary": "词典义项",
   "card.senses.more": "更多词典",
   "card.senses.candidates": "哪个意思符合这里的用法？",
-  "card.senses.voteHelp": "点击赞表示这个意思符合此处语境，不是评价解释写得好。可以改选或取消，选择之后会经过核对。",
+  "card.senses.voteHelp": "符合这里的用法。",
   "card.senses.fitsHere": "符合此处语境",
   "card.senses.removeChoice": "取消我的选择",
   "card.senses.choiceSaved": "选择已保存，等待核对。",

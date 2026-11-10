@@ -11,7 +11,7 @@ export const en = {
   "card.senses.dictionary": "Dictionary",
   "card.senses.more": "More dictionaries",
   "card.senses.candidates": "Which meaning fits here?",
-  "card.senses.voteHelp": "Use the thumbs-up to choose the meaning used here, not your favourite explanation. You can change or remove your choice. It will be reviewed.",
+  "card.senses.voteHelp": "Fits this context.",
   "card.senses.fitsHere": "Fits here",
   "card.senses.removeChoice": "Remove my choice",
   "card.senses.choiceSaved": "Choice saved. Pending review.",
