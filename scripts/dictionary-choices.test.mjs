@@ -212,6 +212,98 @@ test("source exact UTF8 hex, nominated provenance and exact ID membership only (
   assert.equal(f.budget(), 1);
 });
 
+test("mutable existing uploaded paths validate latest IDs without a new directory or release switch", async () => {
+  const f=await fixture();
+  f.files.set('dictionary/current.json',{...f.files.get('dictionary/current.json'),wordsMutable:true});
+  f.files.set(pathFor(CHOICE.lemma),{...entry(),release:'oewn-word-edit'});
+  const oldChoice={...CHOICE,release:'oewn-old-client'};
+  await success(await f.call(payload(oldChoice)),oldChoice);
+  assert.ok(f.gets.includes(pathFor(CHOICE.lemma)));
+  assert.equal(f.gets.some(key=>key.startsWith('dictionary/words/')),false);
+  f.files.set(pathFor(CHOICE.lemma),{...entry(),release:'oewn-word-edit-two',senses:[entry().senses[1]]});
+  await error(await f.call(payload(oldChoice)),400,'dictionary-choice');
+  assert.equal(f.rows()[0].choice_id,CHOICE.id);
+  for(const wordsMutable of [false,'true',1,null]) {
+    f.files.set('dictionary/current.json',{schema:'oewn-r2-current-v1',release:RELEASE,wordsMutable});
+    await error(await f.call(payload()),503,'dictionary-unavailable');
+  }
+});
+
+test("stable per-lemma entries accept edited release provenance and preserve submitted evidence", async () => {
+  const f = await fixture();
+  const manifest = { ...f.files.get("dictionary/current.json"), wordsMutable: true };
+  f.files.set("dictionary/current.json", manifest);
+  f.files.set(pathFor(CHOICE.lemma), entry());
+  await success(await f.call(payload()), CHOICE);
+  const initial = f.rows()[0];
+  // An edited entry's release differs from both the index publication and old browser metadata.
+  f.files.set(pathFor(CHOICE.lemma), { ...entry(), release: "oewn-2026-entry-edit" });
+  await success(await f.call(payload(), { now: NOW + 1 }), CHOICE);
+  await success(await f.call(), CHOICE);
+  assert.deepEqual(f.rows()[0], initial);
+  assert.equal(f.rows()[0].choice_release, RELEASE);
+  assert.equal(f.budget(), 1);
+  assert.deepEqual(f.gets, ["dictionary/current.json", "dictionary/releases/oewn-2025-809369f31478/words/63/636166c3a9.json",
+    "dictionary/current.json", "dictionary/releases/oewn-2025-809369f31478/words/63/636166c3a9.json"]);
+  // Release still belongs to recorded evidence: sameChoice is deliberately unchanged.
+  const refreshed = { ...CHOICE, release: "oewn-2026-entry-edit" };
+  await success(await f.call(payload(refreshed), { now: NOW + 2 }), refreshed);
+  assert.equal(f.rows()[0].choice_release, refreshed.release);
+  assert.equal(f.budget(), 2);
+});
+
+test("stable membership rejects removed, nearby and foreign IDs, even with old immutable entries", async () => {
+  const f = await fixture();
+  f.files.set("dictionary/current.json", { ...f.files.get("dictionary/current.json"), wordsMutable: true });
+  f.files.set(pathFor(CHOICE.lemma), entry());
+  await success(await f.call(payload()), CHOICE);
+  const foreignId = "opaque-source-id/foreign";
+  f.files.set(pathFor("tea"), { ...entry("tea"), senses: [{ ...entry().senses[0], id: foreignId }] });
+  f.files.set(pathFor(CHOICE.lemma), { ...entry(), release: "oewn-2026-edited", senses: [entry().senses[1]] });
+  for (const id of [CHOICE.id, `${SECOND.id}-nearby`, foreignId]) {
+    await error(await f.call(payload({ ...CHOICE, id })), 400, "dictionary-choice");
+  }
+  await error(await f.call(payload({ ...CHOICE, lemma: "Café" })), 400, "dictionary-choice");
+  assert.equal(f.rows()[0].choice_id, CHOICE.id);
+  assert.equal(f.budget(), 1);
+  assert.equal(f.gets.some((key) => key.startsWith("dictionary/words/")), false);
+});
+
+test("unsupported wordBase routing is rejected without selecting another directory", async () => {
+  for (const wordBase of [null, false, 0, [], {}, "", "dictionary/words/", "Dictionary/words", " dictionary/words",
+    "dictionary/words/../releases", "../dictionary/words", "dictionary/releases/other/words", "/dictionary/words",
+    "https://foreign.test/dictionary/words", "//foreign.test/dictionary/words", "dictionary\\words"]) {
+    const f = await fixture();
+    f.files.set("dictionary/current.json", { ...f.files.get("dictionary/current.json"), wordBase });
+    // Even a valid stable object cannot rescue malformed manifest routing.
+    f.files.set(pathFor(CHOICE.lemma), entry());
+    await error(await f.call(payload()), 503, "dictionary-unavailable");
+    assert.deepEqual(f.gets, ["dictionary/current.json"]);
+    assert.equal(f.rows().length, 0); assert.equal(f.budget(), 0);
+  }
+});
+
+test("missing mutable word fails at the original path without trying a new directory", async () => {
+  const f=await fixture();f.files.set('dictionary/current.json',{...f.files.get('dictionary/current.json'),wordsMutable:true});
+  f.files.delete(pathFor(CHOICE.lemma));await error(await f.call(payload()),400,'dictionary-choice');
+  assert.deepEqual(f.gets,['dictionary/current.json',pathFor(CHOICE.lemma)]);
+});
+
+test("stable entries retain exact lookupKey, complete sense validation, schema and byte bounds", async () => {
+  for (const bad of ["x".repeat(32769), "{broken", { ...entry(), schema: "wrong" }, { ...entry(), lookupKey: "Café" },
+    ...[undefined, null, 7, "", "../bad", "UPPER", "x".repeat(81)].map((release) => ({ ...entry(), release })),
+    { ...entry(), senses: [{ id: CHOICE.id }] },
+    { ...entry(), senses: [entry().senses[0], entry().senses[0]] },
+    { ...entry(), senses: [entry().senses[0], { ...entry().senses[1], meaning: "" }] }]) {
+    const f = await fixture();
+    f.files.set("dictionary/current.json", { ...f.files.get("dictionary/current.json"), wordsMutable: true });
+    f.files.set(pathFor(CHOICE.lemma), bad);
+    await error(await f.call(payload()), 503, "dictionary-unavailable");
+    assert.deepEqual(f.gets, ["dictionary/current.json", pathFor(CHOICE.lemma)]);
+    assert.equal(f.rows().length, 0); assert.equal(f.budget(), 0);
+  }
+});
+
 test("invalid/oversize source objects and entry schema fail closed before any write", async () => {
   for (const bad of ["x".repeat(32769), { ...entry(), schema: "wrong" }, { ...entry(), release: "other" },
     { ...entry(), lookupKey: "Cafe" }, { ...entry(), senses: [{ id: CHOICE.id }] },
