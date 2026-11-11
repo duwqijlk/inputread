@@ -14,9 +14,11 @@ export type ChoiceTarget = {
   sentence: string;
   context?: string;
   glossaryRev?: string;
+  paragraphText?: string;
+  position?: { chapterSha256: string; paragraphIndex: number; paragraphSha256: string; offset: number; surface: string };
 };
 
-type State = { scope: string; selectedId: string | null; acknowledged?: boolean; pending: boolean; error?: "failed" };
+type State = { scope: string; selectedId: string | null; acknowledged?: boolean; pending: boolean; error?: "failed" | "fixed" };
 const acknowledged = new Map<string, string | null>();
 let cacheAccount: string | null = null;
 
@@ -44,7 +46,7 @@ export function useDictionaryChoices(target: ChoiceTarget | null, senses: Standa
   const eligibility: WordSensePanelProps["vote"]["eligibility"] = !available ? "unavailable" : phase === "unknown" ? "loading" : phase !== "in" ? "guest" : !emailVerified ? "unverified" : "verified";
   async function choose(id: string | null) {
     const generation = active.current.generation;
-    if (eligibility !== "verified" || busy.current === generation || !target) return;
+    if (eligibility !== "verified" || current?.error === "fixed" || busy.current === generation || !target) return;
     const candidate = id === null ? null : senses.find(s => s.id === id);
     if (id !== null && !candidate?.source) return;
     busy.current = generation;
@@ -65,8 +67,8 @@ export function useDictionaryChoices(target: ChoiceTarget | null, senses: Standa
       acknowledged.set(scope, nextId);
       if (acknowledged.size > 128) acknowledged.delete(acknowledged.keys().next().value!);
       setState({ scope, selectedId: nextId, pending: false, acknowledged: true });
-    } catch {
-      if (mounted.current && active.current.generation === generation) setState({ scope, selectedId: before, pending: false, error: "failed" });
+    } catch (error) {
+      if (mounted.current && active.current.generation === generation) setState({ scope, selectedId: before, pending: false, error: error instanceof Error && error.message === "fixed" ? "fixed" : "failed" });
     } finally {
       if (busy.current === generation) busy.current = null;
     }

@@ -29,8 +29,9 @@ claim the nominated lemma has been proved to match the surface, or the source te
 have been validated. Every response/export says `status: pending-review, positionValidated: false`.
 A client cannot publish mappings, create sense IDs, edit definitions, or turn these records into
 valid public vote totals. Roadmap source-coordinate proof and any mapping publication must be
-implemented independently before treating these as valid position votes. No nightly mapper is
-silently enabled by this collection feature.
+proved before treating these as valid position votes. The separately authorized 02:00 review
+procedure in GLOSSARY_PATROL.md section 10 must verify original chapter/paragraph text and coordinates,
+publish an exact-position mapping, read it back, then record acceptance and durable credit.
 
 A cancellation removes that reader's current evidence. There is no review-queue/tombstone policy
 or consensus threshold. Maintenance can read pending evidence via authorized D1 tools, but must
@@ -48,8 +49,8 @@ verify the original text, edition, location and candidate binding before taking 
 - Membership JSON/SHA/SQL are bounded, but production Free-plan CPU timing has NOT been measured.
   Do not claim the 10 ms budget is proven by a payload cap or local unit tests.
 
-Apply additive migration `0026_dictionary_choices.sql` before deploying code using the new table,
-including account export. Follow MAINTENANCE.md: inspect actual pending migrations, preserve a
+Apply additive migrations `0026_dictionary_choices.sql` and `0027_dictionary_choice_review.sql`
+before deploying code using the choice/review/credit tables, including account export and contributor totals. Follow MAINTENANCE.md: inspect actual pending migrations, preserve a
 backup/recovery point and never replay old migrations. No existing tap or feedback history is deleted.
 
 ## Community writing

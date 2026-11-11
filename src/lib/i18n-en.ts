@@ -1440,6 +1440,7 @@ export const en = {
   "card.feedbackWrong": "Wrong",
   "card.feedbackMissing": "Tell us it's missing",
   "card.creditBy": "From {name}",
+  "card.matchedBy": "Matched by {name}",
   "card.creditAnon": "a reader",
   "card.feedbackAddMeaning": "Write my own",
   "card.feedbackMeaningPlaceholder": "e.g. to walk slowly because you are tired",

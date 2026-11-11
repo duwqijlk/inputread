@@ -197,6 +197,8 @@ export function ReaderScreen({
     before: string;
     /** which paragraph of the chapter this is, counted the way the word list counts them */
     block: number;
+    /** Exact rendered chapter text, captured locally for publication-safe position fingerprints. */
+    positionParagraphs: string[];
   } | null>(null);
   // Paragraph help (overlay). `index` is the paragraph number from paragraphBlocks().
   // `sentence`: the sentence a word card was opened on, so its note starts selected.
@@ -1452,6 +1454,7 @@ export function ReaderScreen({
       nth,
       before,
       block: Math.max(0, blockAt),
+      positionParagraphs: blocks.map(el => flowText(el)),
     });
     // One voice per tap. The card's own lookup (`findPhrase`) speaks later only when this list
     // did not know the phrase, and it compares against `spoken.current` so nothing says it twice.
@@ -1569,6 +1572,8 @@ export function ReaderScreen({
         paragraph: tap.block,
         chapter: viewChapter,
         glossaryRev,
+        positionParagraphs: tap.positionParagraphs,
+        positionOffset: Array.from(tap.before).length,
       };
     }
     // Not in this book's word list: say so in a friendly way, the same for every such word (a
@@ -1588,6 +1593,8 @@ export function ReaderScreen({
       paragraph: tap.block,
       chapter: viewChapter,
       glossaryRev,
+      positionParagraphs: tap.positionParagraphs,
+      positionOffset: Array.from(tap.before).length,
     };
   }
 

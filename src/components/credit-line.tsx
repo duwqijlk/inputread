@@ -7,7 +7,7 @@ import { useT } from "@/lib/i18n";
  * contributors.json names the reader, so a credit never shows an id or an email. A reader without a
  * nickname is "a reader".
  */
-export function CreditLine({ id }: { id: string }) {
+export function CreditLine({ id, kind = "community" }: { id: string; kind?: "community" | "match" }) {
   const { t } = useT();
   const person = useContributor(id);
   if (!person) return null;
@@ -15,7 +15,7 @@ export function CreditLine({ id }: { id: string }) {
   return (
     <p className="flex items-center gap-1.5 text-xs text-muted" data-part="credit" data-credit={id}>
       <Avatar id={person.id} name={person.name} version={person.avatar} size={18} eager />
-      <span className="min-w-0 truncate">{t("card.creditBy", { name })}</span>
+      <span className="min-w-0 truncate">{t(kind === "match" ? "card.matchedBy" : "card.creditBy", { name })}</span>
     </p>
   );
 }

@@ -280,6 +280,21 @@ test("storage/source failure is safe, no raw errors, budget and mutation roll ba
   await error(await f.call(), 500, "server");
 });
 
+test("paragraph evidence rejects mismatched hashes and fixed mappings reject stale choices", async () => {
+  const f = await fixture();
+  const paragraphText = 'The Cafés were busy.';
+  const position = { chapterSha256: await sha256Hex(JSON.stringify([paragraphText])), paragraphIndex: 3,
+    paragraphSha256: await sha256Hex(paragraphText), offset: 4, surface: 'Cafés' };
+  const target = { ...TARGET, paragraphText, position };
+  await success(await f.call(payload(CHOICE, target)), CHOICE);
+  await error(await f.call(payload(CHOICE, { ...target, paragraphText: 'The Cafés were quiet.' })), 400, 'bad-position-evidence');
+  const key = await sha256Hex(JSON.stringify([target.catalogId, position.chapterSha256, position.paragraphIndex, position.paragraphSha256, position.offset, position.surface]));
+  f.files.set('dictionary/positions/word-lists/book/mappings.json', {schema:'oewn-position-mappings-v1',catalogId:target.catalogId,
+    entries:[{...position,positionKey:key,senseId:CHOICE.id,lemma:CHOICE.lemma,release:RELEASE,reviewedAt:NOW}]});
+  await error(await f.call(payload(SECOND,target)),409,'fixed');
+  assert.equal(f.rows()[0].choice_id,CHOICE.id);
+});
+
 test("account export includes pending raw choices and account deletion cascades", async () => {
   const f = await fixture();
   await success(await f.call(payload()), CHOICE);

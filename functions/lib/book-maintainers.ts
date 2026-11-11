@@ -63,6 +63,10 @@ export async function bookMaintainers(
          SELECT user_id, catalog_id, book_title,
                 'p:' || book_id || ':' || chapter || ':' || paragraph || ':' || selected AS place, accepted_at
            FROM passage_feedback WHERE accepted_at > 0 AND user_id IS NOT NULL
+         UNION ALL
+         SELECT user_id, catalog_id, '' AS book_title,
+                'd:' || position_key AS place, accepted_at
+           FROM dictionary_choice_credits
        )
        SELECT u.public_id AS id, COALESCE(u.nickname, '') AS name, u.avatar_rev AS avatar,
               a.catalog_id AS ref, a.book_title AS title,

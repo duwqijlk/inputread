@@ -32,6 +32,9 @@ export async function contributorRows(db: D1Database): Promise<ContributorRow[]>
          UNION ALL
          SELECT user_id, 'p:' || book_id || ':' || chapter || ':' || paragraph || ':' || selected AS place, accepted_at
            FROM passage_feedback WHERE accepted_at > 0 AND user_id IS NOT NULL
+         UNION ALL
+         SELECT user_id, 'd:' || position_key AS place, accepted_at
+           FROM dictionary_choice_credits
        )
        SELECT u.public_id AS id, COALESCE(u.nickname, '') AS name, u.avatar_rev AS avatar,
               COUNT(DISTINCT a.place) AS helped
@@ -88,6 +91,8 @@ export async function isContributor(db: D1Database, userId: string): Promise<boo
       `SELECT 1 AS yes FROM word_feedback WHERE user_id = ?1 AND accepted_at > 0
        UNION ALL
        SELECT 1 AS yes FROM passage_feedback WHERE user_id = ?1 AND accepted_at > 0
+       UNION ALL
+       SELECT 1 AS yes FROM dictionary_choice_credits WHERE user_id = ?1
        LIMIT 1`,
     )
     .bind(userId)

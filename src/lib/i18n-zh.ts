@@ -1399,6 +1399,7 @@ export const zh: Record<Key, string> = {
   "card.feedbackWrong": "不对",
   "card.feedbackMissing": "告诉我们缺了",
   "card.creditBy": "由 {name} 提供",
+  "card.matchedBy": "由 {name} 匹配",
   "card.creditAnon": "一位读者",
   "card.feedbackAddMeaning": "我来写一个",
   "card.feedbackMeaningPlaceholder": "例如：to walk slowly because you are tired",

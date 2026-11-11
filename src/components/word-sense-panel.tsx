@@ -24,6 +24,8 @@ export type WordSensePanelProps = {
   communityEditor?: ReactNode;
   /** Render a resolved public contributor credit, never a raw public id or email. */
   communityCredit?: ReactNode;
+  /** Independent credit for the accepted context match, never the community explanation's author. */
+  standardCredit?: ReactNode;
   vote: {
     eligibility: "verified" | "guest" | "unverified" | "loading" | "unavailable";
     selectedId: string | null;
@@ -48,6 +50,7 @@ export function WordSensePanel({
   communityContent,
   communityEditor,
   communityCredit,
+  standardCredit,
   vote,
   onVote,
   onWrite,
@@ -242,6 +245,7 @@ export function WordSensePanel({
                   </p>
                 </div>
               </div>
+              {standardCredit ? <div className="mt-2" data-standard-match-credit>{standardCredit}</div> : null}
               {onStandardWrong ? (
                 <button
                   type="button"

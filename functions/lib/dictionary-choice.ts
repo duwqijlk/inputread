@@ -21,6 +21,8 @@ export type ChoiceTarget = {
   sentence: string;
   context?: string;
   glossaryRev?: string;
+  paragraphText?: string;
+  position?: { chapterSha256: string; paragraphIndex: number; paragraphSha256: string; offset: number; surface: string };
 };
 export type ChoiceRequest = { action: "get" | "set"; target: ChoiceTarget; choice: DictionaryChoice | null };
 export type ChoiceRow = {
@@ -52,7 +54,7 @@ export function parseChoiceRequest(value: unknown): ChoiceRequest {
   if (!record(value) || !fields(value, ["action", "target", "choice"], ["action", "target"]) ||
     (value.action !== "get" && value.action !== "set") || !record(value.target)) throw new HttpError(400, "bad-choice");
   const t = value.target;
-  if (!fields(t, ["bookId", "catalogId", "chapter", "chapters", "paragraph", "occurrence", "word", "sentence", "context", "glossaryRev"],
+  if (!fields(t, ["bookId", "catalogId", "chapter", "chapters", "paragraph", "occurrence", "word", "sentence", "context", "glossaryRev", "paragraphText", "position"],
     ["bookId", "chapter", "chapters", "paragraph", "occurrence", "word", "sentence"]) ||
     !text(t.bookId, 64) || !/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(t.bookId) ||
     (t.catalogId !== undefined && (!text(t.catalogId, 80, 0) || (t.catalogId !== "" && !/^(word-lists|public-books):[a-z0-9][a-z0-9_-]{0,63}$/.test(t.catalogId)))) ||
@@ -69,6 +71,17 @@ export function parseChoiceRequest(value: unknown): ChoiceRequest {
     word: t.word, sentence: t.sentence, context: t.context as string | undefined ?? "",
     glossaryRev: t.glossaryRev as string | undefined ?? "",
   };
+  if (t.position !== undefined || t.paragraphText !== undefined) {
+    const p = t.position;
+    if (!record(p) || !fields(p, ["chapterSha256", "paragraphIndex", "paragraphSha256", "offset", "surface"]) ||
+      typeof p.chapterSha256 !== "string" || !/^[0-9a-f]{64}$/.test(p.chapterSha256) ||
+      typeof p.paragraphSha256 !== "string" || !/^[0-9a-f]{64}$/.test(p.paragraphSha256) ||
+      !integer(p.paragraphIndex, 0, 1_000_000) || p.paragraphIndex !== target.paragraph ||
+      !integer(p.offset, 0, 100_000) || !text(p.surface, 240) || p.surface.normalize("NFC") !== target.word ||
+      !text(t.paragraphText, 3000) || Array.from(t.paragraphText).slice(p.offset, p.offset + Array.from(p.surface).length).join("") !== p.surface) throw new HttpError(400, "bad-position-evidence");
+    target.paragraphText = t.paragraphText;
+    target.position = { chapterSha256: p.chapterSha256, paragraphIndex: p.paragraphIndex, paragraphSha256: p.paragraphSha256, offset: p.offset, surface: p.surface };
+  }
   let choice: DictionaryChoice | null = null;
   if (value.action === "set" && !Object.hasOwn(value, "choice")) throw new HttpError(400, "bad-choice");
   if (value.choice !== null && value.choice !== undefined) {
@@ -142,6 +155,20 @@ export async function checkChoiceMembership(env: Env, choice: DictionaryChoice):
     ids.add(sense.id);
   }
   if (!ids.has(choice.id)) throw new HttpError(400, "dictionary-choice");
+}
+
+/** A published, exact matching source position is read-only, never reopened by a stale thumb. */
+export async function assertChoiceUnfixed(env: Env, target: ChoiceTarget): Promise<void> {
+  if (!target.position || !target.catalogId || !env.BOOKS) return;
+  const [catalog, id] = target.catalogId.split(":");
+  const object = await env.BOOKS.get(`dictionary/positions/${catalog}/${id}/mappings.json`);
+  if (!object) return;
+  const raw = await sourceJson(object, 192 * 1024);
+  if (!record(raw) || raw.schema !== "oewn-position-mappings-v1" || raw.catalogId !== target.catalogId || !Array.isArray(raw.entries)) throw new HttpError(503, "mapping-unavailable");
+  const p = target.position;
+  const key = await sha256Hex(JSON.stringify([target.catalogId, p.chapterSha256, p.paragraphIndex, p.paragraphSha256, p.offset, p.surface]));
+  const match = raw.entries.find(row => record(row) && row.positionKey === key && row.chapterSha256 === p.chapterSha256 && row.paragraphIndex === p.paragraphIndex && row.paragraphSha256 === p.paragraphSha256 && row.offset === p.offset && row.surface === p.surface);
+  if (match) throw new HttpError(409, "fixed");
 }
 
 export async function choicePosition(target: ChoiceTarget): Promise<{ hash: string; json: string }> {
