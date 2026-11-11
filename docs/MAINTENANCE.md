@@ -230,11 +230,31 @@ outcome, not proof a write failed. Read the affected R2 objects/catalog before r
 | R2 publish worked, completion/credit D1 update failed | Keep the verified content; report pending record updates. Reconcile the exact report ids/revision under Patrol rather than accepting reports whose content was not used. |
 | No snapshot / uncertain restore | Do not regenerate from frozen Git files. Report the inconsistent keys, observed hashes and missing backup; request operator recovery. |
 
-`publishWithCatalog()` snapshots existing file bytes and attempts restoration after a caught
-write failure. It is **best effort**, not an atomic publish: restore errors can fail, process
-termination may bypass cleanup, newly created objects remain, and original HTTP metadata is not
-snapshotted. Cover/private writes are not all inside this helper. Never report rollback as complete
-until readback proves consistency. Do not mark feedback resolved merely because a PUT was attempted.
+Targeted admin publication hardening uses actual R2 ETags (`onlyIf.etagMatches`, or
+`etagDoesNotMatch: '*'` for an absent object). The exact catalog object used to merge is passed
+as baseline; content objects are snapshotted before side effects, including HTTP/custom metadata.
+Null precondition results are conflicts, not successful writes. Readback checks exact bytes, size,
+returned ETag and declared metadata. Missing version data fails closed rather than disabling CAS.
+
+`publishWithCatalog()` remains **best effort**, not an R2 multi-object or R2/D1 transaction.
+A confirmed precondition conflict can restore only old objects, conditional on the ETag returned
+by this operation's own PUT. Concurrent edits are never overwritten during restoration; new
+objects remain explicit orphans rather than unsafe unconditional deletes. A thrown/timeout PUT
+may already have committed (including catalog), so it is `publication-uncertain`, not permission
+to restore old files or retry automatically. Read back actual objects under the exclusive window.
+
+Migration `0028_publication_audit.sql` is required before deploying the guarded admin code.
+The audit stores bounded operation/key, internal admin actor ID, baseline/new ETags, timing and
+terminal outcome; no book contents, request bodies, emails or credentials. Audit setup fails before
+side effects. A completion-audit failure after writes reports committed uncertainty, not a failed
+publish to blindly retry. Audit is not a substitute for byte backups or actual recovery evidence.
+
+Coverage is deliberately limited: admin word-list/catalog batches, catalog-backed public-book
+writes, metadata and blurb use the helper. Private EPUB/cover direct writes, unrelated endpoints
+and external patrol/CLI writers have NOT become one unified publication service. Blurb CAS is
+an operation-level storage baseline, not stale-browser-draft protection; no client baseRev API is
+invented. Keep the exclusive-window/direct-writer rules above. No new patrol account or bypass
+endpoint is enabled. Do not mark feedback resolved merely because a PUT was attempted.
 
 <a id="deploy"></a>
 ## Application deployment and schema changes
@@ -283,6 +303,39 @@ npx wrangler pages deploy dist --project-name margin-words --branch main
 D1 migrations, R2 data changes, Pages deployment and the zone's WAF rule (word-list block) are separate actions.
 Do not bundle a frozen book-directory upload into a site deploy. Application rollback does not
 restore D1, R2, or device data; verify schema and data compatibility before selecting an older app.
+
+## Read-only budget measurement
+
+Use `node scripts/measure-budgets.mjs` with explicit local inputs; reports never contain book
+sentences, passwords, cookies or request bodies. This tool does not query D1 or change R2.
+
+```bash
+node scripts/measure-budgets.mjs --mappings-root <downloaded-mapping-directory> --out <new-report.json>
+```
+
+```bash
+node scripts/measure-budgets.mjs --request-log <normalized-requests.jsonl> --sync-payload <local-sync-payload.json> --out <new-report.json>
+```
+
+Each request row is `{event:"request",resource:"word"|"publication"|"case-index"|"form-index"|
+"position-mapping"|"api",elapsedMs,status,cfCacheStatus?}`; optional lookup rows contain
+`{event:"lookup",firstDisplayMs}`. Request paths/user text are not included in the report.
+Client/network request totals are NOT authenticated R2 billed Class B totals. A HIT header on
+one sample does not establish global cache hit rate, and DYNAMIC is not a measured billing count.
+
+```bash
+node scripts/measure-budgets.mjs --probe-public --out <new-public-sample.json>
+```
+
+The explicit public probe makes exactly two bounded unauthenticated GETs to fixed public
+dictionary URLs (publication + hotel); it never calls accounts, submits feedback or reads private
+books. Its elapsed time is wall/network time, **not Function CPU time**.
+
+For actual CPU, obtain operator-authorized Cloudflare platform-export data separately and
+normalize JSONL rows as `{source:"cloudflare-platform-export",route:"/api/...",cpuTimeMs}`.
+The report groups supplied CPU samples by route; it cannot authenticate an edited local export.
+Missing CPU/billing evidence stays null, not guessed from `Date.now`, SQL duration or request latency.
+No background metrics D1 writes or user analytics endpoint is enabled by this measurement tool.
 
 <a id="troubleshooting"></a>
 ## Troubleshooting: where to start

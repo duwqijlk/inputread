@@ -1,0 +1,44 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-core:
+    name: Public core / Node 22
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.8'
+      - name: Install Python test dependencies
+        run: python -m pip install PyYAML==6.0.2 Pillow==11.1.0
+      - name: Install locked JavaScript dependencies
+        run: npm ci
+      - name: Typecheck reader
+        run: npm run typecheck
+      - name: Typecheck Pages Functions
+        run: npm run typecheck:functions
+      - name: Check English-only book content
+        run: npm run check:cjk
+      - name: Run required public-core tests
+        run: npm run test:ci
+      - name: Build production-equivalent local assets
+        run: npm run build:local
+      - name: Check legacy bundle and loader ES5 syntax
+        run: npm run check:es5

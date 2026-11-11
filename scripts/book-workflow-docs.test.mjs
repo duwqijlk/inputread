@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { normalizeTitle, replacesSameBook } from '../src/lib/book-title.ts';
+import { preparePositional } from './lib/sqlite-positional.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const upload = readFileSync(join(ROOT, 'docs/BOOK_UPLOAD.md'), 'utf8');
@@ -98,9 +99,9 @@ test('documented tap SQL resolves only the verified primary key and catalog snap
       ['device-a', 2, 1, 'word-lists:a'], ['device-a', 1, 2, 'word-lists:a'], ['legacy', 1, 1, ''],
     ]) insert.run(...row);
     // Every open tap is reachable: rank the words (all of them recent here), then read each one's places.
-    const locate = db.prepare(tapSelect);
-    const ranked = db.prepare(tapRank).all(0);
-    const openTaps = () => db.prepare(tapRank).all(0).flatMap((w) => locate.all(w.book, w.word));
+    const locate = preparePositional(db, tapSelect);
+    const ranked = preparePositional(db, tapRank).all(0);
+    const openTaps = () => preparePositional(db, tapRank).all(0).flatMap((w) => locate.all(w.book, w.word));
     assert.deepEqual(ranked.map((w) => w.book).sort(), ['public-books:b', 'title:Same Title', 'word-lists:a']);
     const selected = openTaps();
     assert.equal(selected.length, 5);
@@ -143,7 +144,7 @@ test('the tap ranking skips an old single tap, keeps it pending, and lifts it wh
     tap.run('device-2', 'shared', 1, now - 20 * DAY);
     tap.run('device-3', 'again', 3, now - 30 * DAY); // one reader, three taps
     tap.run('device-4', 'fresh', 1, now - 2 * DAY); // one recent tap
-    const words = () => db.prepare(tapRank).all(now - 14 * DAY).map((w) => w.word);
+    const words = () => preparePositional(db, tapRank).all(now - 14 * DAY).map((w) => w.word);
     assert.deepEqual(words(), ['shared', 'again', 'fresh'], 'most readers first; the old single tap waits');
     assert.equal(db.prepare("SELECT status FROM book_word_taps WHERE word = 'lonely'").get().status, 'pending');
     tap.run('device-5', 'lonely', 1, now - 1 * DAY);

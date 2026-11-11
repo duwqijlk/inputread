@@ -5,7 +5,8 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PBKDF2_ITERATIONS, hashPassword, sha256Hex, verifyPassword } from "../functions/lib/password.ts";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
+import { PBKDF2_ITERATIONS, hashPassword, sha256Hex, sha256HexBytes, verifyPassword } from "../functions/lib/password.ts";
 import { rateLimitIp, sessionCookie } from "../functions/lib/http.ts";
 import {
   handleDelete,
@@ -79,7 +80,7 @@ function openDb() {
   }
   return {
     prepare(sql) {
-      const stmt = db.prepare(sql);
+      const stmt = preparePositional(db, sql);
       const api = {
         args: [],
         bind(...values) {
@@ -967,6 +968,8 @@ test("admin users: gate, search, grant trusted, admin locked", async () => {
 });
 
 function stubBucket(files) {
+  const metadata = new Map();
+  const etagOf = async (bytes) => `"${await sha256HexBytes(bytes)}"`;
   return {
     async get(key) {
       const value = files.get(key);
@@ -976,16 +979,25 @@ function stubBucket(files) {
         body: new Blob([copy]).stream(),
         arrayBuffer: async () => copy.buffer,
         size: copy.byteLength,
+        etag: await etagOf(copy),
+        httpEtag: await etagOf(copy),
+        ...metadata.get(key),
       };
     },
-    async put(key, value) {
+    async put(key, value, options = {}) {
       const bytes = typeof value === "string"
         ? new TextEncoder().encode(value)
         : value instanceof Uint8Array
           ? value
           : new Uint8Array(value);
-      files.set(key, bytes);
-      return {};
+      const current = files.get(key);
+      const tag = current ? await etagOf(current) : null;
+      if (options.onlyIf?.etagMatches && options.onlyIf.etagMatches !== tag) return null;
+      if (options.onlyIf?.etagDoesNotMatch === "*" && current) return null;
+      files.set(key, bytes.slice());
+      metadata.set(key, { httpMetadata: options.httpMetadata, customMetadata: options.customMetadata });
+      const etag = await etagOf(bytes);
+      return { etag, httpEtag: etag };
     },
   };
 }
@@ -3480,7 +3492,7 @@ test("public validation and same-book refusals write no content or catalogs, bot
   assert.equal((await f.upload(f.epub, validPublicGlossary({ title: "Great Book: A Novel" }))).status, 200);
 });
 
-test("public multipart catalog failure compensates EPUB, glossary and cover; restore failures remain best effort", async () => {
+test("public multipart unknown catalog commit retains written files for reconciliation without rollback", async () => {
   for (const failRestore of [false, true]) {
     const f = await publicPublishFixture();
     const before = new Map([...f.files].map(([key, value]) => [key, value.slice()]));
@@ -3492,12 +3504,14 @@ test("public multipart catalog failure compensates EPUB, glossary and cover; res
       return f.backing.put(key, value, options);
     };
     const response = await f.upload(publishText("NEW-EPUB"), validPublicGlossary({ future: "new" }), publishText("NEW-COVER"));
-    assert.equal(response.status, 500);
-    assert.equal((await response.json()).error, "server");
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error, "publication-uncertain");
     for (const [key, bytes] of before) {
-      if (failRestore && key.endsWith("book.epub")) assert.notDeepEqual(f.files.get(key), bytes);
-      else assert.deepEqual(f.files.get(key), bytes, key);
+      if (key === "public-books/catalog.json") assert.deepEqual(f.files.get(key), bytes, key);
+      else assert.notDeepEqual(f.files.get(key), bytes, `unknown catalog commit must not roll back ${key}`);
     }
+    assert.equal(f.writes.filter((key) => key === "public-books/catalog.json").length, 1);
+    assert.equal(f.writes.length, 4, "three content writes and one uncertain catalog PUT, no retry or restoration");
     assert.equal(f.db.raw.prepare("SELECT COUNT(*) AS n FROM catalog_locks").get().n, 0, "failures always release lock");
   }
 });

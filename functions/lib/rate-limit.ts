@@ -52,6 +52,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * the whole site): above it, a flood of taps would spend the allowance and stop sign-in and sync
  * until the next day. 20,000 rows, plus the index writes they cause, leaves most of it for them.
  */
+/** Actual choice mutations per account per UTC day; repeats and reads do not count. */
+export const DAILY_USER_CHOICE_BUDGET = 200;
+
 export const DAILY_WRITE_BUDGET = {
   taps: 20_000,
   // Raw dictionary selections have their own conservative fuse. The endpoint charges only

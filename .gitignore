@@ -47,3 +47,11 @@ local-exports/
 .env.local
 .env.*.local
 .dev.vars
+
+# Local validation snapshots and dictionary shards; never part of a release.
+/.verification/
+
+# Local-only artifacts from the separate catalog genre backfill.
+/docs/genre-proposal-report.mjs
+/docs/genre-proposal-standalones.json
+/scripts/genre-proposal-standalones.mjs

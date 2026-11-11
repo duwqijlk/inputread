@@ -1,7 +1,7 @@
 import type { D1Database, D1Statement, Env, R2ObjectLike } from "./db.ts";
 import { HttpError } from "./http.ts";
 import { sha256Hex } from "./password.ts";
-import { DAILY_WRITE_BUDGET } from "./rate-limit.ts";
+import { DAILY_USER_CHOICE_BUDGET, DAILY_WRITE_BUDGET } from "./rate-limit.ts";
 
 export const CHOICE_REQUEST_BYTES = 8192;
 const ENTRY_BYTES = 32 * 1024;
@@ -200,8 +200,9 @@ export function choiceResult(choice: DictionaryChoice | null) {
 export async function saveChoice(db: D1Database, userId: string, position: { hash: string; json: string }, choice: DictionaryChoice | null, now: number): Promise<void> {
   const day = Math.floor(now / 86_400_000) * 86_400_000;
   const bucket = `budget:choices:${day}`; // Daily prefix is excluded from short-window pruning.
-  const available = "COALESCE((SELECT hits FROM rate_limits WHERE bucket = ? AND window_start = ?), 0) < ?";
-  const budgetArgs = [bucket, day, DAILY_WRITE_BUDGET.choices];
+  const userBucket = `budget:choice-user:${userId}:${day}`;
+  const available = "COALESCE((SELECT hits FROM rate_limits WHERE bucket = ? AND window_start = ?), 0) < ? AND COALESCE((SELECT hits FROM rate_limits WHERE bucket = ? AND window_start = ?), 0) < ?";
+  const budgetArgs = [bucket, day, DAILY_WRITE_BUDGET.choices, userBucket, day, DAILY_USER_CHOICE_BUDGET];
   let mutation: D1Statement;
   if (choice) {
     mutation = db.prepare(`INSERT INTO dictionary_choices (user_id, target_hash, target_json, choice_id, choice_lemma, choice_release, created_at, updated_at)
@@ -217,13 +218,21 @@ export async function saveChoice(db: D1Database, userId: string, position: { has
   }
   const results = await db.batch([
     mutation,
-    db.prepare(`INSERT INTO rate_limits (bucket, window_start, hits) SELECT ?, ?, 1 WHERE changes() > 0
-      ON CONFLICT(bucket, window_start) DO UPDATE SET hits = hits + 1 RETURNING hits`).bind(bucket, day),
+    // Both counters depend on the original mutation's changes(), in a single statement.
+    // A third statement would accidentally charge a no-op based on the counter insert itself.
+    db.prepare(`INSERT INTO rate_limits (bucket, window_start, hits)
+      SELECT ?, ?, 1 WHERE changes() > 0
+      UNION ALL SELECT ?, ?, 1 WHERE changes() > 0
+      ON CONFLICT(bucket, window_start) DO UPDATE SET hits = hits + 1 RETURNING hits`).bind(bucket, day, userBucket, day),
   ]);
   if (!results[0]?.results || !results[1]?.results) throw new HttpError(500, "server");
   if (results[0].results.length > 0) {
-    if (results[1].results.length !== 1) throw new HttpError(500, "server");
+    if (results[1].results.length !== 2) throw new HttpError(500, "server");
     return;
   }
-  if (!sameChoice(await existingChoice(db, userId, position.hash), choice)) throw new HttpError(429, "choices-budget");
+  if (!sameChoice(await existingChoice(db, userId, position.hash), choice)) {
+    const usage = await db.prepare("SELECT hits FROM rate_limits WHERE bucket = ? AND window_start = ?")
+      .bind(userBucket, day).first<{ hits: number }>();
+    throw new HttpError(429, (usage?.hits ?? 0) >= DAILY_USER_CHOICE_BUDGET ? "choices-user-budget" : "choices-budget");
+  }
 }

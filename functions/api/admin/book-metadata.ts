@@ -2,7 +2,7 @@ import { requireAdmin } from "../../lib/admin.ts";
 import type { Env, R2ObjectLike } from "../../lib/db.ts";
 import type { HandlerOptions } from "../../lib/handlers.ts";
 import { errorResponse, HttpError, json } from "../../lib/http.ts";
-import { withCatalogLock } from "../../lib/catalog-lock.ts";
+import { publishObject, withCatalogLock } from "../../lib/catalog-lock.ts";
 import { applyMetadata, metadataRow, type MetadataSource } from "../../lib/book-metadata.ts";
 import { BOOK_METADATA_BYTES, readBookMetadataRequest } from "../../../src/lib/book-metadata.ts";
 import { CATALOG_ID, type CatalogName } from "../../../src/lib/catalog-id.ts";
@@ -68,7 +68,7 @@ export async function handleGet(request: Request, env: Env, options?: HandlerOpt
 
 export async function handlePatch(request: Request, env: Env, options?: HandlerOptions): Promise<Response> {
   try {
-    await requireAdmin(env.DB, request, options);
+    const actor = await requireAdmin(env.DB, request, options);
     const bucket = env.BOOKS;
     if (!bucket) throw new HttpError(500, "no-books-bucket");
     const input = readBookMetadataRequest(await readBody(request));
@@ -88,10 +88,8 @@ export async function handlePatch(request: Request, env: Env, options?: HandlerO
       }
       const books = input.changes.map((change) => metadataRow(input.catalog, byId.get(change.id)!));
       if (changed) {
-        await bucket.put(key, new TextEncoder().encode(`${JSON.stringify(live, null, 1)}\n`), {
-          ...(object.httpMetadata ? { httpMetadata: object.httpMetadata } : {}),
-          ...(object.customMetadata ? { customMetadata: object.customMetadata } : {}),
-        });
+        await publishObject(bucket, key, new TextEncoder().encode(`${JSON.stringify(live, null, 1)}\n`), object,
+          { db: env.DB, actorId: actor.id, operation: "book-metadata" });
       }
       return json({ books });
     });

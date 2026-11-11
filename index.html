@@ -108,7 +108,7 @@
             record("could not load " + (src || el.tagName));
             if (/\/assets\/[^/]*\.js(\?|$)/.test(src)) recover();
           },
-          true,
+          true
         );
         window.addEventListener("unhandledrejection", function (event) {
           var reason = event && event.reason;

@@ -801,6 +801,14 @@ cross-book reuse. Review one source context once for all captured choices proven
 
 ### Exact position and source proof
 
+When the runner has a trusted checkout, use the read-only `scripts/positions-build.mjs` and
+`positions-verify.mjs` tools described in STANDARD_DICTIONARY.md with the authorized EPUB,
+actual v2 glossary settings and a complete local dictionary snapshot. They reuse the real parser,
+chapter linker, shared reader block extraction and resolver. Successful coordinate/candidate proof
+is NOT semantic approval or a live catalog/edition binding; independently complete those checks
+below. If tools/source inputs are unavailable, keep needs-context rather than guessing. No tool
+implicitly uploads mappings, accepts feedback, awards points or edits standard definitions.
+
 1. Resolve catalogId against both live catalogs; reject ambiguity, custom/no catalog and wrong book.
    Read the authorized original EPUB (private bucket is read-only) and record original-byte SHA-256.
 2. Use the current reader parser, segmentation, spine-merge settings and reading-block extraction.

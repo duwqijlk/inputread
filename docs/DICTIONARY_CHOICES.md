@@ -44,8 +44,12 @@ verify the original text, edition, location and candidate binding before taking 
 
 - POST only; reject foreign Origin and cross-site Fetch Metadata; streamed payload cap 8192 bytes.
 - Strict per-account 120-request / 15-minute limit; both personal-state read and set are limited.
-- Global daily fuse: 5000 actual evidence mutations. Repeated identical sets/cancels do not spend
-  mutation budget. The fuse and mutation execute in one D1 transaction.
+- Per-account daily mutation allowance: 200 actual changes per UTC day, in addition to the
+  120-request / 15-minute gate. UTC here is explicit and separate from the 02:00 patrol schedule.
+- Global daily fuse: 5000 actual evidence mutations. Reads and repeated identical sets/cancels
+  spend neither mutation allowance. User/global gates, payload mutation and both counters execute
+  in one D1 transaction. A blocked account cannot consume the global payload budget; another
+  account can still contribute. Rate-limit counter writes are not the same as payload mutations.
 - Exact source IDs are opaque; no parsing a lemma from an ID. R2 source entry cap 32 KiB.
 - One row per user + target evidence. Account deletion cascades; account export includes rows.
 - Server errors cannot appear as successful choices; selection waits for an acknowledged response.

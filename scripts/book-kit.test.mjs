@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,12 +9,22 @@ import { buildKit, buildSamplePack, KIT_FILES, KIT_NAME, SAMPLE_PACK_NAME } from
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+test("kit text sources use canonical LF bytes on every platform", () => {
+  for (const { from } of KIT_FILES.filter(file => /\.(?:md|json)$/.test(file.from))) {
+    const bytes = readFileSync(join(ROOT, from));
+    assert.equal(bytes.includes(13), false, `${from}: use the LF checkout required by .gitattributes`);
+    assert.equal(bytes.at(-1), 10, `${from}: preserve the final LF`);
+  }
+});
+
 test("the tracked kit is byte-identical to the deterministic generator", async () => {
   const generated = await buildKit();
-  assert.deepEqual(await buildKit(), generated, "repeated kit builds must produce the same bytes");
-  assert.deepEqual(
-    readFileSync(join(ROOT, KIT_NAME)),
-    generated,
+  // Digest comparisons retain exact byte equality without dumping tens of thousands of bytes on failure.
+  const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  assert.equal(digest(await buildKit()), digest(generated), "repeated kit builds must produce the same bytes");
+  assert.equal(
+    digest(readFileSync(join(ROOT, KIT_NAME))),
+    digest(generated),
     "rebuild the tracked kit after changing its specification or sample sources",
   );
 });

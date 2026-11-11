@@ -13,6 +13,7 @@ import { handleContributorsRebuild } from "../functions/api/contributors/rebuild
 import { CONTRIBUTORS_KEY, publishContributors } from "../functions/lib/contributors.ts";
 import { parseContributors } from "../src/lib/contributors-file.ts";
 import { loadAppModules } from "./lib/app-modules.mjs";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
 
 const { format } = await loadAppModules();
 const validateGlossary = (text) => format.validateGlossary(text);
@@ -34,7 +35,7 @@ async function signUpFully(handlerRegister, env, input, now = NOW) {
     env,
     opts,
   );
-  if (started.status !== 202) return started;
+  assert.equal(started.status, 202, `sign-up starts: ${await started.clone().text()}`);
   const { ticket } = await started.json();
   return handleRegisterConfirm(
     new Request(`${input.https ? "https" : "http"}://localhost/api/auth/register/confirm`, {
@@ -54,7 +55,7 @@ function openDb() {
   for (const name of readdirSync(join(ROOT, "migrations")).filter((file) => file.endsWith(".sql")).sort())
     db.exec(readFileSync(join(ROOT, "migrations", name), "utf8"));
   const wrap = (sql) => {
-    const stmt = db.prepare(sql);
+    const stmt = preparePositional(db, sql);
     let args = [];
     const api = {
       bind(...values) { args = values; return api; },
@@ -104,6 +105,7 @@ const request = (path, { method = "POST", cookie, body, ip = "9.9.9.9", raw } = 
 
 async function signUp(env, email) {
   const made = await signUpFully(handleRegister, env, { body: { email, password: "correct horse" } });
+  assert.equal(made.status, 201, `sign-up completes: ${await made.clone().text()}`);
   const cookie = (made.headers.get("set-cookie") ?? "").split(";")[0];
   const user = (await made.json()).user;
   return { cookie, user };
@@ -120,7 +122,7 @@ test("word feedback needs a signed-in reader", async () => {
 test("who sent a report is kept only when it carries their own meaning", async () => {
   const db = openDb();
   const env = { DB: db };
-  const { cookie, user } = await signUp(env, "reader@example.com");
+  const { cookie, user } = await signUp(env, "reader@gmail.com");
   assert.match(user.publicId, /^[a-f0-9]{12}$/, "a new account gets a public id");
   await handleWordFeedbackPost(request("/api/feedback/word", { cookie, body: report }), env, { now: NOW });
   await handleWordFeedbackPost(request("/api/feedback/word", { cookie, body: { ...report, word: "plunge", suggestion: "To jump into water." } }), env, { now: NOW });
@@ -132,9 +134,9 @@ test("contributors.json counts accepted meanings by place, with public ids and n
   const db = openDb();
   const books = bucket();
   const env = { DB: db, BOOKS: books };
-  const a = await signUp(env, "a@example.com");
-  const b = await signUp(env, "b@example.com");
-  db.raw.prepare("UPDATE users SET nickname = 'Ann' WHERE email = 'a@example.com'").run();
+  const a = await signUp(env, "a@gmail.com");
+  const b = await signUp(env, "b@gmail.com");
+  db.raw.prepare("UPDATE users SET nickname = 'Ann' WHERE email = 'a@gmail.com'").run();
   for (const [who, word] of [[a, "dive"], [a, "plunge"], [a, "plunge"], [b, "soar"]]) {
     await handleWordFeedbackPost(request("/api/feedback/word", { cookie: who.cookie, ip: `${word}.1`, body: { ...report, word, suggestion: `Meaning of ${word}.` } }), env, { now: NOW });
   }
@@ -142,7 +144,7 @@ test("contributors.json counts accepted meanings by place, with public ids and n
   assert.equal(await publishContributors(db, books, NOW), 1, "b has nothing accepted yet");
   const file = JSON.parse(books.files.get(CONTRIBUTORS_KEY));
   assert.deepEqual(file.people, [{ id: a.user.publicId, name: "Ann", helped: 2 }], "two places, not three reports");
-  assert.doesNotMatch(books.files.get(CONTRIBUTORS_KEY), /@|example\.com/, "no email in the public file");
+  assert.doesNotMatch(books.files.get(CONTRIBUTORS_KEY), /@|gmail\.com/, "no email in the public file");
   assert.deepEqual(parseContributors(file), file.people);
   assert.deepEqual(parseContributors({ people: [{ id: "BAD", name: "x", helped: 1 }, null] }), [], "bad rows are dropped");
 
@@ -154,7 +156,7 @@ test("an avatar must be a small WebP from a checked account, and goes to the pub
   const db = openDb();
   const books = bucket();
   const env = { DB: db, BOOKS: books };
-  const { cookie, user } = await signUp(env, "pic@example.com");
+  const { cookie, user } = await signUp(env, "pic@gmail.com");
   const webp = new Uint8Array(64);
   webp.set(new TextEncoder().encode("RIFF"), 0);
   webp.set(new TextEncoder().encode("WEBP"), 8);
@@ -162,10 +164,10 @@ test("an avatar must be a small WebP from a checked account, and goes to the pub
   assert.equal(isWebp(new TextEncoder().encode("<svg onload=alert(1)>")), false);
 
   // Every new account is checked now; an older one may not be. Set it back to test the guard.
-  db.raw.prepare("UPDATE users SET email_verified_at = NULL WHERE email = 'pic@example.com'").run();
+  db.raw.prepare("UPDATE users SET email_verified_at = NULL WHERE email = 'pic@gmail.com'").run();
   const unchecked = await handleAvatarPut(request("/api/auth/avatar", { method: "PUT", cookie, raw: webp }), env, { now: NOW });
   assert.equal(unchecked.status, 403, "the email must be checked first");
-  db.raw.prepare("UPDATE users SET email_verified_at = ? WHERE email = 'pic@example.com'").run(NOW);
+  db.raw.prepare("UPDATE users SET email_verified_at = ? WHERE email = 'pic@gmail.com'").run(NOW);
 
   const png = await handleAvatarPut(request("/api/auth/avatar", { method: "PUT", cookie, raw: new Uint8Array(64) }), env, { now: NOW });
   assert.equal(png.status, 415);
@@ -189,8 +191,8 @@ test("an avatar changes once a day; a refused file does not use the change", asy
   const db = openDb();
   const books = bucket();
   const env = { DB: db, BOOKS: books };
-  const { cookie } = await signUp(env, "daily@example.com");
-  db.raw.prepare("UPDATE users SET email_verified_at = ? WHERE email = 'daily@example.com'").run(NOW);
+  const { cookie } = await signUp(env, "daily@gmail.com");
+  db.raw.prepare("UPDATE users SET email_verified_at = ? WHERE email = 'daily@gmail.com'").run(NOW);
   const webp = new Uint8Array(64);
   webp.set(new TextEncoder().encode("RIFF"), 0);
   webp.set(new TextEncoder().encode("WEBP"), 8);
@@ -219,14 +221,14 @@ test("a glossary credit must be a public id", () => {
   assert.equal(ok.ok, true);
   assert.equal(ok.file.glossary.dive.credit, "abc123def456");
   assert.equal(ok.file.glossary.dive.senses[0].credit, "abc123def456");
-  const bad = validateGlossary(JSON.stringify({ version: 2, glossary: { dive: { meaning: "To jump in.", credit: "ann@example.com" } } }));
+  const bad = validateGlossary(JSON.stringify({ version: 2, glossary: { dive: { meaning: "To jump in.", credit: "ann@gmail.com" } } }));
   assert.equal(bad.ok, false);
 });
 
 test("a meaning alone is a report of its own; without text it is refused", async () => {
   const db = openDb();
   const env = { DB: db };
-  const { cookie } = await signUp(env, "suggest@example.com");
+  const { cookie } = await signUp(env, "suggest@gmail.com");
   const empty = await handleWordFeedbackPost(request("/api/feedback/word", { cookie, body: { ...report, word: "lantern", reason: "suggested" } }), env, { now: NOW });
   assert.equal(empty.status, 400, "suggested needs a meaning");
   const ok = await handleWordFeedbackPost(
@@ -259,7 +261,7 @@ test("passage help: signed in, inside the limits, one report a day unless it bri
   const post = (body, cookie, ip = "7.7.7.7") =>
     handlePassageFeedbackPost(request("/api/feedback/passage", { body, cookie, ip }), env, { now: NOW });
   assert.equal((await post(passage, "")).status, 401, "only a signed-in reader reports");
-  const { cookie, user } = await signUp(env, "passage@example.com");
+  const { cookie, user } = await signUp(env, "passage@gmail.com");
 
   assert.equal((await post({ ...passage, selected: "x".repeat(601) }, cookie)).status, 400, "a page of the book is refused");
   assert.equal((await post({ ...passage, selected: "!" }, cookie)).status, 400);
@@ -284,8 +286,8 @@ test("an accepted passage explanation counts in the contributor rank", async () 
   const db = openDb();
   const books = bucket();
   const env = { DB: db, BOOKS: books };
-  const a = await signUp(env, "rank@example.com");
-  db.raw.prepare("UPDATE users SET nickname = 'Rae' WHERE email = 'rank@example.com'").run();
+  const a = await signUp(env, "rank@gmail.com");
+  db.raw.prepare("UPDATE users SET nickname = 'Rae' WHERE email = 'rank@gmail.com'").run();
   await handlePassageFeedbackPost(
     request("/api/feedback/passage", { body: { ...passage, suggestion: "A joke: he means I am not pretty." }, cookie: a.cookie }),
     env,
@@ -306,9 +308,9 @@ test("an accepted passage explanation counts in the contributor rank", async () 
 test("passage reports on one paragraph that overlap are one topic; apart ones are not", async () => {
   const db = openDb();
   const env = { DB: db };
-  const a = await signUp(env, "long@example.com");
-  const b = await signUp(env, "short@example.com");
-  const c = await signUp(env, "other@example.com");
+  const a = await signUp(env, "long@gmail.com");
+  const b = await signUp(env, "short@gmail.com");
+  const c = await signUp(env, "other@gmail.com");
   // One sentence of 10 words: A selects all of it, B selects 3 words inside it.
   const sentence = "The old man smiled as if the lamp knew his name.";
   const base = { ...passage, paragraph: 4, before: "", after: "" };
@@ -374,7 +376,7 @@ test("a new picture gets its own file and the old one is deleted; removing delet
   const db = openDb();
   const books = bucket();
   const env = { DB: db, BOOKS: books };
-  const { cookie, user } = await signUp(env, "pics@example.com");
+  const { cookie, user } = await signUp(env, "pics@gmail.com");
   const webp = new Uint8Array(64);
   webp.set(new TextEncoder().encode("RIFF"), 0);
   webp.set(new TextEncoder().encode("WEBP"), 8);
@@ -407,7 +409,7 @@ test("the page and the server use one versioned picture path", async () => {
 test("every report keeps the catalog book it is about, and drops anything that is not one", async () => {
   const db = openDb();
   const env = { DB: db };
-  const { cookie } = await signUp(env, "catalog@example.com");
+  const { cookie } = await signUp(env, "catalog@gmail.com");
   const catalogId = "word-lists:3_habits_to_practice_curiosity_-_and_escape_your_phone";
   await handleWordFeedbackPost(request("/api/feedback/word", { cookie, body: { ...report, catalogId } }), env, { now: NOW });
   const bad = [
@@ -433,17 +435,18 @@ test("every report keeps the catalog book it is about, and drops anything that i
   assert.equal(db.raw.prepare("SELECT catalog_id FROM passage_feedback").get().catalog_id, catalogId);
 
   const taps = { bookId: "device-book", bookTitle: "Curiosity", catalogId, taps: [{ word: "lantern", form: "lantern", chapter: 0, occurrence: 1, count: 1 }] };
-  assert.equal((await handleWordTapsPost(request("/api/analytics/word-taps", { ip: "8.8.9.2", body: taps }), env, { now: NOW })).status, 200);
-  // A later batch from an older page (no reference) keeps the one already known for that place.
-  await handleWordTapsPost(request("/api/analytics/word-taps", { ip: "8.8.9.3", body: { ...taps, catalogId: undefined } }), env, { now: NOW + 1 });
-  const tap = db.raw.prepare("SELECT catalog_id, tap_count FROM book_word_taps").get();
-  assert.equal(tap.catalog_id, catalogId);
-  assert.equal(tap.tap_count, 2);
-  // The same device book now holds another catalog book's list: a new count for that book.
-  const other = "word-lists:wonder";
-  await handleWordTapsPost(request("/api/analytics/word-taps", { ip: "8.8.9.4", body: { ...taps, catalogId: other } }), env, { now: NOW + 2 });
-  const moved = db.raw.prepare("SELECT catalog_id, tap_count FROM book_word_taps").get();
-  assert.deepEqual([moved.catalog_id, moved.tap_count], [other, 1], "taps of book A are not counted for book B");
+  // Word-tap telemetry is retired. Old queued clients receive an acknowledgement, not a D1 write.
+  const noTelemetryDb = { prepare() { throw new Error("retired telemetry must not touch D1"); } };
+  for (const value of [catalogId, undefined, "word-lists:wonder"]) {
+    const response = await handleWordTapsPost(
+      request("/api/analytics/word-taps", { ip: "8.8.9.2", body: { ...taps, catalogId: value } }),
+      { DB: noTelemetryDb },
+      { now: NOW },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, saved: 0, retired: true });
+  }
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM book_word_taps").get().n, 0);
 });
 
 test("one id in both catalogs names two books", async () => {
@@ -484,8 +487,8 @@ test("contributors.json lists each catalog book's maintainers, most help first, 
   const env = { DB: db, BOOKS: books };
   const people = [];
   for (const [n, nick] of ["Ann", "Ben", "Cat", "Dan", "Eve"].entries()) {
-    const who = await signUp(env, `m${n}@example.com`);
-    db.raw.prepare("UPDATE users SET nickname = ? WHERE email = ?").run(nick, `m${n}@example.com`);
+    const who = await signUp(env, `m${n}@gmail.com`);
+    db.raw.prepare("UPDATE users SET nickname = ? WHERE email = ?").run(nick, `m${n}@gmail.com`);
     people.push(who);
   }
   const say = async (who, word, extra, ip) =>
@@ -550,14 +553,14 @@ test("maintainer aggregation deduplicates places across title variants and prese
   books.files.set("word-lists/catalog.json", JSON.stringify({ lists: [{ id: "wonder", title: "Wonder" }] }));
   const addUser = db.raw.prepare("INSERT INTO users (id, email, password_hash, password_salt, password_iters, created_at, public_id, nickname) VALUES (?, ?, '', '', 1, 0, ?, ?)");
   const add = db.raw.prepare("INSERT INTO word_feedback (book_id, book_title, word, reason, created_at, ip, user_id, accepted_at, catalog_id) VALUES (?, ?, ?, '', 0, '', ?, ?, ?)");
-  addUser.run("target", "target@example.com", "aaaaaaaaaaaa", "Target");
+  addUser.run("target", "target@gmail.com", "aaaaaaaaaaaa", "Target");
   // One place under multiple labels, plus an unmatched place: total is two, not three.
   add.run("device", "Wonder", "one", "target", 2, "word-lists:wonder");
   add.run("device", "Wonder: A Novel", "one", "target", 1, "");
   add.run("device", "Unknown", "two", "target", 3, "");
   for (let i = 0; i < 500; i++) {
     const id = `u${i}`;
-    addUser.run(id, `${id}@example.com`, i.toString(16).padStart(12, "0"), id);
+    addUser.run(id, `${id}@gmail.com`, i.toString(16).padStart(12, "0"), id);
     for (let j = 0; j < 3; j++) add.run(id, "", `word${j}`, id, 1, "word-lists:other");
   }
   await publishContributors(db, books, NOW);
@@ -574,7 +577,7 @@ test("cover maintainers beyond 500 keep global help and earliest-acceptance orde
   const add = db.raw.prepare("INSERT INTO word_feedback (book_id, word, reason, created_at, ip, user_id, accepted_at, catalog_id) VALUES ('b', ?, '', 0, '', ?, ?, ?)");
   for (let i = 0; i < 500; i++) {
     const id = `u${i}`;
-    addUser.run(id, `${id}@example.com`, i.toString(16).padStart(12, "0"));
+    addUser.run(id, `${id}@gmail.com`, i.toString(16).padStart(12, "0"));
     for (let j = 0; j < 10; j++) add.run(`word${j}`, id, 1, "word-lists:original");
   }
   // Book order and user insertion order deliberately disagree with global ranking.
@@ -587,13 +590,13 @@ test("cover maintainers beyond 500 keep global help and earliest-acceptance orde
     ["boundary", "cccccccccccc", 10, 2, "word-lists:z"],
   ];
   for (const [id, pub, helped, first, ref] of extras) {
-    addUser.run(id, `${id}@example.com`, pub);
+    addUser.run(id, `${id}@gmail.com`, pub);
     for (let j = 0; j < helped; j++)
       // The earliest global acceptance need not match any catalog book.
       add.run(`word${j}`, id, id === "early" && j === 0 ? 2 : first, id === "early" && j === 0 ? "invalid:ref" : ref);
   }
   // A reader between the selected extras is not a top-three maintainer of this crowded book.
-  addUser.run("omitted", "omitted@example.com", "999999999999");
+  addUser.run("omitted", "omitted@gmail.com", "999999999999");
   for (let j = 0; j < 9; j++) add.run(`word${j}`, "omitted", 1, "word-lists:original");
   await publishContributors(db, books, NOW);
   const file = JSON.parse(books.files.get(CONTRIBUTORS_KEY));
@@ -614,7 +617,7 @@ test("cover maintainers beyond 500 keep global help and earliest-acceptance orde
 test("maintainer aggregation does not truncate after 20000 grouped rows", async () => {
   const db = openDb();
   const books = bucket();
-  db.raw.prepare("INSERT INTO users (id, email, password_hash, password_salt, password_iters, created_at, public_id) VALUES ('u', 'u@example.com', '', '', 1, 0, 'aaaaaaaaaaaa')").run();
+  db.raw.prepare("INSERT INTO users (id, email, password_hash, password_salt, password_iters, created_at, public_id) VALUES ('u', 'u@gmail.com', '', '', 1, 0, 'aaaaaaaaaaaa')").run();
   const add = db.raw.prepare("INSERT INTO word_feedback (book_id, word, reason, created_at, ip, user_id, accepted_at, catalog_id) VALUES ('b', ?, '', 0, '', 'u', 1, ?)");
   db.raw.exec("BEGIN");
   for (let i = 0; i < 20001; i++) add.run(`word${i}`, i === 20000 ? "word-lists:last" : "word-lists:first");
@@ -628,7 +631,7 @@ test("maintainer aggregation does not truncate after 20000 grouped rows", async 
 test("an unreadable catalog aborts a legacy-title refresh without overwriting credits", async () => {
   const db = openDb();
   const books = bucket();
-  db.raw.prepare("INSERT INTO users (id, email, password_hash, password_salt, password_iters, created_at, public_id) VALUES ('u', 'u@example.com', '', '', 1, 0, 'aaaaaaaaaaaa')").run();
+  db.raw.prepare("INSERT INTO users (id, email, password_hash, password_salt, password_iters, created_at, public_id) VALUES ('u', 'u@gmail.com', '', '', 1, 0, 'aaaaaaaaaaaa')").run();
   db.raw.prepare("INSERT INTO word_feedback (book_id, book_title, word, reason, created_at, ip, user_id, accepted_at) VALUES ('b', 'Wonder', 'word', '', 0, '', 'u', 1)").run();
   books.files.set(CONTRIBUTORS_KEY, "previous credits");
   for (const bad of [null, "not json", JSON.stringify({ packs: null })]) {
@@ -645,7 +648,7 @@ test("book ranking deduplicates matched places, respects earliest acceptance, an
   books.files.set("word-lists/catalog.json", JSON.stringify({ lists: [{ id: "wonder", title: "Wonder" }] }));
   const addUser = db.raw.prepare("INSERT INTO users (id, email, password_hash, password_salt, password_iters, created_at, public_id) VALUES (?, ?, '', '', 1, 0, ?)");
   const add = db.raw.prepare("INSERT INTO word_feedback (book_id, book_title, word, reason, created_at, ip, user_id, accepted_at, catalog_id) VALUES ('b', ?, ?, '', 0, '', ?, ?, ?)");
-  for (const [id, pub] of [["a", "aaaaaaaaaaaa"], ["b", "bbbbbbbbbbbb"], ["c", "cccccccccccc"]]) addUser.run(id, `${id}@example.com`, pub);
+  for (const [id, pub] of [["a", "aaaaaaaaaaaa"], ["b", "bbbbbbbbbbbb"], ["c", "cccccccccccc"]]) addUser.run(id, `${id}@gmail.com`, pub);
   add.run("Wonder", "one", "a", 1, "word-lists:wonder");
   add.run("Wonder: A Novel", "one", "a", 1, "");
   add.run("Wonder", "one", "b", 2, "word-lists:wonder");

@@ -619,7 +619,7 @@ export const zh: Record<Key, string> = {
   "pack.progressFor": "《{title}》的下载进度",
   "msg.listsReady.one": "书架上有 {n} 本书有新词表。",
   "msg.listsReady.other": "书架上有 {n} 本书有新词表。",
-  "msg.offline": "现在没有网络。读过的书照常能读，收藏先存在这台设备上。",
+  "msg.offline": "网络已断开。刷新页面、查词典和播放发音需要联网；当前页面存下的生词会先留在这台设备上。",
   "msg.listsGo": "去书架",
   "lists.strip.one": "{n} 本书有新词表",
   "lists.strip.other": "{n} 本书有新词表",

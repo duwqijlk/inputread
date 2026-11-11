@@ -56,8 +56,13 @@ test("button text never wraps; the continue button and the detail's main button 
   assert.match(read("src/components/ui.tsx"), /gap-2 whitespace-nowrap rounded px-4/);
   assert.match(read("src/components/shelf.tsx"), /btn\.primary, "flex-\[1_0_auto\] px-6 sm:flex-none"/);
   const discover = read("src/components/discover-browse.tsx");
-  assert.match(discover, /flex flex-wrap items-center gap-2" data-detail-actions/);
-  assert.match(discover, /relative min-w-0 flex-1 overflow-hidden px-6 sm:flex-none sm:min-w-48/);
+  const actions = discover.match(/className="([^"]+)" data-detail-actions/)?.[1].split(/\s+/) ?? [];
+  for (const name of ["flex", "flex-wrap", "items-center"]) assert.ok(actions.includes(name), name);
+  // Full-width actions on phones keep complete labels inside the sheet; desktop actions size to text.
+  const detail = discover.slice(discover.indexOf("data-detail-actions"));
+  const primary = detail.match(/btn\.primary,\s*"([^"]+)"/)?.[1].split(/\s+/) ?? [];
+  for (const name of ["relative", "min-w-0", "w-full", "max-w-full", "flex-none", "overflow-hidden", "sm:w-auto"])
+    assert.ok(primary.includes(name), `primary action: ${name}`);
 });
 
 test("the book detail shows the Lexile measure as a number with a smaller L, not a chip", () => {
@@ -75,7 +80,10 @@ test("v37: on a phone the featured book and the continue card give the cover mor
 // v38-v44: three depth levels, the cover glow, the share card's seal and footer.
 test("depth: raised and floating levels come from per-theme tokens; floating layers use bg-float", () => {
   for (const theme of [":root,\n[data-theme=\"light\"] {", '[data-theme="sepia"] {', '[data-theme="dark"] {', '[data-theme="eink"] {']) {
-    const block = css.slice(css.indexOf(theme), css.indexOf("\n}", css.indexOf(theme)));
+    // Checkout line endings may be LF or CRLF. Match the rule, not its newline spelling.
+    const at = theme.startsWith(":root") ? css.indexOf('[data-theme="light"] {') : css.indexOf(theme);
+    assert.ok(at >= 0, `${theme} has a rule`);
+    const block = css.slice(at, css.indexOf("}", at));
     for (const name of ["--surface-3:", "--float-sheet:", "--elev-2:", "--elev-3:", "--edge-3:"]) assert.ok(block.includes(name), `${theme} ${name}`);
   }
   assert.doesNotMatch(css, /color-mix\(/, "float-sheet is mixed by hand for Chrome 69");

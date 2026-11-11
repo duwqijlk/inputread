@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(join(ROOT, "package.json"));
 
-const FILES = ["book-genres", "discover-route", "cancel-work", "shelf-identity", "cover-plan", "cover-request", "covers", "cloud-cover", "router", "flow-text", "errors", "epub", "lexile", "book-meta", "glossary-format", "pack-check", "text", "easy-words", "help-match", "paragraph-note", "edition-match", "basic-words-data", "basic-words", "word-list-plan", "can-add", "account-store", "file-offer", "hyphenate", "gloss-point", "gloss-ref", "list-updated", "chapter-link"];
+const FILES = ["books-base", "catalog-id", "dictionary-positions", "reader-blocks", "book-genres", "discover-route", "cancel-work", "shelf-identity", "cover-plan", "cover-request", "covers", "cloud-cover", "router", "flow-text", "errors", "epub", "lexile", "book-meta", "glossary-format", "pack-check", "text", "easy-words", "help-match", "paragraph-note", "edition-match", "basic-words-data", "basic-words", "word-list-plan", "can-add", "account-store", "file-offer", "hyphenate", "gloss-point", "gloss-ref", "list-updated", "chapter-link"];
 
 function installDom() {
   let JSDOM;
@@ -40,6 +40,23 @@ export function appModuleUrl(name) {
   if (!generatedDir) throw new Error("App modules have not been loaded");
   return pathToFileURL(join(generatedDir, `${name}.js`)).href;
 }
+
+/** Fresh stateful loader instance (dictionary caches must not leak across local snapshots). */
+export async function loadFreshAppModule(name) {
+  await loadAppModules();
+  if (name !== "standard-dictionary") throw new Error("Unsupported fresh app module");
+  const ts = require("typescript");
+  const source = readFileSync(join(ROOT, "src", "lib", `${name}.ts`), "utf8");
+  const js = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText.replace(/from\s+"(?:@\/lib\/|\.\/)([\w-]+)(?:\.ts)?"/g, 'from "./$1.js"');
+  const path = join(generatedDir, `${name}-${freshModuleCount++}.js`);
+  // Export the actual loader internals only in this private Node copy so offline checks can
+  // fail closed on enrichment errors that the interactive fast path intentionally tolerates.
+  writeFileSync(path, js + '\nexport { activeRelease as readPublication, lookupForms as lookupPublicationForms };\n');
+  return import(pathToFileURL(path).href);
+}
+let freshModuleCount = 0;
 
 /** Returns { epub, format, text, help, basic, packCheck } with the app's own functions. */
 export function loadAppModules() {
@@ -81,7 +98,8 @@ async function initialize() {
       const source = readFileSync(join(ROOT, "src", "lib", `${name}.ts`), "utf8");
       const js = ts.transpileModule(source, {
         compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-      }).outputText.replace(/from\s+"(?:@\/lib\/|\.\/)([\w-]+)(?:\.ts)?"/g, 'from "./$1.js"');
+      }).outputText.replace(/from\s+"(?:@\/lib\/|\.\/)([\w-]+)(?:\.ts)?"/g, 'from "./$1.js"')
+        .replace(/import\.meta\.env\b/g, '({ PROD: false, VITE_BOOKS_BASE: "" })');
       writeFileSync(join(out, `${name}.js`), js);
     }
     // Stay below node_modules so epub.js can still lazily import jszip.
@@ -94,7 +112,10 @@ async function initialize() {
     const failed = loaded.find((result) => result.status === "rejected");
     if (failed) throw failed.reason;
     const [epub, format, text, help, paragraphNote, edition, basicData, basic, packCheck, meta, flow, identity, coverPlan, covers, router, wordListPlan, canAdd, accountStore, fileOffer, hyphenate, glossRef, listUpdated, chapterLink, cloudCover] = loaded.map((result) => result.value);
-    return { cloudCover, epub, format, text, help, paragraphNote, edition, basic: { ...basicData, ...basic }, packCheck, meta, flow, identity, coverPlan, covers, router, wordListPlan, canAdd, accountStore, fileOffer, hyphenate, glossRef, listUpdated, chapterLink };
+    const readerBlocks = await import(appModuleUrl("reader-blocks"));
+    const dictionaryPositions = await import(appModuleUrl("dictionary-positions"));
+    const catalogId = await import(appModuleUrl("catalog-id"));
+    return { readerBlocks, dictionaryPositions, catalogId, cloudCover, epub, format, text, help, paragraphNote, edition, basic: { ...basicData, ...basic }, packCheck, meta, flow, identity, coverPlan, covers, router, wordListPlan, canAdd, accountStore, fileOffer, hyphenate, glossRef, listUpdated, chapterLink };
   } catch (error) {
     cleanup();
     if (generatedDir === out) generatedDir = undefined;

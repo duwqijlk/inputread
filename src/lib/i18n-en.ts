@@ -621,7 +621,7 @@ export const en = {
   "pack.progressFor": "Download progress for “{title}”",
   "msg.listsReady.one": "A new word list is ready for {n} book on your shelf.",
   "msg.listsReady.other": "New word lists are ready for {n} books on your shelf.",
-  "msg.offline": "You are offline. Books you have opened still read as usual, and what you save is kept on this device.",
+  "msg.offline": "You are offline. Reloading the page, dictionary lookups, and audio need the internet; words saved on this page stay on this device.",
   "msg.listsGo": "Go to shelf",
   "lists.strip.one": "New word list for {n} book",
   "lists.strip.other": "New word lists for {n} books",

@@ -7,7 +7,8 @@ import { handleDictionaryChoices, onRequest } from "../functions/api/dictionary/
 import { handleExport } from "../functions/lib/handlers.ts";
 import { choicePosition, parseChoiceRequest, saveChoice } from "../functions/lib/dictionary-choice.ts";
 import { sha256Hex } from "../functions/lib/password.ts";
-import { DAILY_WRITE_BUDGET, RATE_LIMITS, setPruneRoll } from "../functions/lib/rate-limit.ts";
+import { DAILY_USER_CHOICE_BUDGET, DAILY_WRITE_BUDGET, RATE_LIMITS, setPruneRoll } from "../functions/lib/rate-limit.ts";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
 
 setPruneRoll(() => 1);
 const NOW = 1_800_000_000_000;
@@ -38,7 +39,7 @@ async function fixture() {
   const writes = [], gets = [];
   let batchTail = Promise.resolve();
   const DB = { prepare(sql) {
-    const stmt = raw.prepare(sql);
+    const stmt = preparePositional(raw, sql);
     let args = [];
     const api = { bind(...values) { args = values; return api; }, async first() { if (!/^\s*SELECT/i.test(sql)) writes.push(sql); return stmt.get(...args) ?? null; },
       async all() { if (!/^\s*SELECT/i.test(sql)) writes.push(sql); return { results: stmt.all(...args) }; },
@@ -339,6 +340,25 @@ test("request limit is strict 120 per user/window including repeats/get; separat
   await error(await f.call(payload(null), { now: NOW + 900004 }), 429, "choices-budget");
   assert.equal(f.rows()[0].choice_id, CHOICE.id);
   assert.equal(f.budget(), 5000);
+});
+
+test("per-account daily mutations cannot consume the global allowance and reset at UTC day boundary", async () => {
+  const f=await fixture();const day=Math.floor(NOW/86400000)*86400000;
+  assert.equal(DAILY_USER_CHOICE_BUDGET,200);
+  const usage=()=>f.raw.prepare("SELECT COALESCE(SUM(hits),0) AS n FROM rate_limits WHERE bucket LIKE 'budget:choice-user:%'").get().n;
+  await success(await f.call(payload()),CHOICE);assert.equal(usage(),1);assert.equal(f.budget(),1);
+  f.raw.prepare('UPDATE rate_limits SET hits=? WHERE bucket=? AND window_start=?').run(199,`budget:choice-user:reader:${day}`,day);
+  const position=await choicePosition(parseChoiceRequest(payload()).target);
+  await Promise.all([saveChoice(f.env.DB,'reader',position,SECOND,NOW+1),saveChoice(f.env.DB,'reader',position,SECOND,NOW+1)]);
+  assert.equal(usage(),200);assert.equal(f.budget(),2,'concurrent identical saves charge each counter once');
+  await success(await f.call(payload(SECOND)),SECOND);
+  await success(await f.call(get()),SECOND);
+  await error(await f.call(payload(CHOICE)),429,'choices-user-budget');
+  await error(await f.call(payload(null)),429,'choices-user-budget');
+  assert.equal(f.budget(),2,'blocked account cannot spend global payload budget');
+  f.raw.prepare("INSERT INTO users (id,email,password_hash,password_salt,password_iters,created_at,email_verified_at) SELECT 'other','other@test.invalid',password_hash,password_salt,password_iters,created_at,email_verified_at FROM users WHERE id='reader'").run();
+  await saveChoice(f.env.DB,'other',position,CHOICE,NOW+2);assert.equal(f.budget(),3,'different user remains available');
+  await saveChoice(f.env.DB,'reader',position,CHOICE,day+86400000);assert.equal(f.budget(),4,'fresh UTC day renews account allowance');
 });
 
 test("atomic budget charges actual changes only, including stale concurrent prechecks", async () => {

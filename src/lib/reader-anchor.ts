@@ -1,4 +1,5 @@
-import { paragraphBlocks } from "./help-lookup.ts";
+import { readerParagraphBlocks } from "./reader-blocks.ts";
+export { readerParagraphBlocks } from "./reader-blocks.ts";
 import { flowPoint, flowText, flowTextBefore } from "./flow-text.ts";
 import { makeAnchor, QUOTE_MAX, type TextAnchor } from "./position.ts";
 
@@ -11,18 +12,6 @@ export const PLACE_TOP = 96;
  * bottom padding sit below the article, so a fraction of the article stops one screenful short.
  */
 export const RESTORE_BOTTOM = -1;
-
-/**
- * The reader's rendered blocks, excluding headings the reader adds only to give an old
- * paragraphs-only book a title. Those headings are visual decoration, not word-list
- * paragraphs, so they must not shift a saved paragraph index.
- */
-export function readerParagraphBlocks(root: ParentNode): Element[] {
-  // The stored array already defines the indexes; do not filter out short/empty strings again.
-  if (root instanceof Element && root.hasAttribute("data-reader-paragraphs"))
-    return Array.from(root.querySelectorAll("p"));
-  return paragraphBlocks(root);
-}
 
 /**
  * The first paragraph that reaches below the restore line, as a file-independent place.

@@ -15,11 +15,28 @@ export interface D1Database {
   batch(statements: D1Statement[]): Promise<D1Result<unknown>[]>;
 }
 
-/** Minimal R2 surface the admin handlers use. */
+/** Minimal R2 surface the admin handlers use. ETags are optional only for older read-only mocks. */
+export type R2HttpMetadata = {
+  contentType?: string;
+  contentLanguage?: string;
+  contentDisposition?: string;
+  contentEncoding?: string;
+  cacheControl?: string;
+  cacheExpiry?: Date;
+};
+export type R2PutOptions = {
+  httpMetadata?: R2HttpMetadata;
+  customMetadata?: Record<string, string>;
+  onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string };
+};
 export interface R2ObjectLike {
   body: ReadableStream;
   arrayBuffer(): Promise<ArrayBuffer>;
   size: number;
+  etag?: string;
+  httpEtag?: string;
+  httpMetadata?: R2HttpMetadata;
+  customMetadata?: Record<string, string>;
 }
 
 export interface R2BucketLike {
@@ -27,7 +44,7 @@ export interface R2BucketLike {
   put(
     key: string,
     value: ArrayBuffer | Uint8Array | string,
-    options?: { httpMetadata?: { contentType?: string; cacheControl?: string } },
+    options?: R2PutOptions,
   ): Promise<unknown>;
   /** Remove an object. Optional in tests; the real bucket always has it. */
   delete?(key: string): Promise<unknown>;

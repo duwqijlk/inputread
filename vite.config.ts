@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { localIpaData } from "./scripts/ipa-data-plugin.mjs";
 import viteReact from "@vitejs/plugin-react";
 import legacy from "@vitejs/plugin-legacy";
+// @ts-expect-error build-only JS adapter
+import { legacyWithEs5Polyfills } from "./scripts/legacy-polyfill-es5.mjs";
 // @ts-expect-error build-only JS plugin
 import { seoPages } from "./scripts/seo-plugin.mjs";
 // @ts-expect-error plain JS plugins next to the TS config
@@ -43,6 +45,10 @@ export default defineConfig(({ mode }) => ({
      * blank. The floor is the oldest engine we can still support; it costs a little size.
      */
     target: "chrome69",
+    // Vite 8 defaults to Oxc minification, whose legacy output target is ES2015. Keep the
+    // nomodule branch genuinely ES5: Babel lowers syntax, Terser must not introduce it again.
+    minify: "terser",
+    terserOptions: { ecma: 5, compress: { arrows: false }, format: { ecma: 5 } },
     // CSS is shared by both JS builds. Chrome-only targets merge Tailwind's universal
     // defaults with ::backdrop, invalidating the entire rule on Safari before 15.4.
     // Missing transform defaults then leave centred dialogs at top/left: 50%.
@@ -73,13 +79,15 @@ export default defineConfig(({ mode }) => ({
      * `legacyOnlyWithoutModules()` then removes the plugin's `import.meta.resolve` probe, which
      * would send every Chrome 69-104 device to the ES5 build as well.
      */
-    legacy({
-      targets: ["chrome >= 49", "safari >= 10", "ios >= 10", "firefox >= 52", "edge >= 15"],
+    legacyWithEs5Polyfills(legacy({
+      // IE 11 is the syntax floor, not a promise of browser API support. Chrome 49 alone
+      // permits arrow functions/templates and leaves old non-module WebKit unable to parse.
+      targets: ["ie >= 11", "chrome >= 49", "safari >= 10", "ios >= 10", "firefox >= 52", "edge >= 15"],
       modernTargets: ["chrome >= 69", "safari >= 12", "ios >= 12", "firefox >= 62", "edge >= 79"],
       modernPolyfills: false,
       renderLegacyChunks: true,
       polyfills: true,
-    }),
+    })),
     legacyOnlyWithoutModules(),
     offlineShell(),
     dvhFallbacks(),

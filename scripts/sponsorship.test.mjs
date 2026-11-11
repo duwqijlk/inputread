@@ -16,6 +16,7 @@ import {
   handleMySponsorship,
   handlePublicSponsorships,
 } from "../functions/lib/sponsorship.ts";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const NOW = Date.parse("2026-10-08T05:00:00Z");
@@ -43,9 +44,9 @@ async function signUpFully(handlerRegister, env, input, now = NOW) {
     env,
     opts,
   );
-  if (started.status !== 202) return started;
+  assert.equal(started.status, 202, `sign-up starts: ${await started.clone().text()}`);
   const { ticket } = await started.json();
-  return handleRegisterConfirm(
+  const confirmed = await handleRegisterConfirm(
     new Request(`${input.https ? "https" : "http"}://localhost/api/auth/register/confirm`, {
       method: "POST",
       headers: {
@@ -57,6 +58,8 @@ async function signUpFully(handlerRegister, env, input, now = NOW) {
     env,
     { now },
   );
+  assert.equal(confirmed.status, 201, `sign-up completes: ${await confirmed.clone().text()}`);
+  return confirmed;
 }
 const EARLIER = Date.parse("2026-09-15T04:00:00Z");
 
@@ -73,7 +76,7 @@ function openDb() {
   }
   return {
     prepare(sql) {
-      const stmt = db.prepare(sql);
+      const stmt = preparePositional(db, sql);
       const api = {
         args: [],
         bind(...values) {
@@ -121,7 +124,7 @@ for (const method of ["wechat", "crypto"]) {
   test(`${method} requests are accepted; unsupported methods and duplicate requests are refused`, async () => {
     const env = { DB: openDb() };
     const reader = await signUpFully(handleRegister, env, {
-      body: { email: "giver@example.com", password: "correct horse" },
+      body: { email: "giver@gmail.com", password: "correct horse" },
     });
     const cookie = cookieFrom(reader);
     await call(handleNickname, env, { cookie, body: { nickname: "Mei" } });
@@ -151,7 +154,7 @@ for (const method of ["wechat", "crypto"]) {
     const db = openDb();
     const env = { DB: db };
     const reader = await signUpFully(handleRegister, env, {
-      body: { email: "reader@example.com", password: "correct horse" },
+      body: { email: "reader@gmail.com", password: "correct horse" },
     });
     const readerCookie = cookieFrom(reader);
     const readerPublicId = (await reader.clone().json()).user.publicId;
@@ -240,7 +243,7 @@ for (const method of ["wechat", "crypto"]) {
     assert.match(readerPublicId, /^[a-f0-9]{12}$/);
     assert.deepEqual(boards.month, [{ name: "Lin", cents: 550, publicId: readerPublicId }]);
     assert.deepEqual(boards.total, [{ name: "Lin", cents: 1550, publicId: readerPublicId }]);
-    assert.doesNotMatch(JSON.stringify(boards), /@|example\.com/);
+    assert.doesNotMatch(JSON.stringify(boards), /@|gmail\.com/);
 
     const mine = await (
       await call(handleMySponsorship, env, { method: "GET", cookie: readerCookie })

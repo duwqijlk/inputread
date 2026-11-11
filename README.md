@@ -17,7 +17,7 @@ Margin Words is a reader for English novels. It is made for Chinese junior-high 
 
 Tap a word in the story. A card shows a short meaning in simple English, written for that book. Notes for a paragraph, a sentence, or a phrase stay beside the text, and the page does not jump when a card opens. The buttons and menus are in Simplified Chinese or English. The novels stay in English. The reader has no AI.
 
-A book already on the device can be read with no account and, after the first download, with no network. New books are added only from Discover, and that step needs a sign-in. Public-domain classics download from the books host. A novel that is still under copyright is not hosted here: Discover gives a word list and an ISBN, and the reader adds their own legal EPUB.
+A book already on the device can be read with no account; opening the site and looking up words need the internet. New books are added only from Discover, and that step needs a sign-in. Public-domain classics download from the books host. A novel that is still under copyright is not hosted here: Discover gives a word list and an ISBN, and the reader adds their own legal EPUB.
 
 The live reader is [inputread.site](https://inputread.site). The source is publicly available under [PolyForm Noncommercial 1.0.0](LICENSE), subject to the [scope and exceptions below](#license).
 
