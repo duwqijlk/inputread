@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { PublicationError, withPublicationAudit } from "../functions/lib/publication-audit.ts";
 import { publishObject, publishWithCatalog } from "../functions/lib/catalog-lock.ts";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
 
 const text = (value) => new TextEncoder().encode(value);
 const key = "word-lists/catalog.json";
@@ -17,7 +18,7 @@ function database(fail = () => false) {
       let args = [];
       const statement = {
         bind(...values) { args = values; return statement; },
-        async run() { if (fail(sql)) throw new Error("database unavailable"); return raw.prepare(sql).run(...args); },
+        async run() { if (fail(sql)) throw new Error("database unavailable"); return preparePositional(raw, sql).run(...args); },
       };
       return statement;
     },

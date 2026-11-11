@@ -8,6 +8,7 @@ import { bookMaintainers } from "../functions/lib/book-maintainers.ts";
 import { CONTRIBUTORS_KEY, contributorRows, isContributor, publishContributors } from "../functions/lib/contributors.ts";
 import { handleDelete, handleExport, handleNickname } from "../functions/lib/handlers.ts";
 import { hashPassword, sha256Hex } from "../functions/lib/password.ts";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
 
 const NOW = 1_800_000_000_000;
 const CATALOG = "word-lists:book";
@@ -30,7 +31,7 @@ function fixture(t) {
   for (const name of readdirSync(new URL("../migrations/", import.meta.url)).filter((name) => name.endsWith(".sql")).sort())
     raw.exec(readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"));
   const DB = { prepare(sql) {
-    const statement = raw.prepare(sql);
+    const statement = preparePositional(raw, sql);
     let values = [];
     const api = {
       bind(...args) { values = args; return api; },

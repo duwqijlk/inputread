@@ -16,6 +16,7 @@ import {
   handleMySponsorship,
   handlePublicSponsorships,
 } from "../functions/lib/sponsorship.ts";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const NOW = Date.parse("2026-10-08T05:00:00Z");
@@ -75,7 +76,7 @@ function openDb() {
   }
   return {
     prepare(sql) {
-      const stmt = db.prepare(sql);
+      const stmt = preparePositional(db, sql);
       const api = {
         args: [],
         bind(...values) {

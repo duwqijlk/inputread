@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
 import { PBKDF2_ITERATIONS, hashPassword, sha256Hex, sha256HexBytes, verifyPassword } from "../functions/lib/password.ts";
 import { rateLimitIp, sessionCookie } from "../functions/lib/http.ts";
 import {
@@ -79,7 +80,7 @@ function openDb() {
   }
   return {
     prepare(sql) {
-      const stmt = db.prepare(sql);
+      const stmt = preparePositional(db, sql);
       const api = {
         args: [],
         bind(...values) {

@@ -13,6 +13,7 @@ import { handleContributorsRebuild } from "../functions/api/contributors/rebuild
 import { CONTRIBUTORS_KEY, publishContributors } from "../functions/lib/contributors.ts";
 import { parseContributors } from "../src/lib/contributors-file.ts";
 import { loadAppModules } from "./lib/app-modules.mjs";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
 
 const { format } = await loadAppModules();
 const validateGlossary = (text) => format.validateGlossary(text);
@@ -54,7 +55,7 @@ function openDb() {
   for (const name of readdirSync(join(ROOT, "migrations")).filter((file) => file.endsWith(".sql")).sort())
     db.exec(readFileSync(join(ROOT, "migrations", name), "utf8"));
   const wrap = (sql) => {
-    const stmt = db.prepare(sql);
+    const stmt = preparePositional(db, sql);
     let args = [];
     const api = {
       bind(...values) { args = values; return api; },

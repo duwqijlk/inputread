@@ -14,6 +14,7 @@ import { mergePublicCatalog } from "./lib/publish-public-book.mjs";
 import { BOOK_GENRES, readBookGenres } from "../src/lib/book-genres.ts";
 import { previewBookMetadata, readBookMetadataRequest } from "../src/lib/book-metadata.ts";
 import { sha256Hex } from "../functions/lib/password.ts";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
 
 const NOW = 1_800_000_000_000;
 const baseline = 'm1:["fixture"]';
@@ -31,7 +32,7 @@ async function fixture(role = "admin") {
   const sqlCalls = [];
   const DB = { prepare(sql) {
     sqlCalls.push(sql);
-    const stmt = raw.prepare(sql.replace(/\?\d+/g, "?"));
+    const stmt = preparePositional(raw, sql);
     let args = [];
     const api = { bind(...values) { args = values; return api; }, async first() { return stmt.get(...args) ?? null; }, async all() { return { results: stmt.all(...args) }; }, async run() { stmt.run(...args); return { success: true }; } };
     return api;

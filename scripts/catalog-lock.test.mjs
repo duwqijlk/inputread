@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { publishWithCatalog, withCatalogLock } from "../functions/lib/catalog-lock.ts";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -13,7 +14,7 @@ function openDb() {
   const db = new DatabaseSync(":memory:");
   db.exec(readFileSync(join(ROOT, "migrations", "0017_catalog_locks.sql"), "utf8"));
   const wrap = (sql) => {
-    const stmt = db.prepare(sql);
+    const stmt = preparePositional(db, sql);
     let args = [];
     const api = {
       bind(...values) { args = values; return api; },

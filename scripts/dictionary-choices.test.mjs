@@ -8,6 +8,7 @@ import { handleExport } from "../functions/lib/handlers.ts";
 import { choicePosition, parseChoiceRequest, saveChoice } from "../functions/lib/dictionary-choice.ts";
 import { sha256Hex } from "../functions/lib/password.ts";
 import { DAILY_USER_CHOICE_BUDGET, DAILY_WRITE_BUDGET, RATE_LIMITS, setPruneRoll } from "../functions/lib/rate-limit.ts";
+import { preparePositional } from "./lib/sqlite-positional.mjs";
 
 setPruneRoll(() => 1);
 const NOW = 1_800_000_000_000;
@@ -38,7 +39,7 @@ async function fixture() {
   const writes = [], gets = [];
   let batchTail = Promise.resolve();
   const DB = { prepare(sql) {
-    const stmt = raw.prepare(sql);
+    const stmt = preparePositional(raw, sql);
     let args = [];
     const api = { bind(...values) { args = values; return api; }, async first() { if (!/^\s*SELECT/i.test(sql)) writes.push(sql); return stmt.get(...args) ?? null; },
       async all() { if (!/^\s*SELECT/i.test(sql)) writes.push(sql); return { results: stmt.all(...args) }; },
