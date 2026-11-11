@@ -47,8 +47,8 @@ export function positionKey(catalogId: string, p: DictionaryPosition): Promise<s
 }
 
 /** One shared static mapping file per book/page, independent of the number of thumbs or readers. */
-export async function mappedPosition(catalogId: string, position: DictionaryPosition): Promise<PositionMapping | null> {
-  if (!cleanCatalogRef(catalogId)) return null;
+function loadMappings(catalogId: string): Promise<PositionMapping[]> {
+  if (!cleanCatalogRef(catalogId)) return Promise.resolve([]);
   let pending = books.get(catalogId);
   if (!pending) {
     pending = fetch(booksUrl(mappingPath(catalogId))).then(async response => {
@@ -75,8 +75,18 @@ export async function mappedPosition(catalogId: string, position: DictionaryPosi
     if (books.size > 16) books.delete(books.keys().next().value!);
     void pending.catch(() => { if (books.get(catalogId) === pending) books.delete(catalogId); });
   }
-  const key = await positionKey(catalogId, position);
-  const row = (await pending).find(item => item.positionKey === key);
+  return pending;
+}
+
+/** Best-effort static prewarm: failures remain retryable, without background retries. */
+export async function warmDictionaryMappings(catalogId: string): Promise<void> {
+  try { await loadMappings(catalogId); } catch { /* A later lookup can retry. */ }
+}
+
+export async function mappedPosition(catalogId: string, position: DictionaryPosition): Promise<PositionMapping | null> {
+  if (!cleanCatalogRef(catalogId)) return null;
+  const [entries, key] = await Promise.all([loadMappings(catalogId), positionKey(catalogId, position)]);
+  const row = entries.find(item => item.positionKey === key);
   return row && row.chapterSha256 === position.chapterSha256 && row.paragraphIndex === position.paragraphIndex &&
     row.paragraphSha256 === position.paragraphSha256 && row.offset === position.offset && row.surface === position.surface ? row : null;
 }

@@ -125,6 +125,26 @@ Unknown, conflicting, malformed, and network-failed lookups remain distinct read
 Publish and verify all form shards before updating `current.json` with `formsIndex`; deploy the
 compatible reader first, back up the old switch bytes and replace it using its current ETag.
 
+## Lookup latency and bounded warming
+
+The reader may publish already-validated exact/base senses to the card before optional source-form
+expansion finishes. The final result retains original ordering and merges legitimate inflection
+senses by full ID. Ambiguous aliases or competing morphology never emit a guessed interim lemma.
+Late partial/final responses from a previously selected word are ignored.
+
+Publication and up to four shared case/form shard pairs are warmed from the chapter's first 80
+sampled tokens after its initial render; no chapter-wide word payload prefetch, D1 read, choice
+write or telemetry is added. Case/inflected spellings use the verified case inventory to avoid
+known-nonexistent word requests, while simple lowercase base words keep their direct-word fast
+path. Independent form work runs in parallel, as do multiple candidate entry requests.
+
+Per-book static mappings warm when catalog identity is available and share the normal loader.
+Rendered chapter text arrays are reused until the root/text/chapter/segmentation changes, so
+repeated taps reuse the same exact chapter fingerprint rather than traversing the entire chapter.
+These optimizations do not change the mutable word TTL, original URLs, source identities or
+nightly coordinate contract. Cold network latency still varies; local controlled-delay tests and
+single-machine public timings are not guarantees for every user's device or network.
+
 ## Reader producer handoff
 
 Contract audit: deployed app commit `50475c8617226edf7c953fb4e625ae8f88df9e9f` (2026-11-11).
