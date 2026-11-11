@@ -5,8 +5,8 @@ import { checkAbort } from "@/lib/cancel-work";
  *
  * A pack is one book (book.epub) and its whole-book data (glossary.json: meanings, paragraph notes,
  * sentence notes, phrases, coined words). Packs are listed in a catalog (catalog.json) on any static
- * host; the reader downloads one from its Discover card. After a pack is stored in this browser
- * (IndexedDB) the reader needs no network at all. See README, "Reader and book packs".
+ * host; the reader downloads one from its Discover card and stores the book and its word list in
+ * this browser (IndexedDB).
  */
 import { readUpdated } from "@/lib/list-updated";
 import {

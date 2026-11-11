@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
@@ -40,6 +41,14 @@ async function fixture(role = "admin") {
     ["public-books/catalog.json", { format: 1, updated: "public-old", packs: [{ ...row(), title: "Other catalog book" }] }],
   ]);
   const puts = [], gets = [];
+  const metadata = new Map();
+  const contents = new Map();
+  const bytesOf = (key, value) => {
+    const serialized = JSON.stringify(value);
+    const stored = contents.get(key);
+    return stored?.serialized === serialized ? stored.bytes : new TextEncoder().encode(serialized);
+  };
+  const etagOf = (bytes) => `"${createHash("sha256").update(bytes).digest("hex")}"`;
   let onGet;
   const BOOKS = {
     async get(key) {
@@ -47,11 +56,24 @@ async function fixture(role = "admin") {
       onGet?.(key);
       const file = files.get(key);
       if (!file) return null;
-      const bytes = new TextEncoder().encode(JSON.stringify(file));
-      return { body: new Response(bytes).body, arrayBuffer: async () => bytes.buffer, size: bytes.length,
-        httpMetadata: { contentType: "application/json", cacheControl: "no-cache" }, customMetadata: { owner: "catalog" } };
+      const bytes = bytesOf(key, file);
+      const etag = etagOf(bytes);
+      return { body: new Response(bytes).body, arrayBuffer: async () => bytes.buffer, size: bytes.length, etag, httpEtag: etag,
+        httpMetadata: { contentType: "application/json", cacheControl: "no-cache" }, customMetadata: { owner: "catalog" }, ...metadata.get(key) };
     },
-    async put(key, bytes, options) { puts.push({ key, options }); files.set(key, JSON.parse(new TextDecoder().decode(bytes))); },
+    async put(key, bytes, options = {}) {
+      const current = files.get(key);
+      const tag = current ? etagOf(bytesOf(key, current)) : null;
+      if (options.onlyIf?.etagMatches && options.onlyIf.etagMatches !== tag) return null;
+      if (options.onlyIf?.etagDoesNotMatch === "*" && current) return null;
+      puts.push({ key, options });
+      const value = JSON.parse(new TextDecoder().decode(bytes));
+      files.set(key, value);
+      contents.set(key, { serialized: JSON.stringify(value), bytes: bytes.slice() });
+      metadata.set(key, { httpMetadata: options.httpMetadata, customMetadata: options.customMetadata });
+      const etag = etagOf(bytes);
+      return { etag, httpEtag: etag };
+    },
   };
   const env = { DB, BOOKS };
   const call = (handler, body, cookie = true) => handler(new Request("https://example.test/api/admin/book-metadata", {
@@ -169,7 +191,8 @@ test("metadata patch holds the catalog lock and preserves every unrelated field 
     assert.deepEqual(f.files.get("public-books/catalog.json"), publicBefore);
     assert.equal(lockedRead, true);
     assert.equal(f.raw.prepare("SELECT COUNT(*) AS n FROM catalog_locks").get().n, 0);
-    assert.deepEqual(f.puts, [{ key: "word-lists/catalog.json", options: { httpMetadata: { contentType: "application/json", cacheControl: "no-cache" }, customMetadata: { owner: "catalog" } } }]);
+    const baselineEtag = `"${createHash("sha256").update(JSON.stringify(before)).digest("hex")}"`;
+    assert.deepEqual(f.puts, [{ key: "word-lists/catalog.json", options: { httpMetadata: { contentType: "application/json", cacheControl: "no-cache" }, customMetadata: { owner: "catalog" }, onlyIf: { etagMatches: baselineEtag } } }]);
     assert.equal(f.gets.every((key) => key.endsWith("catalog.json")), true);
   } finally { f.raw.close(); }
 });

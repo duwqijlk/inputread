@@ -1,6 +1,7 @@
 import { requireAdmin } from "../../lib/admin.ts";
 import type { Env, R2BucketLike } from "../../lib/db.ts";
 import type { HandlerOptions } from "../../lib/handlers.ts";
+import { publishObject } from "../../lib/catalog-lock.ts";
 import { errorResponse, HttpError, json, readJson } from "../../lib/http.ts";
 import {
   BLURB_ID,
@@ -66,7 +67,7 @@ export async function handleGet(request: Request, env: Env, options?: HandlerOpt
 
 export async function handlePut(request: Request, env: Env, options?: HandlerOptions): Promise<Response> {
   try {
-    await requireAdmin(env.DB, request, options);
+    const actor = await requireAdmin(env.DB, request, options);
     const bucket = env.BOOKS;
     if (!bucket) throw new HttpError(500, "no-books-bucket");
     const { kind, id } = target(request);
@@ -76,7 +77,10 @@ export async function handlePut(request: Request, env: Env, options?: HandlerOpt
     if (problems.length) return json({ error: "bad-blurb", problems }, 400);
     if (!(await inCatalog(bucket, kind, id))) throw new HttpError(404, "no-book");
     const file = blurbFile(body);
-    await bucket.put(blurbKey(kind, id), new TextEncoder().encode(`${JSON.stringify(file, null, 1)}\n`));
+    const key = blurbKey(kind, id);
+    const baseline = await bucket.get(key);
+    await publishObject(bucket, key, new TextEncoder().encode(`${JSON.stringify(file, null, 1)}\n`), baseline,
+      { db: env.DB, actorId: actor.id, operation: "book-blurb" });
     return json({ kind, id, zh: file.zh ?? "", en: file.en ?? "" });
   } catch (error) {
     return errorResponse(error);

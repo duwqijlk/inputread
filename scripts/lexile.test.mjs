@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lexileMeasure, lexileNumber, compareLexile, difficultyBand } from "../src/lib/lexile.ts";
@@ -46,8 +46,12 @@ test("a word list may carry lexile, and a bad value is only a warning", async ()
   assert.equal(none.file.lexile, undefined);
 });
 
-test("both catalogs publish a Lexile measure on every pack", () => {
-  for (const folder of ["public-books", "packs"]) {
+for (const folder of ["public-books", "packs"]) {
+  test(`${folder} publishes a Lexile measure on every book`, {
+    skip: folder === "packs" && (!existsSync(join(ROOT, "packs")) || readdirSync(join(ROOT, "packs")).length === 0)
+      ? "optional copyrighted packs are not distributed in the public repository"
+      : false,
+  }, () => {
     const catalog = JSON.parse(readFileSync(join(ROOT, folder, "catalog.json"), "utf8"));
     assert.ok(catalog.packs.length > 0, folder);
     for (const pack of catalog.packs) {
@@ -57,5 +61,5 @@ test("both catalogs publish a Lexile measure on every pack", () => {
       const info = JSON.parse(readFileSync(join(ROOT, folder, pack.id, "info.json"), "utf8"));
       assert.equal(info.lexile, pack.lexile, `${pack.id} info.json`);
     }
-  }
-});
+  });
+}

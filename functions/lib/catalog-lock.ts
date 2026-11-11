@@ -8,7 +8,8 @@
  *
  * A lock left by a request that died ends by itself after LOCK_MS.
  */
-import type { D1Database, R2BucketLike } from "./db.ts";
+import type { D1Database, R2BucketLike, R2ObjectLike, R2PutOptions } from "./db.ts";
+import { PublicationError, withPublicationAudit, type PublicationReceipt } from "./publication-audit.ts";
 import { HttpError } from "./http.ts";
 
 export const CATALOG_LOCK_MS = 60_000;
@@ -42,34 +43,149 @@ async function unlock(db: D1Database, catalog: CatalogName, owner: string): Prom
   await db.prepare("DELETE FROM catalog_locks WHERE name = ? AND owner = ?").bind(catalog, owner).run();
 }
 
-type FileWrite = { key: string; bytes: Uint8Array; options?: Parameters<R2BucketLike["put"]>[2] };
+type FileWrite = { key: string; bytes: Uint8Array; options?: Omit<R2PutOptions, "onlyIf"> };
+type ObjectVersion = Pick<R2ObjectLike, "etag" | "httpEtag" | "httpMetadata" | "customMetadata">;
+
+/** R2 onlyIf accepts an entity tag; use its HTTP form when available. Missing is not absent. */
+export function objectEtag(object: ObjectVersion): string {
+  const etag = object.httpEtag || object.etag;
+  if (!etag || etag === "*" || etag.startsWith("W/")) throw new PublicationError("publication-etag-required", "conflict");
+  return etag;
+}
+
+function objectOptions(object: ObjectVersion | null): Omit<R2PutOptions, "onlyIf"> {
+  return {
+    ...(object?.httpMetadata ? { httpMetadata: object.httpMetadata } : {}),
+    ...(object?.customMetadata ? { customMetadata: object.customMetadata } : {}),
+  };
+}
+
+/** A single real R2 CAS. A throw is an unknown commit, unlike R2's null precondition result. */
+export async function putIfCurrent(
+  bucket: R2BucketLike,
+  key: string,
+  bytes: Uint8Array,
+  baseline: ObjectVersion | null,
+  options?: Omit<R2PutOptions, "onlyIf">,
+): Promise<string> {
+  const onlyIf = baseline ? { etagMatches: objectEtag(baseline) } : { etagDoesNotMatch: "*" };
+  let result: unknown;
+  try {
+    result = await bucket.put(key, bytes, { ...objectOptions(baseline), ...options, onlyIf });
+  } catch {
+    throw new PublicationError("publication-uncertain", "uncertain", [key]);
+  }
+  if (result === null) throw new PublicationError("publication-conflict", "conflict", [key]);
+  try {
+    return objectEtag((result ?? {}) as ObjectVersion);
+  } catch {
+    // A successful-looking PUT without its version cannot authorize any rollback.
+    throw new PublicationError("publication-uncertain", "uncertain", [key]);
+  }
+}
+
+/** Readback is exact bytes, size, version and expected metadata, never a public cached response. */
+export async function verifyPublication(
+  bucket: R2BucketLike, key: string, bytes: Uint8Array, etag: string,
+  options: Omit<R2PutOptions, "onlyIf">,
+): Promise<void> {
+  try {
+    const current = await bucket.get(key);
+    if (!current || objectEtag(current) !== etag || current.size !== bytes.byteLength) throw new Error("version");
+    const stored = new Uint8Array(await current.arrayBuffer());
+    if (stored.length !== bytes.length) throw new Error("bytes");
+    for (let index = 0; index < bytes.length; index++) {
+      if (stored[index] !== bytes[index]) throw new Error("bytes");
+    }
+    for (const [name, value] of Object.entries(options.httpMetadata ?? {})) {
+      const actual = current.httpMetadata?.[name as keyof NonNullable<R2PutOptions["httpMetadata"]>];
+      if (value instanceof Date ? !(actual instanceof Date) || value.getTime() !== actual.getTime() : actual !== value) throw new Error("metadata");
+    }
+    if (options.customMetadata) {
+      const actual = current.customMetadata ?? {};
+      if (Object.keys(actual).length !== Object.keys(options.customMetadata).length ||
+        Object.entries(options.customMetadata).some(([name, value]) => actual[name] !== value)) throw new Error("metadata");
+    }
+  } catch {
+    throw new PublicationError("publication-readback-uncertain", "uncertain", [key]);
+  }
+}
+
+/** Single-object publishing shares audit and readback with catalog batches. */
+export async function publishObject(
+  bucket: R2BucketLike, key: string, bytes: Uint8Array, baseline: ObjectVersion | null,
+  context: { db?: D1Database; actorId?: string; operation: string },
+): Promise<void> {
+  const receipt: PublicationReceipt = { actorId: context.actorId, baselineEtag: baseline ? objectEtag(baseline) : null };
+  await withPublicationAudit(context.db, key, context.operation, async () => {
+    receipt.newEtag = await putIfCurrent(bucket, key, bytes, baseline);
+    await verifyPublication(bucket, key, bytes, receipt.newEtag, objectOptions(baseline));
+  }, receipt);
+}
 
 /**
- * Write the book's files, then the catalog that names their hashes. Readers check a file against
- * the catalog's sha256, so a file must never change without the catalog: when the catalog write
- * fails, each file is put back the way it was (a file that was not there before stays new, which
- * nothing points at). The error is passed on.
+ * Targeted coverage: admin word-list/public-book batches use this helper; metadata/blurb use
+ * publishObject. Blurb's baseline is server read-time only, not a client draft version. The D1 lock remains cooperative, not an R2 multi-object transaction.
+ * Pass the EXACT catalog object used to build catalogBytes, never a newly fetched replacement.
+ * Confirmed precondition failure restores only existing files, conditional on our own PUT ETag.
+ * New files remain (R2 delete has no conditional version guard); unknown PUT results are retained
+ * for readback/reconciliation, especially a catalog timeout that might already have committed.
  */
 export async function publishWithCatalog(
   bucket: R2BucketLike,
   files: FileWrite[],
   catalog: CatalogName,
   catalogBytes: Uint8Array,
+  context: { baseline: ObjectVersion | null; db?: D1Database; actorId?: string; operation?: string },
 ): Promise<void> {
-  const before: { key: string; bytes: Uint8Array | null; options?: FileWrite["options"] }[] = [];
-  for (const file of files) {
-    const old = await bucket.get(file.key);
-    before.push({ key: file.key, bytes: old ? new Uint8Array(await old.arrayBuffer()) : null, options: file.options });
-  }
-  try {
-    for (const file of files) await bucket.put(file.key, file.bytes, file.options);
-    await bucket.put(catalog, catalogBytes);
-  } catch (error) {
-    for (const old of before) {
-      if (old.bytes) await bucket.put(old.key, old.bytes, old.options).catch(() => undefined);
+  const receipt: PublicationReceipt = { actorId: context.actorId, baselineEtag: context.baseline ? objectEtag(context.baseline) : null };
+  await withPublicationAudit(context.db, catalog, context.operation ?? "catalog-publish", async () => {
+    if (files.length > 12 || new Set(files.map((file) => file.key)).size !== files.length || files.some((file) => file.key === catalog)) {
+      throw new HttpError(400, "bad-publication-files");
     }
-    throw error;
-  }
+    const expected = context.baseline ? objectEtag(context.baseline) : null;
+    const live = await bucket.get(catalog);
+    if ((live ? objectEtag(live) : null) !== expected) throw new PublicationError("publication-conflict", "conflict", [catalog]);
+    const before = [];
+    // Snapshot ALL files and versions before the first side effect, including original metadata.
+    for (const file of files) {
+      const old = await bucket.get(file.key);
+      if (old) objectEtag(old);
+      before.push({ file, old, bytes: old ? new Uint8Array(await old.arrayBuffer()) : null });
+    }
+    const written: { snapshot: (typeof before)[number]; etag: string }[] = [];
+    try {
+      for (const snapshot of before) {
+        const etag = await putIfCurrent(bucket, snapshot.file.key, snapshot.file.bytes, snapshot.old, snapshot.file.options);
+        written.push({ snapshot, etag });
+      }
+      receipt.newEtag = await putIfCurrent(bucket, catalog, catalogBytes, context.baseline);
+      for (const { snapshot, etag } of written) {
+        await verifyPublication(bucket, snapshot.file.key, snapshot.file.bytes, etag, { ...objectOptions(snapshot.old), ...snapshot.file.options });
+      }
+      await verifyPublication(bucket, catalog, catalogBytes, receipt.newEtag, objectOptions(context.baseline));
+    } catch (error) {
+      if (!(error instanceof PublicationError) || error.publicationStatus !== "conflict") {
+        // Never roll back files when the catalog might have landed. No automated retry.
+        throw new PublicationError("publication-uncertain", "uncertain", [...written.map(({ snapshot }) => snapshot.file.key), ...(error instanceof PublicationError ? error.affectedKeys : [catalog])]);
+      }
+      const unrecovered: string[] = [];
+      for (const { snapshot, etag } of written.reverse()) {
+        if (!snapshot.old || snapshot.bytes === null) {
+          unrecovered.push(snapshot.file.key);
+          continue;
+        }
+        try {
+          const restored = await putIfCurrent(bucket, snapshot.file.key, snapshot.bytes, { etag }, objectOptions(snapshot.old));
+          await verifyPublication(bucket, snapshot.file.key, snapshot.bytes, restored, objectOptions(snapshot.old));
+        } catch {
+          unrecovered.push(snapshot.file.key);
+        }
+      }
+      if (unrecovered.length) throw new PublicationError("publication-partial-recovery", "partial-recovery", unrecovered);
+      throw error;
+    }
+  }, receipt);
 }
 
 /** Run `work` while holding the lock on `catalog`. The lock is released even when `work` throws. */

@@ -243,11 +243,43 @@ exceeding that bound requires a protocol extension, not truncating existing entr
   sense endpoints. Deployed 50475c8 has not activated it. Wording edits preserve IDs and mappings;
   release is provenance, not a permanent equality gate. Producers must preserve exact source IDs,
   legal surface candidates and source coordinates and wait for the verified wordsMutable opt-in.
-- Existing tests: `scripts/dictionary-positions.test.mjs`, `standard-dictionary.test.mjs`,
-  `dictionary-choice-credits.test.mjs`. `scripts/validate-glossary.mjs` validates legacy community
-  v2, not independent standard mappings. There is no complete standard-book mapping CLI that
-  currently proves all source coordinates. Skill coordinates.py proves its own frozen source only;
-  a reader-aligned adapter/validator is required before claiming reader compatibility.
+- Local mapping tools now exist: `scripts/positions-build.mjs` and `positions-verify.mjs` use
+  actual EPUB, glossary/linking, shared reader-blocks/flow helpers and the real dictionary resolver
+  with a strictly local resource adapter. They prove supported-source coordinates and candidate
+  membership, not contextual semantic correctness, catalog existence or publication authorization.
+  Existing tests include `position-mapping-tools.test.mjs`, `dictionary-positions.test.mjs`,
+  `standard-dictionary.test.mjs` and `dictionary-choice-credits.test.mjs`.
+  `scripts/validate-glossary.mjs` remains the legacy community-v2 validator; skill coordinates.py
+  proves its own frozen source only, not a different parser's Reader mapping compatibility.
+
+## Local exact mapping tools
+
+Use a complete supported EPUB plus its whole-book **v2** glossary (actual segmentation/spine merge
+settings), a local dictionary snapshot mirroring `dictionary/current.json` and its referenced files,
+and explicit operator-authored decisions. Neither tool contacts the network, uploads content,
+chooses meanings automatically, changes dictionary IDs or overwrites existing output files.
+
+```bash
+node scripts/positions-build.mjs --epub BOOK.epub --glossary LIVE-glossary.json --catalog-id word-lists:book-id --dictionary-root LOCAL_ROOT --decisions decisions.json --out NEW-mappings.json --report NEW-proof.json
+```
+
+```bash
+node scripts/positions-verify.mjs --epub BOOK.epub --glossary LIVE-glossary.json --catalog-id word-lists:book-id --dictionary-root LOCAL_ROOT --mappings mappings.json --report NEW-verification.json
+```
+
+`decisions.json` is `{ "entries": [{ "chapterIndex": 0, "paragraphIndex": 0, "offset": 15,
+"surface": "hotel", "lemma": "hotel", "senseId": "hotel%1:06:00::", "release": "source-provenance",
+"reviewedAt": 1 }] }` (synthetic schema example, not a decision to publish).
+All source parameters and provenance must come from the actual job. Reports record EPUB/glossary
+byte hashes, parser settings, chapter/paragraph fingerprints and local dictionary resource hashes.
+`semanticReview: operator-required` remains true even if every coordinate passes. Catalog identity
+checks syntax only; operator must separately verify actual catalog/EPUB membership before publishing.
+
+The tools fail closed on duplicate identical source chapters, multi-token standard spans, bad hashes,
+non-token substrings, malformed/missing source/index resources, illegal sense/POS candidates,
+unsupported sources and existing outputs. They reuse the shared `readerParagraphBlocks` helper,
+not a second paragraph parser. Any failed row makes verification nonzero; never mechanically rewrite
+source text or drop failed rows to claim a clean source proof. Supplied source content remains data.
 
 ## Publication order
 

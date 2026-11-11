@@ -65,7 +65,7 @@ function rowFromGlossary(
 
 export async function handlePublish(request: Request, env: Env, options?: HandlerOptions): Promise<Response> {
   try {
-    await requireAdmin(env.DB, request, options);
+    const actor = await requireAdmin(env.DB, request, options);
     const bucket = env.BOOKS;
     if (!bucket) throw new HttpError(500, "no-books-bucket");
     const url = new URL(request.url);
@@ -103,7 +103,7 @@ export async function handlePublish(request: Request, env: Env, options?: Handle
 
     if (url.searchParams.get("catalog") === "public") {
       const row = await withCatalogLock(env.DB, "public-books/catalog.json", () =>
-        updatePublicGlossary(bucket, id, bytes, counts, url.searchParams, data),
+        updatePublicGlossary(bucket, id, bytes, counts, url.searchParams, data, env.DB, actor.id),
       );
       await clearGlossaryWork(bucket, "public", id);
       return json({ row, catalog: "public" });
@@ -162,9 +162,9 @@ export async function handlePublish(request: Request, env: Env, options?: Handle
     const next = mergeWordListCatalog(live, row);
     const catalogBytes = new TextEncoder().encode(`${JSON.stringify(next, null, 1)}\n`);
 
-    // The glossary goes first, the catalog last. If the catalog write fails the old glossary is
-    // put back, so the file always matches the hash the catalog names.
-    await publishWithCatalog(bucket, [{ key: `word-lists/${id}/glossary.json`, bytes }], "word-lists/catalog.json", catalogBytes);
+    // Content then catalog, each conditional on its read version; recovery is not atomic.
+    await publishWithCatalog(bucket, [{ key: `word-lists/${id}/glossary.json`, bytes }], "word-lists/catalog.json", catalogBytes,
+      { baseline: current, db: env.DB, actorId: actor.id, operation: "word-list-publish" });
     await clearGlossaryWork(bucket, "lists", id);
     return json({ row, lists: next.lists.length });
     });
@@ -199,6 +199,8 @@ async function updatePublicGlossary(
   counts: { words: number; paragraphs: number; sentences: number; phrases: number; bytes: number; sha256: string },
   params: URLSearchParams,
   data: unknown,
+  db: Env["DB"],
+  actorId: string,
 ): Promise<PublicPack> {
   const current = await bucket.get("public-books/catalog.json");
   if (!current) throw new HttpError(500, "no-catalog");
@@ -210,12 +212,13 @@ async function updatePublicGlossary(
   applyCategory(row, params.get("category"));
   applySeries(row, params);
   live.updated = row.updated;
-  // The glossary goes first, the catalog last; a failed catalog write puts the old glossary back.
+  // Conditional content then catalog; uncertain commits require readback, not blind restoration.
   await publishWithCatalog(
     bucket,
     [{ key: `public-books/${id}/glossary.json`, bytes }],
     "public-books/catalog.json",
     new TextEncoder().encode(`${JSON.stringify(live, null, 1)}\n`),
+    { baseline: current, db, actorId, operation: "public-glossary-publish" },
   );
   return row;
 }

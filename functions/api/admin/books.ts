@@ -95,7 +95,7 @@ export const onRequestPost = (context: { request: Request; env: Env }) => handle
 
 export async function handleUpload(request: Request, env: Env, options?: HandlerOptions): Promise<Response> {
   try {
-    await requireAdmin(env.DB, request, options);
+    const actor = await requireAdmin(env.DB, request, options);
     const url = new URL(request.url);
     const id = url.searchParams.get("id") ?? "";
     if (!LEGACY_ID.test(id)) throw new HttpError(400, "bad-id");
@@ -174,6 +174,7 @@ export async function handleUpload(request: Request, env: Env, options?: Handler
       ],
       "public-books/catalog.json",
       new TextEncoder().encode(`${JSON.stringify(live, null, 1)}\n`),
+      { baseline: catalogObject, db: env.DB, actorId: actor.id, operation: "public-book-publish" },
     );
     await clearGlossaryWork(bucket, "public", id);
     return json({

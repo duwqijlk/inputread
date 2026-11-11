@@ -36,7 +36,7 @@ const mocks = {
   "shelf-identity": "export const findOnShelf = (shelf,names) => shelf.find(book => names.some(name => name.title && book.title === name.title && book.author === name.author)) ?? null;",
   "vocab-store": "export const useVocab = { getState: () => globalThis.__pairTarget.state() };",
   epub: "export const applySpineMerge = x => x; export const parseEpub = async () => { throw Error('Unexpected parse'); };",
-  "glossary-fetch": "export const fetchProtectedGlossary = async () => new Uint8Array(); export const remoteGlossaryId = () => null;",
+  "glossary-fetch": "export const fetchProtectedGlossary = async () => new Uint8Array(); export const remoteGlossaryId = () => null; export const refundGlossaryPlace = async () => {};",
   "glossary-format": "export const validateGlossary = () => ({ file: {} });",
   i18n: "export const tr = key => key;",
   "pack-glossary": "export const applyPackGlossary = async (id) => { globalThis.__pairTarget.stored().get(id).glossary = { complete: true }; return { words: 1 }; }; export const hashBytes = async () => '';",

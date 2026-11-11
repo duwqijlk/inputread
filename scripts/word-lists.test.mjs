@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,7 +43,43 @@ function jpegSize(buf) {
   throw new Error("jpeg has no size marker");
 }
 
-test("word lists ship glossaries and card-sized covers, never an epub", { skip: skipCovers }, () => {
+test("synthetic word lists publish metadata and original glossaries, never private EPUB bytes", () => {
+  const root = mkdtempSync(join(tmpdir(), "inputread-word-lists-"));
+  try {
+    const dir = join(root, "lantern-test");
+    mkdirSync(dir);
+    const list = {
+      version: 2, title: "A Lantern by the Gate", author: "Original test author", lexile: "640L",
+      glossary: { lantern: { meaning: "A light you can carry." } },
+      paragraphs: [{ chapter: 0, paragraph: 0, simple: "Mira leaves a light by the gate." }],
+      sentences: [{ chapter: 0, context: "Mira set a lantern by the gate.", simple: "Mira put a light there." }],
+      phrases: { "by the gate": { meaning: "Next to the gate." } },
+    };
+    const bytes = Buffer.from(JSON.stringify(list));
+    writeFileSync(join(dir, "glossary.json"), bytes);
+    writeFileSync(join(dir, "info.json"), JSON.stringify({ isbn: "9780141960616", series: "Original tests", seriesNumber: 1 }));
+    writeFileSync(join(dir, "book.epub"), "Original private test sentinel: must never ship.");
+    const { catalog, files } = buildWordLists(root);
+    assert.equal(catalog.lists.length, 1);
+    const row = catalog.lists[0];
+    assert.deepEqual([row.id, row.title, row.author, row.lexile, row.isbn, row.series, row.seriesNumber],
+      ["lantern-test", list.title, list.author, "640L", "9780141960616", "Original tests", 1]);
+    assert.deepEqual([row.words, row.paragraphs, row.sentences, row.phrases], [1, 1, 1, 1]);
+    assert.equal(row.epub, undefined);
+    assert.deepEqual(files.map((file) => file.name), ["word-lists/catalog.json", "word-lists/lantern-test/glossary.json"]);
+    assert.deepEqual(files[1].bytes, bytes);
+    assert.equal(row.glossary.bytes, bytes.length);
+    assert.equal(row.glossary.url, "lantern-test/glossary.json");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("private pack word lists ship glossaries and card-sized covers, never an epub", {
+  skip: !existsSync(join(ROOT, "packs")) || readdirSync(join(ROOT, "packs")).length === 0
+    ? "optional copyrighted packs are not distributed in the public repository"
+    : skipCovers,
+}, () => {
   const { catalog, files } = buildWordLists(join(ROOT, "packs"));
   const glossaryDirs = readdirSync(join(ROOT, "packs")).filter((name) => {
     const dir = join(ROOT, "packs", name);
