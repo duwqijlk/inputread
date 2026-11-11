@@ -1,9 +1,12 @@
 # Daily word-list patrol (for an AI agent)
 
-Read this whole page before you start. It is the job description for an agent that runs once a
-day with **only a Cloudflare API token**. You do not need this repository, a site login, a build
-or a deploy. Use only Cloudflare HTTPS API calls for remote access; no Node, repository scripts or
-site login are required. This task is hosted at [patrol.md](https://inputread.site/kit/patrol.md).
+Read this whole page before you start. It is the job description for the external agent that runs
+once a day at **02:00 Asia/Shanghai**, using a Cloudflare API token for remote data access.
+The existing community-review procedure needs no site login, build or deploy. Standard-position
+adoption in section 10 additionally needs the actual reader parsing/coordinate helpers, or an
+independently verified equivalent; if unavailable, leave those choices needs-context, not guessed.
+Use only Cloudflare HTTPS API calls for remote storage access. Running local source validation is
+not permission to deploy code or change schemas. This task stays hosted at [patrol.md](https://inputread.site/kit/patrol.md).
 The [maintenance map](https://inputread.site/kit/maintenance.md) owns shared storage, count/version,
 publishing and recovery rules; the actionable API/D1 steps for this patrol are below.
 
@@ -24,17 +27,37 @@ Read the required format/specification links afresh and record their actual sour
 checkout is optional: record its resolved path, commit and dirty state if used, but an old checkout
 need not match the hosted playbook. Do not mix its older procedures into this run. No local/hosted
 hash-equality ceremony, extra version table or authoring ZIP is required.
-Before using the new resolution SQL, confirm migration `0025_feedback_resolution.sql` is present
-in D1's migration history. If missing, stay read-only and ask the operator; never migrate from patrol.
+Before using the resolution SQL, confirm migration `0025_feedback_resolution.sql` is present
+in D1's migration history. Standard-choice processing and the extended contribution projection
+also require `0026_dictionary_choices.sql` and `0027_dictionary_choice_review.sql`. Do not run
+new table queries against an older schema. If missing, use only the supported community review
+path, report the blocked choice/credit work and ask the operator; never migrate from patrol.
 See [documentation authority](https://inputread.site/kit/maintenance.md#ownership).
+
+## Standard choices and daily schedule
+
+The external patrol agent runs this SAME playbook daily at **02:00 Asia/Shanghai**. It handles
+community suggestions, word/passage reports and standard dictionary choices. This repository
+creates no scheduled task or Cron Trigger; the user's separate agent owns scheduling.
+
+Passive word taps are retired. `book_word_taps` is historical evidence only and the old ingest
+endpoint writes nothing. `dictionary_choices` holds raw pending-review evidence after migration
+0026. Source-ID membership is not proof of a book coordinate. Apply the complete workflow in
+[section 10](#10-standard-meaning-choices) before accepting a choice or awarding a point.
+Community `From` and standard `Matched by` credits are independent; one does not replace the other.
+Do not auto-select the most popular sense, and never edit the independently maintained standard
+word definitions or create sense IDs. The implementation contract is documented in
+[DICTIONARY_CHOICES.md](https://github.com/duwqijlk/inputread/blob/main/docs/DICTIONARY_CHOICES.md),
+but this hosted patrol page remains the single operational entry.
 
 ## 1. The job
 
 Readers of inputread.site read English books with a word list (glossary) that explains hard
-words. Three things tell you a list needs work:
+words. The following evidence tells you a list or standard position mapping needs work:
 
-- **Taps** (table `book_word_taps`): a reader opened a word that has **no meaning of its own** at
-  that place. Only such words are recorded.
+- **Historical taps** (`book_word_taps`): older missing-word evidence only; no new automatic collection.
+- **Standard meaning choices** (`dictionary_choices`): explicit choices, reviewed using section 10;
+  source/position validation and post-publication contribution receipts are mandatory.
 - **Reports** (table `word_feedback`), sent with the card's feedback button:
   - `missing_meaning`: the word has no meaning here.
   - `suggested`: the reader wrote their own meaning without saying what was wrong with the one
@@ -629,6 +652,8 @@ WITH accepted AS (
   UNION ALL
   SELECT user_id, 'p:' || book_id || ':' || chapter || ':' || paragraph || ':' || selected AS place, accepted_at
     FROM passage_feedback WHERE accepted_at > 0 AND user_id IS NOT NULL
+  UNION ALL
+  SELECT user_id, 'd:' || position_key AS place, accepted_at FROM dictionary_choice_credits
 )
 SELECT u.public_id AS id, COALESCE(u.nickname, '') AS name, u.avatar_rev AS avatar,
        COUNT(DISTINCT a.place) AS helped
@@ -659,6 +684,9 @@ WITH accepted AS (
   SELECT user_id, catalog_id, book_title,
          'p:' || book_id || ':' || chapter || ':' || paragraph || ':' || selected AS place, accepted_at
     FROM passage_feedback WHERE accepted_at > 0 AND user_id IS NOT NULL
+  UNION ALL
+  SELECT user_id, catalog_id, '' AS book_title, 'd:' || position_key AS place, accepted_at
+    FROM dictionary_choice_credits
 )
 SELECT u.public_id AS id, COALESCE(u.nickname, '') AS name, u.avatar_rev AS avatar,
        a.catalog_id AS ref, a.book_title AS title,
@@ -724,3 +752,182 @@ checkout commit/dirty state. Local/hosted equality is not a patrol prerequisite.
 Finish with separate counts: reader reports reviewed by `fixed` / `already_covered` / `no_change`,
 reports not reached, reports blocked by missing evidence, and tap signals selected/examined/fixed.
 Do not label the total tap row count as an unresolved-report backlog. Say so if no reports were open.
+
+## 10. Standard meaning choices
+
+This is part of the original daily patrol, not a separate manual or scheduler. It supplements
+existing community review with exact-position mappings to existing standard sense IDs. Read all
+sections before writes. Standard dictionary files remain read-only. If the runtime cannot prove
+the exact source/coordinates, leave that choice needs-context rather than approximating them.
+
+### Readiness and schedule
+
+- Run daily at 02:00 local China time (Asia/Shanghai, UTC+08:00).
+- First check D1 migration history for 0026 and 0027. If absent, do not issue choice/credit SQL.
+  Continue only already-supported legacy community review and report which feature is blocked.
+- Confirm the reader deployment supports exact-position mapping consumption before publishing one.
+- Scheduling and execution are owned by the user's separate patrol agent, not this repository or
+  this desktop session. This change creates no scheduled task, Cron Trigger or autonomous loop.
+  The external agent runs this procedure at 02:00 and preserves last-run/cutoff receipts.
+- No passive tap collection. Historical tap rows are legacy evidence, not dictionary votes.
+
+### Worklist: bounded, deterministic and no blind repeat scans
+
+Capture a run cutoff timestamp before reading. In pages of at most 100, use a keyset cursor
+(updated_at,user_id,target_hash), not OFFSET. Start from changed/unreviewed rows:
+
+```sql
+SELECT c.*
+  FROM dictionary_choices c
+  LEFT JOIN dictionary_choice_reviews r
+    ON r.user_id = c.user_id AND r.target_hash = c.target_hash
+ WHERE c.updated_at <= ?1
+   AND (r.user_id IS NULL OR r.reviewed_updated_at != c.updated_at
+        OR r.reviewed_choice_id != c.choice_id OR r.reviewed_choice_lemma != c.choice_lemma
+        OR r.reviewed_choice_release != c.choice_release)
+   AND (c.updated_at > ?2 OR (c.updated_at = ?2 AND c.user_id > ?3)
+        OR (c.updated_at = ?2 AND c.user_id = ?3 AND c.target_hash > ?4))
+ ORDER BY c.updated_at,c.user_id,c.target_hash LIMIT 100;
+```
+
+Bind ?1=cutoff, ?2..4=last cursor (initial 0,'',''). Snapshot full target_json, timestamps and choice
+provenance. Work only that snapshot. A needs-context row does not retry every night unchanged;
+retry only on a new reader choice or an explicit targeted operator re-review. A cancelled mutable
+row is no longer pending work; do not resurrect it from an earlier task snapshot.
+
+Group only **after proving exact source positions**. Client device bookId, title, sentence or counts
+are not canonical public identities. No popularity threshold, highest-vote auto-selection, or
+cross-book reuse. Review one source context once for all captured choices proven to name it.
+
+### Exact position and source proof
+
+1. Resolve catalogId against both live catalogs; reject ambiguity, custom/no catalog and wrong book.
+   Read the authorized original EPUB (private bucket is read-only) and record original-byte SHA-256.
+2. Use the current reader parser, segmentation, spine-merge settings and reading-block extraction.
+   Reproduce the exact rendered chapter paragraph array P using the actual app's EPUB/flow helpers.
+   Do not approximate by stripping XML, lowercasing, whitespace normalizing or title matching.
+   If the runner cannot execute or verify that parser route, record needs-context, no mapping/point.
+3. New target evidence includes paragraphText and position. Require paragraphText identical to P[i],
+   and independently recompute the following (UTF-8 SHA-256, code-point offset, no normalization):
+   chapterSha256 = SHA256(JSON.stringify(P)); paragraphSha256 = SHA256(P[i]);
+   surface = code-point slice of P[i] at offset with the selected surface length. Repeated identical
+   chapters/source matches are ambiguous and require proof of uniqueness; do not pick the first.
+4. Match original case-sensitive surface exactly. NFC is only for the lexical lookup key; don't
+   silently change source text. Validate chapter index/count/occurrence/context against the original.
+   Legacy evidence lacking full chapter/paragraph proof stays needs-context, never gets inferred IDs.
+5. Validate chosen full ID and lemma in the current immutable dictionary, including surface case/
+   inflection legality and POS. Read original sentence and bounded surrounding paragraphs, choose
+   the meaning actually fitting that occurrence. The independent dictionary remains read-only.
+6. If the reader picked the wrong ID but another published ID is correct, a mapping may use that ID
+   after full proof, but **do not credit the wrong choice**. No source sense fits => no mapping/credit.
+
+Canonical position object (fixed field order):
+
+```json
+{"chapterSha256":"<64hex>","paragraphIndex":0,"paragraphSha256":"<64hex>","offset":0,"surface":"<verbatim>"}
+```
+
+positionKey = SHA256(JSON.stringify([catalogId,chapterSha256,paragraphIndex,paragraphSha256,offset,surface])).
+text_sha256 in the acceptance ledger is chapterSha256. The chapter fingerprint and paragraph index
+isolate repeated paragraphs and incompatible editions without trusting old PackRecord EPUB hashes.
+
+### Publish a static direct mapping, not a live vote query
+
+Key: `dictionary/positions/<catalog>/<id>/mappings.json` in the public books bucket.
+
+```json
+{"schema":"oewn-position-mappings-v1","catalogId":"word-lists:book-id","entries":[{"positionKey":"<64hex>","chapterSha256":"<64hex>","paragraphIndex":0,"paragraphSha256":"<64hex>","offset":0,"surface":"corner","senseId":"<existing opaque ID>","lemma":"corner","release":"<dictionary release>","reviewedAt":1,"matchedBy":["0123456789ab"]}]}
+```
+
+Preserve every unrelated verified row. One row per canonical positionKey; content max 192 KiB for
+this format. If a book exceeds this bound, stop new mapping publication and request a versioned
+shard extension, never silently truncate old mappings. Confirm all referenced IDs remain available.
+Use JSON content type and `Cache-Control: public, max-age=300`. This adds no votes or private users
+to the public file. The reader shares one static download per book/page, regardless of total votes,
+then verifies exact chapter/paragraph/offset/surface locally. A mismatch falls back to candidates.
+A confirmed position displays a single source meaning, with no additional vote requests.
+
+Community authorship and standard context matching are independent contributions. The same reader
+may earn one adopted-community contribution and one adopted-standard-match contribution at the
+same position; different readers may provide these separately. Never deduplicate across contribution
+types or replace an earlier community author when accepting a standard match. A position may
+show `From Alex` below Alex's community explanation and `Matched by Sam` below the standard
+meaning matched by Sam. Never copy the community credit onto the standard sense or replace one
+with the other. Public mapping rows may include `matchedBy: ["<public_id>"]` (at most three unique
+12-character lowercase-hex public IDs, ordered by first verified acceptance then ID). Never include
+email, internal user IDs, raw vote totals or submitted text in these credit fields. More accepted
+readers may all receive points even when only the first three are shown; contributor projection
+must include every displayed ID. No point for a selected ID the reviewer did not adopt.
+
+Before writes follow maintenance's exclusive writer window, exact-byte/metadata snapshot and
+immediate baseline reread rules. If coordination is unavailable, remain read-only. Do not overwrite
+an object changed since the run snapshot. Publish the mapping, read back storage bytes and metadata,
+verify SHA-256, then verify its public URL. A PUT response alone is not successful publication.
+Never write standard dictionary current/release/case/form-index objects during this patrol.
+
+### Review outcomes and contribution points
+
+- accepted: selected ID is exactly the independently verified and published ID; source location
+  and readback receipt complete. Award **one contribution point per user per canonical position**.
+- rejected: selected ID is not applicable; no point, including if the agent publishes a different ID.
+- needs-context: original text/edition/coordinate/candidate proof missing or ambiguous; no point.
+- A repeat vote, device duplicate, retry, switch or later cancellation never creates extra points.
+  Earned credits remain durable separately from mutable choice rows and account deletion cascades.
+- Several different readers whose exact selections are adopted each get one point for that position.
+  Keep standard mapping points separate from existing accepted community-text points; each is an
+  independently adopted contribution. Do not count clicks or failed/unverified submissions.
+
+Only after source proof + mapping readback, issue the following in **one atomic D1 batch**. Values
+are bound parameters, never interpolated. Guard against source updates/cancellation and newer
+reviews. Save receipts of affected rows. This is not an unbounded UPDATE by word/book/sentence.
+
+```sql
+INSERT INTO dictionary_choice_reviews
+ (user_id,target_hash,reviewed_updated_at,reviewed_choice_id,reviewed_choice_lemma,
+  reviewed_choice_release,outcome,reason,catalog_id,text_sha256,canonical_position,
+  verified_sense_id,evidence_sha256,mapping_key,accepted_at,reviewed_at)
+SELECT c.user_id,c.target_hash,c.updated_at,c.choice_id,c.choice_lemma,c.choice_release,
+ ?8,?9,?10,?11,?12,?13,?14,?15,?16,?17
+ FROM dictionary_choices c
+ WHERE c.user_id=?1 AND c.target_hash=?2 AND c.updated_at=?3
+   AND c.choice_id=?4 AND c.choice_lemma=?5 AND c.choice_release=?6 AND c.target_json=?7
+ON CONFLICT(user_id,target_hash) DO UPDATE SET
+ reviewed_updated_at=excluded.reviewed_updated_at,reviewed_choice_id=excluded.reviewed_choice_id,
+ reviewed_choice_lemma=excluded.reviewed_choice_lemma,reviewed_choice_release=excluded.reviewed_choice_release,
+ outcome=excluded.outcome,reason=excluded.reason,catalog_id=excluded.catalog_id,
+ text_sha256=excluded.text_sha256,canonical_position=excluded.canonical_position,
+ verified_sense_id=excluded.verified_sense_id,evidence_sha256=excluded.evidence_sha256,
+ mapping_key=excluded.mapping_key,accepted_at=excluded.accepted_at,reviewed_at=excluded.reviewed_at
+WHERE dictionary_choice_reviews.reviewed_updated_at <= excluded.reviewed_updated_at;
+
+INSERT INTO dictionary_choice_credits
+ (user_id,position_key,catalog_id,text_sha256,position_json,sense_id,accepted_at,mapping_key,mapping_sha256)
+SELECT r.user_id,?18,r.catalog_id,r.text_sha256,r.canonical_position,r.verified_sense_id,
+ r.accepted_at,r.mapping_key,r.evidence_sha256
+ FROM dictionary_choice_reviews r JOIN dictionary_choices c
+ ON c.user_id=r.user_id AND c.target_hash=r.target_hash
+ WHERE r.user_id=?1 AND r.target_hash=?2 AND r.reviewed_updated_at=?3
+   AND r.reviewed_choice_id=?4 AND r.reviewed_choice_lemma=?5 AND r.reviewed_choice_release=?6
+   AND c.target_json=?7 AND c.updated_at=?3 AND c.choice_id=?4 AND c.choice_lemma=?5 AND c.choice_release=?6
+   AND r.outcome='accepted' AND r.verified_sense_id=?4 AND r.reviewed_at=?17
+   AND r.catalog_id=?10 AND r.text_sha256=?11 AND r.canonical_position=?12
+   AND r.verified_sense_id=?13 AND r.evidence_sha256=?14 AND r.mapping_key=?15
+ON CONFLICT DO NOTHING;
+```
+
+?1..7 are the captured source snapshot. ?8=outcome, ?9=specific reason,
+?10=verified catalogId, ?11=chapter SHA256, ?12=canonical JSON above,
+?13=verified published sense ID, ?14=readback complete mapping SHA256,
+?15=mapping key, ?16=accepted timestamp (0 for other outcomes), ?17=review timestamp,
+?18=canonical positionKey. For rejected/needs-context omit unknown evidence as empty strings,
+accepted_at=0 and never insert credit. Never fake hashes/receipts to satisfy schema constraints.
+Zero reviewed rows means race/cancellation: reread, do not broaden guards or mark success.
+The migration/SQL constraints are evidence checks, not semantic proof of a correct acceptance.
+
+After final accepted choice/community suggestion, rebuild **one** contributors.json projection,
+including dictionary_choice_credits in global helped totals, isContributor and per-book maintainers.
+No per-like projection rebuilds and no browser requests per voter. Match SQL against current
+functions/lib/contributors.ts and book-maintainers.ts; verify file original bytes and both people/books.
+Report accepted/rejected/needs-context counts, points newly awarded vs duplicates, mapping keys and
+readback hashes, actual migrations/deploy readiness, failures and work left. Never call a schedule
+or a local patch an executed nightly review.

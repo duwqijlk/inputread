@@ -416,10 +416,33 @@ export async function handleExport(request: Request, env: Env, options?: Handler
     )
       .bind(user.id)
       .all<SyncRow>();
+    const dictionaryChoices = await env.DB.prepare(
+      "SELECT target_hash, target_json, choice_id, choice_lemma, choice_release, created_at, updated_at FROM dictionary_choices WHERE user_id = ? ORDER BY target_hash",
+    ).bind(user.id).all<{
+      target_hash: string; target_json: string; choice_id: string; choice_lemma: string;
+      choice_release: string; created_at: number; updated_at: number;
+    }>();
+    const dictionaryChoiceCredits = await env.DB.prepare(
+      "SELECT position_key, catalog_id, text_sha256, position_json, sense_id, accepted_at, mapping_key, mapping_sha256 FROM dictionary_choice_credits WHERE user_id = ? ORDER BY position_key",
+    ).bind(user.id).all<{
+      position_key: string; catalog_id: string; text_sha256: string; position_json: string;
+      sense_id: string; accepted_at: number; mapping_key: string; mapping_sha256: string;
+    }>();
     return json({
       exportedAt: nowOf(options),
       account: { email: user.email, createdAt: user.created_at, nickname: user.nickname ?? null },
       items: items.results.map(rowToItem),
+      dictionaryChoices: dictionaryChoices.results.map((row) => ({
+        targetHash: row.target_hash, target: JSON.parse(row.target_json) as unknown,
+        choice: { id: row.choice_id, lemma: row.choice_lemma, release: row.choice_release },
+        createdAt: row.created_at, updatedAt: row.updated_at,
+        status: "pending-review", positionValidated: false,
+      })),
+      dictionaryChoiceCredits: dictionaryChoiceCredits.results.map((row) => ({
+        positionKey: row.position_key, catalogId: row.catalog_id, textSha256: row.text_sha256,
+        position: JSON.parse(row.position_json) as unknown, senseId: row.sense_id,
+        acceptedAt: row.accepted_at, mappingKey: row.mapping_key, mappingSha256: row.mapping_sha256,
+      })),
     });
   } catch (error) {
     return errorResponse(error);

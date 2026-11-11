@@ -4,7 +4,7 @@ import { useT } from "@/lib/i18n";
 
 /**
  * The one notice of the site, above the bottom bar: one short line that the site hosts no books
- * under copyright and counts word taps (`recordWordTap` in lib/word-taps-collector.ts). The Guide
+ * under copyright and accepts explicit meaning choices, not passive word-tap collection. The Guide
  * it used to link to is gone; the account dialog keeps the privacy note.
  * It used to be two full paragraphs, which covered the bottom of the shelf.
  *

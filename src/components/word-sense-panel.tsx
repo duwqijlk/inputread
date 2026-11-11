@@ -3,7 +3,7 @@ import { HelpCircle, ThumbsUp } from "lucide-react";
 import { cn, subTabs } from "@/components/ui";
 import { useT } from "@/lib/i18n";
 
-export type StandardSense = { id: string; pos: string; meaning: string; votes?: number };
+export type StandardSense = { id: string; pos: string; meaning: string; votes?: number; source?: { lemma: string; release: string } };
 export type SenseResolution =
   | { kind: "unmapped"; senses: StandardSense[] }
   | { kind: "mapped"; sense: StandardSense }
@@ -24,6 +24,8 @@ export type WordSensePanelProps = {
   communityEditor?: ReactNode;
   /** Render a resolved public contributor credit, never a raw public id or email. */
   communityCredit?: ReactNode;
+  /** Independent credit for the accepted context match, never the community explanation's author. */
+  standardCredit?: ReactNode;
   vote: {
     eligibility: "verified" | "guest" | "unverified" | "loading" | "unavailable";
     selectedId: string | null;
@@ -48,6 +50,7 @@ export function WordSensePanel({
   communityContent,
   communityEditor,
   communityCredit,
+  standardCredit,
   vote,
   onVote,
   onWrite,
@@ -242,6 +245,7 @@ export function WordSensePanel({
                   </p>
                 </div>
               </div>
+              {standardCredit ? <div className="mt-2" data-standard-match-credit>{standardCredit}</div> : null}
               {onStandardWrong ? (
                 <button
                   type="button"
@@ -395,10 +399,14 @@ export function WordSensePanel({
               {vote.pending ? (
                 <p className="pb-2">{t("card.senses.pending")}</p>
               ) : vote.error === "failed" ? (
-                <p className="pb-2 text-warn">{t("card.senses.voteFailed")}</p>
+                <div className="pb-2 text-warn">
+                  <p>{t("card.senses.voteFailed")}</p>
+                  {onRetry ? <button type="button" className={cn("min-h-11 text-sm underline", focus)} onClick={onRetry}>{t("card.senses.retry")}</button> : null}
+                </div>
               ) : vote.error === "fixed" ? (
                 <p className="pb-2">{t("card.senses.voteFixed")}</p>
               ) : vote.eligibility === "verified" &&
+                vote.acknowledged &&
                 senses.some((sense) => sense.id === vote.selectedId) ? (
                 <p className="pb-2" data-sense-choice-saved>
                   {t("card.senses.choiceSaved")}

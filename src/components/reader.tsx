@@ -30,7 +30,6 @@ import { readingSlots } from "@/lib/epub";
 import { phrasePoint, pointFromEntry } from "@/lib/gloss-ref";
 import { linkChapterHtml, peekChapterHtml, rememberChapterHtml } from "@/lib/chapter-link";
 import {
-  countSurface,
   entryAppliesAt,
   hasTrickySense,
   leafReadingBlocks,
@@ -57,7 +56,7 @@ import { legacyChapter, overallProgress, samePlace, useProgress } from "@/lib/pr
 import { bookSyncKey } from "@/lib/sync-merge";
 import type { WordSource } from "@/lib/vocab-model";
 import { hasSourceFrom, savedFromCard } from "@/lib/wordbook";
-import { extractAnchorContext, flushWordTaps, recordWordTap } from "@/lib/word-taps-collector";
+import { extractAnchorContext } from "@/lib/word-taps-collector";
 import { readerVars, usePrefs } from "@/lib/reader-prefs";
 import {
   contextPos,
@@ -198,6 +197,8 @@ export function ReaderScreen({
     before: string;
     /** which paragraph of the chapter this is, counted the way the word list counts them */
     block: number;
+    /** Exact rendered chapter text, captured locally for publication-safe position fingerprints. */
+    positionParagraphs: string[];
   } | null>(null);
   // Paragraph help (overlay). `index` is the paragraph number from paragraphBlocks().
   // `sentence`: the sentence a word card was opened on, so its note starts selected.
@@ -365,12 +366,6 @@ export function ReaderScreen({
       window.removeEventListener("cibian-progress", onProgress);
     };
   }, [bookId, fillPrepared]);
-
-  useEffect(() => {
-    return () => {
-      void flushWordTaps();
-    };
-  }, [bookId]);
 
   useEffect(() => {
     let alive = true;
@@ -1430,14 +1425,12 @@ export function ReaderScreen({
   /** Open the word card for a word button on the page (shared by taps and the hard-word list). */
   function pickButton(button: Element) {
     const surface = button.getAttribute("data-word") ?? "";
-    const key = resolveKey(surface) || surface;
     const blocks = articleRef.current ? readerParagraphBlocks(articleRef.current) : [];
     const blockAt = blocks.findIndex((item) => item.contains(button));
     const block = button.closest("p, li, blockquote, h1, h2, h3, h4, div[data-para]") ?? blocks[blockAt];
     const paragraph = block ? flowText(block) : surface;
     const before = block ? flowTextBefore(block, button) : "";
     const nth = Number(button.getAttribute("data-n")) || 1;
-    const context = extractAnchorContext(paragraph, surface, before.length);
     const located = locateSentence(paragraph, surface, before.length);
     const sentence = located.text;
     const offset = located.offset;
@@ -1447,35 +1440,7 @@ export function ReaderScreen({
       activeExtra || !phraseList
         ? null
         : pickPhrase(phraseList, sentence, surface, offset >= 0 ? offset : undefined);
-    // Only a word with no meaning of its own here is sent to be added to the word list (an entry
-    // that applies at this place, as on the card). Very common words are not sent either: the
-    // list will not explain "the". A phrase with a meaning does not count, so an unknown word
-    // inside a known phrase is still sent.
-    const gloss = book?.glossary[key];
-    const ownMeaning =
-      isEasyKey(key) ||
-      Boolean(
-        gloss &&
-          entryAppliesAt(key, gloss, {
-            chapter: viewChapter,
-            surface,
-            occurrence: nth,
-            paragraph,
-            before,
-          }),
-      );
-    if (!ownMeaning) recordWordTap(bookId, surface, false, {
-      bookTitle: book?.title,
-      form: countSurface(surface),
-      chapter: activeExtra ? 0 : safeIndex,
-      chapters: book?.chapters.length ?? 0,
-      catalogId,
-      occurrence: nth,
-      paragraph: Math.max(0, blockAt),
-      context,
-      sentence,
-      glossaryRev,
-    });
+    // Opening a word card is local only. Collection requires an explicit meaning choice.
     closeHelp();
     setPhraseHit(null);
     setPhrasePending(!activeExtra);
@@ -1489,6 +1454,7 @@ export function ReaderScreen({
       nth,
       before,
       block: Math.max(0, blockAt),
+      positionParagraphs: blocks.map(el => flowText(el)),
     });
     // One voice per tap. The card's own lookup (`findPhrase`) speaks later only when this list
     // did not know the phrase, and it compares against `spoken.current` so nothing says it twice.
@@ -1606,6 +1572,8 @@ export function ReaderScreen({
         paragraph: tap.block,
         chapter: viewChapter,
         glossaryRev,
+        positionParagraphs: tap.positionParagraphs,
+        positionOffset: Array.from(tap.before).length,
       };
     }
     // Not in this book's word list: say so in a friendly way, the same for every such word (a
@@ -1625,6 +1593,8 @@ export function ReaderScreen({
       paragraph: tap.block,
       chapter: viewChapter,
       glossaryRev,
+      positionParagraphs: tap.positionParagraphs,
+      positionOffset: Array.from(tap.before).length,
     };
   }
 

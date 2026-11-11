@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import merriamWebsterLogo from "@/assets/merriam-webster-logo.png";
 import { countSurface, type OtherMeaning } from "@/lib/glossary-format";
 import { lookupStandardWord, type DictionaryLookup } from "@/lib/standard-dictionary";
+import { useDictionaryChoices } from "@/lib/dictionary-choices";
+import { dictionaryPosition, mappedPosition, type DictionaryPosition, type PositionMapping } from "@/lib/dictionary-positions";
 import { useT, type Key } from "@/lib/i18n";
 import { LOOKUP_SITES, lookupUrl, type LookupSite } from "@/lib/lookup-links";
 import { surfaceOffset } from "@/lib/text";
@@ -11,6 +13,7 @@ import { SentenceHint } from "@/components/help-panels";
 import { SIDE_PANEL } from "@/components/side-panel";
 import { cn, SpeakButton } from "@/components/ui";
 import { WordMeaning } from "@/components/word-feedback";
+import { CreditLine } from "@/components/credit-line";
 import { WordSensePanel, type WordSensePanelProps } from "@/components/word-sense-panel";
 import { WordIpa } from "@/components/word-ipa";
 import { WordLookupMenu } from "@/components/word-lookup-menu";
@@ -38,6 +41,8 @@ export type CardState = {
   paragraph?: number;
   chapter?: number;
   glossaryRev?: string;
+  positionParagraphs?: string[];
+  positionOffset?: number;
 };
 
 /** The whole sentence around a tapped word, and where that word starts inside it. */
@@ -206,7 +211,7 @@ export function WordCard({
   }, [selectionId, targetMode, target]);
   // Prefer the exact spelling in the book, not resolveGlossKey's lowercase/heuristic stem.
   const dictionaryKey = state.surface.normalize("NFC");
-  const dictionaryAt = `${bookId}:${selectionId}:${targetMode}:${dictionaryKey}`;
+  const dictionaryAt = `${bookId}:${selectionId}:${targetMode}:${dictionaryKey}:${catalogId ?? ""}:${state.chapter ?? chapter}:${state.paragraph ?? 0}:${state.positionOffset ?? ""}`;
   const standardLookup = standardResult?.at === dictionaryAt ? standardResult.value : null;
   useEffect(() => {
     let alive = true;
@@ -216,6 +221,21 @@ export function WordCard({
     });
     return () => { alive = false; };
   }, [activePhrase, sensePanel, meaningContent, dictionaryKey, dictionaryAt]);
+  const [positionResult, setPositionResult] = useState<{ at: string; position: DictionaryPosition; mapping: PositionMapping | null } | null>(null);
+  const position = positionResult?.at === dictionaryAt ? positionResult.position : null;
+  const mapping = positionResult?.at === dictionaryAt ? positionResult.mapping : null;
+  useEffect(() => {
+    let alive = true;
+    if (activePhrase || sensePanel || meaningContent || !catalogId || !state.positionParagraphs || state.positionOffset === undefined) return;
+    void dictionaryPosition(state.positionParagraphs, state.paragraph ?? 0, state.positionOffset, state.surface).catch(() => null).then(async position => {
+      if (!alive || !position) return;
+      let mapping: PositionMapping | null = null;
+      try { mapping = await mappedPosition(catalogId, position); } catch { /* Keep full candidates on an unavailable mapping. */ }
+      if (alive) setPositionResult({ at: dictionaryAt, position, mapping });
+    });
+    return () => { alive = false; };
+  }, [dictionaryAt, activePhrase, sensePanel, meaningContent, catalogId, state.positionParagraphs, state.positionOffset, state.paragraph, state.surface]);
+  const fixedSense = mapping && standardLookup?.kind === "unmapped" ? standardLookup.senses.find(sense => sense.id === mapping.senseId && sense.source?.lemma === mapping.lemma) : undefined;
   const report = {
     bookId,
     bookTitle,
@@ -249,17 +269,29 @@ export function WordCard({
       </WordMeaning>
     </div>
   ) : null;
+  const choiceActions = useDictionaryChoices(
+    !activePhrase && !fixedSense && !sensePanel && !meaningContent && standardLookup?.kind === "unmapped" ? {
+      bookId, catalogId, chapter: state.chapter ?? chapter, chapters: chapters ?? 0,
+      paragraph: state.paragraph ?? 0, occurrence: state.occurrence ?? 1,
+      word: dictionaryKey, sentence: state.fullSentence ?? state.sentence,
+      context: state.context ?? "", glossaryRev: state.glossaryRev ?? "",
+      ...(position && (state.positionParagraphs?.[state.paragraph ?? 0]?.length ?? Infinity) <= 3000 ? { position, paragraphText: state.positionParagraphs?.[state.paragraph ?? 0] } : {}),
+    } : null,
+    standardLookup?.kind === "unmapped" ? standardLookup.senses : [],
+  );
   const staticSensePanel: WordSensePanelProps | undefined =
     !activePhrase && standardLookup?.kind === "unmapped"
       ? {
-          resolution: standardLookup,
+          resolution: fixedSense ? { kind: "mapped", sense: fixedSense } : standardLookup,
           community: legacyMeaning ? { kind: "community", meaning: targetMeaning, pos: targetPos } : undefined,
           communityContent: legacyMeaning,
-          communityEditor: missing ? (
-            <WordMeaning key={dictionaryAt} meaning="" missing noList={noList} part="word-meaning" target={report} />
+          standardCredit: fixedSense && mapping?.matchedBy?.length ? (
+            <div className="grid gap-1">{mapping.matchedBy.map(id => <CreditLine key={id} id={id} kind="match" />)}</div>
           ) : undefined,
-          vote: { eligibility: "unavailable", selectedId: null, pending: false },
-          onVote: () => undefined,
+          communityEditor: missing ? (
+            <WordMeaning key={dictionaryAt} meaning="" missing compactMissing noList={noList} part="word-meaning" target={report} />
+          ) : undefined,
+          ...choiceActions,
           onWrite: () => undefined,
         }
       : undefined;

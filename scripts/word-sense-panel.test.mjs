@@ -287,7 +287,7 @@ test("actual React sense panel: resolution, controlled votes and attribution", a
         assert.deepEqual(calls.votes, []);
         await render({ vote: { ...verified, selectedId: senses[0].id, error: "failed" } });
         assert.equal(
-          container.querySelector('[aria-live="polite"]').textContent,
+          container.querySelector('[aria-live="polite"] p').textContent,
           messages["card.senses.voteFailed"],
         );
         assert.equal(buttons()[0].getAttribute("aria-pressed"), "true");
@@ -404,11 +404,15 @@ test("actual React sense panel: resolution, controlled votes and attribution", a
       await render({
         resolution: { kind: "mapped", sense: senses[0] },
         community: { kind: "community", meaning: "A river side.", pos: "noun", author: "Fallback name" },
-        communityCredit: React.createElement("p", { "data-test-credit": true }, "Resolved contributor"),
+        communityCredit: React.createElement("p", { "data-test-credit": true }, "From Alex"),
+        standardCredit: React.createElement("p", { "data-test-match-credit": true }, "Matched by Sam"),
         onReport: (reason) => reasons.push(reason),
       });
       assert.ok(container.querySelector("[data-community-explanation]").textContent.includes("noun"));
       assert.ok(container.querySelector("[data-test-credit]"));
+      assert.equal(container.querySelector('[data-community-explanation] [data-test-credit]').textContent, 'From Alex');
+      assert.equal(container.querySelector('[data-fixed-standard] [data-test-match-credit]').textContent, 'Matched by Sam');
+      assert.equal(container.querySelector('[data-community-explanation] [data-test-match-credit]'), null);
       assert.ok(!container.textContent.includes("Fallback name"));
       await click(container.querySelector("[data-community-feedback]"));
       await click([...container.querySelectorAll("button")].find(button => button.textContent === "Too hard"));

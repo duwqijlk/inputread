@@ -2310,84 +2310,22 @@ test("QQ groups stay out of the catalog until an admin saves them", async () => 
   assert.deepEqual(body.groups, []);
 });
 
-test("reading word taps: batch ingestion, accumulation, rate limit, and admin query", async () => {
+test("retired word taps accept old flushes without writes; historical admin records remain manageable", async () => {
   const db = openDb();
   const env = envOf(db);
-
-  // Ingestion: batch with 1 covered word and 1 missing word with location metadata.
-  // The covered word is skipped: only words with no meaning in the book are kept.
-  const resp1 = await handleWordTapsPost(
-    postJson("/api/analytics/word-taps", null, {
-      bookId: "charlie",
-      bookTitle: "Charlie and the Chocolate Factory",
-      taps: [
-        {
-          word: "eavesdrop",
-          form: "eavesdropping",
-          chapter: 2,
-          occurrence: 1,
-          paragraph: 5,
-          context: "he was eavesdropping outside the small room",
-          sentence: "Charlie realized he was eavesdropping outside the small room without making a sound.",
-          count: 2,
-          inGlossary: false,
-        },
-        {
-          word: "chocolate",
-          form: "chocolate",
-          chapter: 0,
-          occurrence: 1,
-          paragraph: 1,
-          context: "the great chocolate palace had melted away",
-          sentence: "The great chocolate palace had melted away in the hot sun.",
-          count: 1,
-          inGlossary: true,
-        },
-      ],
-    }),
-    env,
-    { now: NOW },
-  );
-  assert.equal(resp1.status, 200);
-  assert.deepEqual(await resp1.json(), { ok: true, saved: 1 });
-
-  // Ingestion: second batch accumulating counts for "eavesdrop" and adding "veruca"
-  const resp2 = await handleWordTapsPost(
-    postJson("/api/analytics/word-taps", null, {
-      bookId: "charlie",
-      bookTitle: "Charlie and the Chocolate Factory",
-      taps: [
-        {
-          word: "eavesdrop",
-          form: "eavesdropping",
-          chapter: 2,
-          occurrence: 1,
-          paragraph: 5,
-          context: "he was eavesdropping outside the small room",
-          sentence: "Charlie realized he was eavesdropping outside the small room without making a sound.",
-          count: 3,
-          inGlossary: false,
-          glossaryRev: "rev-charlie-v1",
-        },
-        {
-          word: "veruca",
-          form: "veruca",
-          chapter: 3,
-          occurrence: 1,
-          paragraph: 2,
-          context: "screamed veruca salt in a loud voice",
-          sentence: "Then screamed Veruca Salt in a loud voice to her father.",
-          count: 4,
-          inGlossary: false,
-          glossaryRev: "rev-charlie-v1",
-        },
-      ],
-    }),
-    env,
-    { now: NOW + 1000 },
-  );
-  assert.equal(resp2.status, 200);
-  assert.deepEqual(await resp2.json(), { ok: true, saved: 2 });
+  const response = await handleWordTapsPost(postJson("/api/analytics/word-taps", null, {
+    bookId: "charlie", taps: [{ word: "eavesdrop", count: 9 }],
+  }), env, { now: NOW });
+  assert.deepEqual(await response.json(), { ok: true, saved: 0, retired: true });
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM book_word_taps").get().n, 0);
+  // Seed historical rows directly, not via the retired network ingestion route.
+  const history = db.raw.prepare(`INSERT INTO book_word_taps
+    (book_id,book_title,word,form,chapter,occurrence,paragraph,context,sentence,glossary_rev,tap_count,in_glossary,last_tapped_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  history.run("charlie", "Charlie and the Chocolate Factory", "eavesdrop", "eavesdropping", 2, 1, 5,
+    "he was eavesdropping outside the small room", "Charlie realized he was eavesdropping outside the small room without making a sound.", "rev-charlie-v1", 5, 0, NOW);
+  history.run("charlie", "Charlie and the Chocolate Factory", "veruca", "veruca", 3, 1, 2,
+    "screamed veruca salt in a loud voice", "Then screamed Veruca Salt in a loud voice to her father.", "rev-charlie-v1", 4, 0, NOW);
 
   // Gate admin query
   const unauthorized = await handleAdminWordTapsGet(
@@ -3117,8 +3055,8 @@ test("one request may only carry a batch the CPU budget can pay for", async () =
     env,
     { now: NOW },
   );
-  assert.equal(tooManyTaps.status, 400);
-  assert.equal((await tooManyTaps.json()).error, "bad-taps");
+  assert.equal(tooManyTaps.status, 200);
+  assert.deepEqual(await tooManyTaps.json(), { ok: true, saved: 0, retired: true });
 
   const cookie = cookieHeader(await signUpFully(handleRegister, env, { body: { email: "reader@gmail.com", password: "correct horse" } }));
   const item = { kind: "settings", itemId: "main", updatedAt: NOW, deleted: false, data: {} };
@@ -3130,7 +3068,7 @@ test("one request may only carry a batch the CPU budget can pay for", async () =
   assert.equal((await tooManyItems.json()).error, "too-large");
 });
 
-test("the day's telemetry budget is a hard fuse, and a spent one writes nothing", async () => {
+test("retired telemetry ignores queued taps even when the old budget is spent", async () => {
   const db = openDb();
   const env = envOf(db);
   const day = 24 * 60 * 60 * 1000;
@@ -3147,7 +3085,7 @@ test("the day's telemetry budget is a hard fuse, and a spent one writes nothing"
     env,
     { now: NOW },
   );
-  assert.equal(response.status, 429);
+  assert.equal(response.status, 200);
   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM book_word_taps").get().n, 0, "nothing is written");
 });
 
