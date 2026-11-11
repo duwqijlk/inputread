@@ -216,9 +216,10 @@ export function WordCard({
   useEffect(() => {
     let alive = true;
     if (activePhrase || sensePanel || meaningContent || !dictionaryKey.trim()) return;
-    void lookupStandardWord(dictionaryKey).then((value) => {
+    const receive = (value: DictionaryLookup | null) => {
       if (alive) setStandardResult({ at: dictionaryAt, value });
-    });
+    };
+    void lookupStandardWord(dictionaryKey, receive).then(receive);
     return () => { alive = false; };
   }, [activePhrase, sensePanel, meaningContent, dictionaryKey, dictionaryAt]);
   const [positionResult, setPositionResult] = useState<{ at: string; position: DictionaryPosition; mapping: PositionMapping | null } | null>(null);

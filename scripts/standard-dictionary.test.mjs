@@ -176,6 +176,7 @@ test("case fallback is unique, exact-first and does not merge conflicting identi
       };
       assert.equal((await api.lookupStandardWord(word)).kind, "unmapped");
       assert.equal(urls.filter(u => u.includes("case-indexes")).length, word === "bank" ? 0 : 1);
+      assert.equal(urls.some(u => u.endsWith('/42616e6b.json') || u.endsWith('/42414e4b.json')), false, 'known case aliases avoid nonexistent word URLs');
     }
     for (const word of ["US", "us", "Us"]) {
       const api = load();
@@ -269,6 +270,53 @@ test("form index identity errors cannot silently fall back to suffix guesses", a
     };
     assert.equal((await api.lookupStandardWord("learners")).kind,"error");
   } finally { globalThis.fetch = original; }
+});
+
+test("validated base senses are delivered before delayed enrichment, then all original senses merge", async () => {
+  const native=globalThis.fetch;const api=load();const events=[];let releaseForms;
+  const gate=new Promise(resolve=>{releaseForms=resolve;});
+  globalThis.fetch=async url=>{
+    events.push(url);
+    if(url.endsWith('current.json'))return response({schema:'oewn-r2-current-v1',release:'oewn-2025-test',caseIndex:'case-v1-0123456789ab',formsIndex:'forms-v1-0123456789ab',wordsMutable:true});
+    if(url.includes('form-indexes')){await gate;return response({schema:'oewn-form-index-v1',release:'oewn-2025-test',indexVersion:'forms-v1-0123456789ab',shard:api.dictionaryCaseShard('learned'),entries:{learned:[{lemma:'learn',pos:'v'}]}});}
+    if(url.includes('case-indexes'))return caseResponse(api,'learned',{learned:['learned']});
+    const key=Buffer.from(url.split('/').at(-1).replace('.json',''),'hex').toString();
+    return response({schema:'oewn-r2-entry-v1',release:'oewn-2025-test',lookupKey:key,senses:[{id:key+'-id',pos:key==='learned'?'a':'v',meaning:key+' meaning',originalMeaning:'original'}]});
+  };
+  try{
+    let partial;let done=false;
+    const first=api.lookupStandardWord('learned',value=>{partial=value;}).then(r=>{done=true;return r;});
+    for(let i=0;i<50&&!partial;i++)await Promise.resolve();
+    assert.equal(partial?.senses[0].id,'learned-id');assert.equal(done,false);
+    let joined;const second=api.lookupStandardWord('learned',r=>{joined=r;});
+    for(let i=0;i<10&&!joined;i++)await Promise.resolve();
+    assert.equal(joined?.senses[0].id,'learned-id','late concurrent subscriber receives available base');
+    releaseForms();const[a,b]=await Promise.all([first,second]);assert.deepEqual(a,b);
+    assert.deepEqual(a.senses.map(s=>s.id),['learned-id','learn-id']);
+    assert.equal(events.filter(u=>u.endsWith('/6c6561726e6564.json')).length,1);
+  }finally{releaseForms();globalThis.fetch=native;}
+});
+
+test("ambiguous case and competing morphology never emit an unsafe partial match", async () => {
+  const native=globalThis.fetch;const api=load();const partial=[];const urls=[];
+  globalThis.fetch=async url=>{
+    urls.push(url);
+    if(url.endsWith('current.json'))return response({schema:'oewn-r2-current-v1',release:'oewn-2025-test',caseIndex:'case-v1-0123456789ab'});
+    if(url.includes('case-indexes'))return caseResponse(api,'Us',{us:['US','us']});
+    throw Error('Ambiguous alias must not fetch an entry');
+  };
+  try{assert.equal((await api.lookupStandardWord('Us',r=>partial.push(r))).kind,'ambiguous');assert.deepEqual(partial,[]);assert.equal(urls.some(u=>u.includes('/words/')),false);}finally{globalThis.fetch=native;}
+});
+
+test("warming is capped at four shared shard pairs, coalesced and never downloads word payloads", async () => {
+  const native=globalThis.fetch;const api=load();const urls=[];
+  globalThis.fetch=async url=>{
+    urls.push(url);
+    if(url.endsWith('current.json'))return response({schema:'oewn-r2-current-v1',release:'oewn-2025-test',caseIndex:'case-v1-0123456789ab',formsIndex:'forms-v1-0123456789ab'});
+    const shard=url.split('/').at(-1).replace('.json','');
+    return response({schema:url.includes('form-indexes')?'oewn-form-index-v1':'oewn-case-index-v1',release:'oewn-2025-test',indexVersion:url.includes('form-indexes')?'forms-v1-0123456789ab':'case-v1-0123456789ab',shard,entries:{}});
+  };
+  try{const words=['Bank','hotel','learners','children','went','running','other'];await Promise.all([api.warmStandardDictionary(words),api.warmStandardDictionary(words)]);assert.equal(urls.filter(u=>u.endsWith('current.json')).length,1);assert.ok(urls.length<=9);assert.equal(urls.some(u=>u.includes('/words/')),false);}finally{globalThis.fetch=native;}
 });
 
 test("failed requests retry and old missing manifest expires", async () => {

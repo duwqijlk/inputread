@@ -96,15 +96,17 @@ test("real WordCard retains community identity and accepts a typed sense panel",
     await render({ compactLookups: false });
     assert.ok(container.querySelector("[data-word-footer]"), "explicit old footer remains supported");
 
-    const pending = new Map(); const lookups = [];
-    stubs["@/lib/standard-dictionary"].lookupStandardWord = (word) => {
-      lookups.push(word);
+    const pending = new Map(); const lookups = []; const partials = new Map();
+    stubs["@/lib/standard-dictionary"].lookupStandardWord = (word, partial) => {
+      lookups.push(word); partials.set(word, partial);
       return new Promise(resolve => pending.set(word, resolve));
     };
     await render({ state: { ...state, surface: "Bank", key: "bank" }, selectionId: 10 });
     assert.equal(lookups.at(-1), "Bank", "query exact book spelling, never the legacy lowercase key");
     assert.equal(container.querySelector("h2").textContent, "Bank");
     const bankResult = { kind: "unmapped", senses: [{ id: "bank-existing", pos: "n", meaning: "Bank meaning" }] };
+    await act(async () => partials.get('Bank')(bankResult));
+    assert.equal(received.panel.resolution, bankResult, 'base senses draw before the final enrichment resolves');
     await act(async () => pending.get("Bank")(bankResult));
     assert.equal(received.panel.resolution, bankResult);
     assert.equal(received.panel.vote.eligibility, "unavailable");
@@ -112,6 +114,8 @@ test("real WordCard retains community identity and accepts a typed sense panel",
     await render({ state: { ...state, surface: "London", key: "london" }, selectionId: 11 });
     assert.equal(container.querySelector("[data-test-panel]"), null, "old result never renders for the new target");
     await render({ state: { ...state, surface: "Us", key: "us" }, selectionId: 12 });
+    await act(async () => partials.get('London')({ kind: 'unmapped', senses: [{ id: 'late-partial', pos: 'n', meaning: 'Late meaning' }] }));
+    assert.equal(container.querySelector('[data-test-panel]'), null, 'late partial from prior target cannot flash');
     await act(async () => pending.get("London")({ kind: "unmapped", senses: [{ id: "london-existing", pos: "n", meaning: "London meaning" }] }));
     assert.equal(container.querySelector("[data-test-panel]"), null, "late previous response is ignored");
     await act(async () => pending.get("Us")({ kind: "ambiguous" }));

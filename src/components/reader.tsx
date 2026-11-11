@@ -67,6 +67,8 @@ import {
 } from "@/lib/text";
 import { useVocab } from "@/lib/vocab-store";
 import { flowCutOffsets, flowPoint, flowText, flowTextBefore } from "@/lib/flow-text";
+import { warmDictionaryMappings } from "@/lib/dictionary-positions";
+import { warmStandardDictionary } from "@/lib/standard-dictionary";
 import { MissingBook } from "@/components/missing-book";
 import { READER_GUTTER, SIDE_PANEL } from "@/components/side-panel";
 import { btn, cn, ProgressBar, speakEnglish } from "@/components/ui";
@@ -215,6 +217,9 @@ export function ReaderScreen({
   // the per-book credits find the book without matching titles. Only the list in use counts: a
   // list the reader added ("custom") names no catalog book, even on a book that came from one.
   const [catalogId, setCatalogId] = useState("");
+  useEffect(() => {
+    if (catalogId) void warmDictionaryMappings(catalogId);
+  }, [catalogId]);
   // The book whose phrase list has answered. The chapter is linked only after that: linking it
   // first without phrases and again with them built and laid out the whole chapter twice.
   const [phrasesFor, setPhrasesFor] = useState("");
@@ -482,6 +487,28 @@ export function ReaderScreen({
     }
   }, [book, chapterHtml, chapterKey, phraseList, marked, resolveKey, viewChapter, phrasesReady]);
 
+  const positionChapter = useRef<{
+    root: HTMLElement;
+    blocks: Element[];
+    texts: string[];
+  } | null>(null);
+  const renderedParagraphs = linkedHtml ? null : (activeExtra?.paragraphs ?? chapter?.paragraphs);
+  useLayoutEffect(() => {
+    // React can reuse the article for different HTML, paragraphs, or segmentation rules.
+    // Saved/selected-word classes and empty paragraph-help marks do not change its text.
+    positionChapter.current = null;
+  }, [linkedHtml, chapterKey, renderedParagraphs, book?.segmentation]);
+
+  function renderedPositionChapter() {
+    const root = articleRef.current;
+    if (!root) return null;
+    if (positionChapter.current?.root !== root) {
+      const blocks = readerParagraphBlocks(root);
+      positionChapter.current = { root, blocks, texts: blocks.map((block) => flowText(block)) };
+    }
+    return positionChapter.current;
+  }
+
   const bookKey = shelfBook ? bookSyncKey(shelfBook) : "";
   const savedKeys = useMemo(
     () =>
@@ -552,7 +579,17 @@ export function ReaderScreen({
     if (!linkedHtml) return;
     const root = articleRef.current;
     if (!root) return;
-    const timer = window.setTimeout(() => warmIpaFor(root.textContent ?? ""), 50);
+    const timer = window.setTimeout(() => {
+      const text = root.textContent ?? "";
+      warmIpaFor(text);
+      // Only the opening words seed the bounded shard warmer, never every word in a chapter.
+      const initialWords: string[] = [];
+      for (const match of text.matchAll(new RegExp(TAP_WORD_PATTERN, "gu"))) {
+        initialWords.push(match[0]);
+        if (initialWords.length >= 80) break;
+      }
+      void warmStandardDictionary(initialWords);
+    }, 50);
     return () => window.clearTimeout(timer);
   }, [linkedHtml]);
 
@@ -1425,7 +1462,8 @@ export function ReaderScreen({
   /** Open the word card for a word button on the page (shared by taps and the hard-word list). */
   function pickButton(button: Element) {
     const surface = button.getAttribute("data-word") ?? "";
-    const blocks = articleRef.current ? readerParagraphBlocks(articleRef.current) : [];
+    const positionChapter = renderedPositionChapter();
+    const blocks = positionChapter?.blocks ?? [];
     const blockAt = blocks.findIndex((item) => item.contains(button));
     const block = button.closest("p, li, blockquote, h1, h2, h3, h4, div[data-para]") ?? blocks[blockAt];
     const paragraph = block ? flowText(block) : surface;
@@ -1454,7 +1492,7 @@ export function ReaderScreen({
       nth,
       before,
       block: Math.max(0, blockAt),
-      positionParagraphs: blocks.map(el => flowText(el)),
+      positionParagraphs: positionChapter?.texts ?? [],
     });
     // One voice per tap. The card's own lookup (`findPhrase`) speaks later only when this list
     // did not know the phrase, and it compares against `spoken.current` so nothing says it twice.

@@ -23,6 +23,17 @@ type EntryRequest = { request: Promise<DictionaryLookup>; expires: number };
 const entries = new Map<string, EntryRequest>();
 const requests = new Map<string, Promise<DictionaryLookup>>();
 const indexes = new Map<string, Promise<Record<string, string[]>>>();
+type PartialLookup = Extract<DictionaryLookup, { kind: "unmapped" }>;
+const progress = new Map<string, { latest?: PartialLookup; listeners: Set<(value: PartialLookup) => void> }>();
+
+function publishPartial(key: string, value: PartialLookup): void {
+  const state = progress.get(key);
+  if (!state) return;
+  state.latest = value;
+  for (const listener of state.listeners) {
+    try { listener(value); } catch { /* A view callback cannot invalidate a dictionary lookup. */ }
+  }
+}
 
 function keyHex(lookupKey: string): string {
   const bytes = new TextEncoder().encode(lookupKey.normalize("NFC"));
@@ -241,9 +252,11 @@ async function lookupForms(publication: Publication, word: string): Promise<Dict
     if (!byLemma.has(lemma)) byLemma.set(lemma, new Set());
     byLemma.get(lemma)!.add(POS_NAMES[pos]);
   }
+  const resolvedEntries = await Promise.all([...byLemma].map(async ([lemma, parts]) => ({
+    result: await exactEntry(publication, lemma), parts,
+  })));
   const matches: StandardSense[][] = [];
-  for (const [lemma, parts] of byLemma) {
-    const result = await exactEntry(publication, lemma);
+  for (const { result, parts } of resolvedEntries) {
     if (result.kind === "error") return result;
     if (result.kind !== "unmapped") {
       if (explicit.length) return { kind: "error" };
@@ -257,8 +270,31 @@ async function lookupForms(publication: Publication, word: string): Promise<Dict
   return matches.length ? { kind: "unmapped", senses: matches[0] } : { kind: "missing" };
 }
 
-/** Exact, then unique case match, then source-backed morphology; ambiguity never selects a lemma. */
-export async function lookupStandardWord(word: string): Promise<DictionaryLookup | null> {
+/** Warm only publication and up to four shared index pairs, never word payloads or user data. */
+export async function warmStandardDictionary(words: string[] = []): Promise<void> {
+  try {
+    const publication = await activeRelease();
+    if (!publication) return;
+    const shards = new Set<string>();
+    const samples: string[] = [];
+    for (const word of words) {
+      try { keyHex(word); } catch { continue; }
+      const shard = dictionaryCaseShard(word);
+      if (shards.has(shard)) continue;
+      shards.add(shard); samples.push(word);
+      if (samples.length === 4) break;
+    }
+    await Promise.all(samples.map(async word => {
+      await Promise.all([
+        publication.caseIndex ? caseCandidates(publication, word) : Promise.resolve([]),
+        publication.formsIndex ? explicitForms(publication, word) : Promise.resolve([]),
+      ]);
+    }));
+  } catch { /* Speculative warming must not block opening the book or poison retries. */ }
+}
+
+/** Exact spelling wins within the verified inventory; ambiguous aliases never emit partial meanings. */
+export async function lookupStandardWord(word: string, onPartial?: (value: PartialLookup) => void): Promise<DictionaryLookup | null> {
   const lookupKey = word.normalize("NFC");
   try { keyHex(lookupKey); } catch { return { kind: "missing" }; }
   let publication: Publication | null;
@@ -267,30 +303,61 @@ export async function lookupStandardWord(word: string): Promise<DictionaryLookup
   const { release } = publication;
   const cacheKey = `${publication.wordsMutable ? "mutable" : "immutable"}/${release}/${publication.caseIndex ?? "exact"}/${publication.formsIndex ?? "no-forms"}/${lookupKey}`;
   let pending = requests.get(cacheKey);
+  let updates = progress.get(cacheKey);
   if (!pending) {
+    updates = { listeners: new Set() };
+    progress.set(cacheKey, updates);
     pending = (async (): Promise<DictionaryLookup> => {
-      const withForms = async (base: DictionaryLookup): Promise<DictionaryLookup> => {
-        if (!publication.formsIndex || base.kind === "error" || base.kind === "ambiguous") return base;
-        const forms = await lookupForms(publication, lookupKey);
-        if (base.kind !== "unmapped") return forms;
-        // Inflections can also be independent nouns/adjectives (running, learned, stopped).
-        // Keep every exact sense and append only a uniquely resolved, source-backed form's POS senses.
-        if (forms.kind !== "unmapped") return base;
-        const seen = new Set(base.senses.map(sense => sense.id));
-        return { kind: "unmapped", senses: [...base.senses, ...forms.senses.filter(sense => !seen.has(sense.id))] };
-      };
-      const exact = await exactEntry(publication, lookupKey);
-      if (exact.kind !== "missing" || !publication.caseIndex) return withForms(exact);
-      const candidates = await caseCandidates(publication, lookupKey);
-      if (candidates.length > 1) return { kind: "ambiguous" };
-      if (candidates.length === 0) return withForms({ kind: "missing" });
-      return withForms(await exactEntry(publication, candidates[0]));
+      // Start independent source-form work now, rather than after a sequence of word/404 requests.
+      // Capture failure immediately to avoid an unhandled speculative rejection.
+      const formsRequest = publication.formsIndex
+        ? lookupForms(publication, lookupKey).catch((): DictionaryLookup => ({ kind: "error" }))
+        : Promise.resolve<DictionaryLookup>({ kind: "missing" });
+      let base: DictionaryLookup;
+      const simpleExact = lookupKey === lookupKey.toLowerCase().normalize("NFC") && dictionaryRegularForms(lookupKey).length === 0;
+      if (simpleExact) {
+        // Ordinary lowercase base words (hotel/bank) need no index round-trip on the fast path.
+        base = await exactEntry(publication, lookupKey);
+      } else {
+        base = { kind: "missing" };
+      }
+      if ((!simpleExact || base.kind === "missing") && publication.caseIndex) {
+        // The complete pinned inventory tells us whether exact spelling exists, so a known
+        // non-entry (Bank/learners) need not fetch a 27KB HTML 404 before finding the lemma.
+        const candidates = await caseCandidates(publication, lookupKey);
+        const exact = candidates.includes(lookupKey);
+        if (!exact && candidates.length > 1) return { kind: "ambiguous" };
+        base = exact || candidates.length === 1
+          ? await exactEntry(publication, exact ? lookupKey : candidates[0])
+          : { kind: "missing" };
+      } else if (!simpleExact) {
+        base = await exactEntry(publication, lookupKey);
+      }
+      if (base.kind === "error" || base.kind === "ambiguous") return base;
+      if (base.kind === "unmapped") publishPartial(cacheKey, base);
+      if (!publication.formsIndex) return base;
+      const forms = await formsRequest;
+      if (base.kind !== "unmapped") return forms;
+      // Valid exact/base senses can be displayed before enrichment, but ambiguous morphology
+      // itself never becomes an interim answer. Preserve original order and deduplicate IDs.
+      if (forms.kind !== "unmapped") return base;
+      const seen = new Set(base.senses.map(sense => sense.id));
+      return { kind: "unmapped", senses: [...base.senses, ...forms.senses.filter(sense => !seen.has(sense.id))] };
     })().catch((): DictionaryLookup => ({ kind: "error" }));
     requests.set(cacheKey, pending);
     trimCache(requests);
-    // Stable results are only coalesced while in flight. Keeping a second result TTL could
-    // outlive a constituent word TTL (especially a case/inflection alias) and hide an edit.
-    void pending.then((result) => { if ((publication.wordsMutable || result.kind === "error") && requests.get(cacheKey) === pending) requests.delete(cacheKey); });
+    // Mutable result aliases are coalesced only in flight; word TTL is the single freshness clock.
+    void pending.then((result) => {
+      if ((publication.wordsMutable || result.kind === "error") && requests.get(cacheKey) === pending) requests.delete(cacheKey);
+      if (progress.get(cacheKey) === updates) progress.delete(cacheKey);
+    });
   }
-  return pending;
+  if (onPartial && updates) {
+    updates.listeners.add(onPartial);
+    if (updates.latest) {
+      try { onPartial(updates.latest); } catch { /* View failure is isolated. */ }
+    }
+  }
+  try { return await pending; }
+  finally { if (onPartial) updates?.listeners.delete(onPartial); }
 }
