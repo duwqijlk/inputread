@@ -815,9 +815,12 @@ cross-book reuse. Review one source context once for all captured choices proven
 4. Match original case-sensitive surface exactly. NFC is only for the lexical lookup key; don't
    silently change source text. Validate chapter index/count/occurrence/context against the original.
    Legacy evidence lacking full chapter/paragraph proof stays needs-context, never gets inferred IDs.
-5. Validate chosen full ID and lemma in the current immutable dictionary, including surface case/
-   inflection legality and POS. Read original sentence and bounded surrounding paragraphs, choose
-   the meaning actually fitting that occurrence. The independent dictionary remains read-only.
+5. Validate chosen full ID and lemma against the current publication, including surface case/
+   inflection legality and POS. If current.wordsMutable is true, read the latest content at the current.release
+   word path, not a guessed entry.release path; entry/mapping release is provenance, not sense identity.
+   Otherwise use the existing release-scoped entry. Wording-only edits do not invalidate stable
+   sense IDs or require book remapping. Read original sentence and bounded surrounding paragraphs,
+   choose the meaning actually fitting that occurrence. The independent dictionary remains read-only.
 6. If the reader picked the wrong ID but another published ID is correct, a mapping may use that ID
    after full proof, but **do not credit the wrong choice**. No source sense fits => no mapping/credit.
 

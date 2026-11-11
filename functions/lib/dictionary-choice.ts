@@ -137,15 +137,21 @@ export async function checkChoiceMembership(env: Env, choice: DictionaryChoice):
   const current = await env.BOOKS.get("dictionary/current.json");
   if (!current) throw new HttpError(503, "dictionary-unavailable");
   const manifest = await sourceJson(current, 4096);
-  if (!record(manifest) || manifest.schema !== "oewn-r2-current-v1" || typeof manifest.release !== "string" || !RELEASE.test(manifest.release)) {
+  if (!record(manifest) || manifest.schema !== "oewn-r2-current-v1" || typeof manifest.release !== "string" || !RELEASE.test(manifest.release) ||
+    Object.hasOwn(manifest, "wordBase") ||
+    (Object.hasOwn(manifest, "wordsMutable") && manifest.wordsMutable !== true)) {
     throw new HttpError(503, "dictionary-unavailable");
   }
-  if (choice.release !== manifest.release) throw new HttpError(409, "dictionary-release");
+  const mutable = manifest.wordsMutable === true;
+  // In stable mode releases describe publication provenance, not unchanged sense identity.
+  if (!mutable && choice.release !== manifest.release) throw new HttpError(409, "dictionary-release");
   const hex = Array.from(encoder.encode(choice.lemma), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  const object = await env.BOOKS.get(`dictionary/releases/${choice.release}/words/${hex.slice(0, 2)}/${hex}.json`);
+  const base = `dictionary/releases/${manifest.release}/words`;
+  const object = await env.BOOKS.get(`${base}/${hex.slice(0, 2)}/${hex}.json`);
   if (!object) throw new HttpError(400, "dictionary-choice");
   const entry = await sourceJson(object, ENTRY_BYTES);
-  if (!record(entry) || entry.schema !== "oewn-r2-entry-v1" || entry.release !== choice.release ||
+  if (!record(entry) || entry.schema !== "oewn-r2-entry-v1" || typeof entry.release !== "string" || !RELEASE.test(entry.release) ||
+    (!mutable && entry.release !== choice.release) ||
     entry.lookupKey !== choice.lemma || !Array.isArray(entry.senses)) throw new HttpError(503, "dictionary-unavailable");
   const ids = new Set<string>();
   for (const sense of entry.senses) {

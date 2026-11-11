@@ -23,8 +23,11 @@ catalog identity, chapter/count, paragraph, occurrence, exact surface, sentence/
 word-list revision. SHA-256 of that fixed-order evidence isolates distinct reported positions.
 It does NOT prove a canonical source position. Different devices/editions do not share these rows.
 
-The server verifies that the nominated full ID belongs to the exact immutable source lemma in
-the current released dictionary (bounded manifest and entry reads through BOOKS). It does NOT
+The server verifies that the nominated full ID belongs to the exact source lemma in the current
+publication (bounded manifest and entry reads through BOOKS). With wordsMutable=true,
+it reads the latest content at the original per-word URL; entry/submitted release is provenance, not a rejection
+condition for an unchanged ID. Without wordsMutable the legacy release-bound validation remains.
+Missing stable files never fall back to an old immutable definition. It does NOT
 claim the nominated lemma has been proved to match the surface, or the source text/coordinates
 have been validated. Every response/export says `status: pending-review, positionValidated: false`.
 A client cannot publish mappings, create sense IDs, edit definitions, or turn these records into

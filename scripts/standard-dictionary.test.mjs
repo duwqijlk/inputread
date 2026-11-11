@@ -60,6 +60,104 @@ test("all OEWN part-of-speech codes expand without changing sense identities or 
   } finally { globalThis.fetch = original; }
 });
 
+test("existing uploaded word paths become mutable without copying files or changing book mappings", async () => {
+  const native=globalThis.fetch, now=Date.now;const api=load();let clock=0,mutable=false,meaning='old wording';const urls=[];
+  Date.now=()=>clock;
+  globalThis.fetch=async(url,options)=>{
+    if(url.endsWith('current.json'))return response({schema:'oewn-r2-current-v1',release:'oewn-2025-test',...(mutable?{wordsMutable:true}:{})});
+    urls.push({url,cache:options?.cache});
+    assert.equal(url,'https://books.test.invalid/dictionary/releases/oewn-2025-test/words/62/62616e6b.json');
+    return response({schema:'oewn-r2-entry-v1',release:mutable?'oewn-edit-new':'oewn-2025-test',lookupKey:'bank',senses:[{id:'bank-stable-id',pos:'n',meaning,originalMeaning:'original'}]});
+  };
+  try{
+    assert.equal((await api.lookupStandardWord('bank')).senses[0].meaning,'old wording');
+    mutable=true;meaning='new wording';clock=60_001;
+    const fresh=await api.lookupStandardWord('bank');assert.equal(fresh.senses[0].meaning,'new wording');assert.equal(fresh.senses[0].id,'bank-stable-id');
+    meaning='another wording';clock=120_002;assert.equal((await api.lookupStandardWord('bank')).senses[0].meaning,'another wording');
+    assert.equal(new Set(urls.map(x=>x.url)).size,1,'same original uploaded path throughout');
+    assert.equal(urls.length,3);assert.equal(urls[1].cache,'no-cache');assert.equal(urls[2].cache,'no-cache');
+  }finally{globalThis.fetch=native;Date.now=now;}
+});
+
+test("stable per-word path returns all senses once and refreshes overwritten meanings without a publication change", async () => {
+  const native = globalThis.fetch, now = Date.now;
+  const api = load(); const calls = []; let clock = 0, meaning = 'first explanation', revision = 'oewn-edit-one';
+  const pointer = { schema: 'oewn-r2-current-v1', release: 'oewn-2025-test', wordsMutable: true };
+  Date.now = () => clock;
+  globalThis.fetch = async (url, options) => {
+    calls.push({url, cache:options?.cache});
+    if (url.endsWith('current.json')) return response(pointer);
+    assert.equal(url, 'https://books.test.invalid/dictionary/releases/oewn-2025-test/words/62/62616e6b.json');
+    return response({schema:'oewn-r2-entry-v1',release:revision,lookupKey:'bank',senses:[
+      {id:'stable-bank-one',pos:'n',meaning,originalMeaning:'original'},
+      {id:'stable-bank-two',pos:'v',meaning:'other sense unchanged',originalMeaning:'other original'},
+    ]});
+  };
+  try {
+    const [a,b] = await Promise.all([api.lookupStandardWord('bank'),api.lookupStandardWord('bank')]);
+    assert.deepEqual(a,b); assert.equal(a.senses.length,2); assert.equal(a.senses[0].source.release,'oewn-edit-one');
+    assert.equal(calls.filter(x=>!x.url.endsWith('current.json')).length,1);
+    meaning='updated explanation';revision='oewn-edit-two';clock=59_999;
+    assert.equal((await api.lookupStandardWord('bank')).senses[0].meaning,'first explanation');
+    clock=60_001;
+    const latest=await api.lookupStandardWord('bank');
+    assert.equal(latest.senses[0].meaning,'updated explanation');assert.equal(latest.senses[0].id,'stable-bank-one');
+    assert.equal(latest.senses[1].meaning,'other sense unchanged');
+    assert.equal(latest.senses[0].source.release,'oewn-edit-two');
+    assert.equal(calls.filter(x=>!x.url.endsWith('current.json')).length,2);
+    assert.ok(calls.every(x=>x.cache==='no-cache'),'mutable resources revalidate through HTTP cache');
+  } finally {globalThis.fetch=native;Date.now=now;}
+});
+
+test("stable case aliases reuse word cache, expire missing entries and never fetch individual sense paths", async () => {
+  const native=globalThis.fetch, now=Date.now;const api=load();let clock=0,revision=0;const urls=[];
+  Date.now=()=>clock;
+  globalThis.fetch=async url=>{
+    urls.push(url);
+    if(url.endsWith('current.json'))return response({schema:'oewn-r2-current-v1',release:'oewn-2025-test',caseIndex:'case-v1-0123456789ab',wordsMutable:true});
+    if(url.includes('case-indexes'))return caseResponse(api,'Bank',{bank:['bank']});
+    if(!url.endsWith('/62616e6b.json'))return response({},404);
+    return response({schema:'oewn-r2-entry-v1',release:'oewn-2025-test',lookupKey:'bank',senses:[{id:'bank-fixed',pos:'n',meaning:'revision '+revision,originalMeaning:'original'}]});
+  };
+  try {
+    assert.equal((await api.lookupStandardWord('Bank')).senses[0].meaning,'revision 0');
+    revision=1;clock=30_000;assert.equal((await api.lookupStandardWord('bank')).senses[0].meaning,'revision 0');
+    clock=60_001;assert.equal((await api.lookupStandardWord('Bank')).senses[0].meaning,'revision 1');
+    assert.ok(urls.every(url=>!url.includes('/senses/')));assert.equal(urls.filter(url=>url.endsWith('/62616e6b.json')).length,2);
+  }finally{globalThis.fetch=native;Date.now=now;}
+});
+
+test("stable missing words expire and failed refresh retries instead of serving stale definitions", async () => {
+  const native=globalThis.fetch, now=Date.now;const api=load();let clock=0,phase=0,wordCalls=0;
+  Date.now=()=>clock;
+  globalThis.fetch=async url=>{
+    if(url.endsWith('current.json'))return response({schema:'oewn-r2-current-v1',release:'oewn-2025-test',wordsMutable:true});
+    wordCalls++;
+    if(phase===0)return response({},404);
+    if(phase===2)return response({},503);
+    return entry('bank');
+  };
+  try{
+    assert.equal((await api.lookupStandardWord('bank')).kind,'missing');
+    phase=1;clock=60_001;assert.equal((await api.lookupStandardWord('bank')).kind,'unmapped');
+    phase=2;clock=120_002;assert.equal((await api.lookupStandardWord('bank')).kind,'error');
+    phase=1;assert.equal((await api.lookupStandardWord('bank')).kind,'unmapped');
+    assert.equal(wordCalls,4);
+  }finally{globalThis.fetch=native;Date.now=now;}
+});
+
+test("unknown word routing and invalid mutable flags fail closed", async () => {
+  const native=globalThis.fetch;
+  try {
+    for(const extra of [{wordBase:'dictionary/words'},{wordsMutable:false},{wordsMutable:'true'},{wordsMutable:1},{wordsMutable:null}]){
+      const urls=[];globalThis.fetch=async url=>{urls.push(url);return response({schema:'oewn-r2-current-v1',release:'oewn-2025-test',...extra});};
+      assert.equal((await load().lookupStandardWord('bank')).kind,'error');assert.equal(urls.length,1);
+    }
+    globalThis.fetch=async url=>url.endsWith('current.json')?response({schema:'oewn-r2-current-v1',release:'oewn-2025-test',wordsMutable:true}):entry('wrong');
+    assert.equal((await load().lookupStandardWord('bank')).kind,'error');
+  }finally{globalThis.fetch=native;}
+});
+
 const indexedManifest = response({ schema: "oewn-r2-current-v1", release: "oewn-2025-test", caseIndex: "case-v1-0123456789ab" });
 function caseResponse(api, word, entries, changes = {}) {
   return response({ schema: "oewn-case-index-v1", release: "oewn-2025-test", indexVersion: "case-v1-0123456789ab", shard: api.dictionaryCaseShard(word), entries, ...changes });

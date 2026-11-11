@@ -7,7 +7,7 @@ export type DictionaryLookup =
   | { kind: "missing" }
   | { kind: "error" };
 
-type Publication = { release: string; caseIndex?: string; formsIndex?: string };
+type Publication = { release: string; caseIndex?: string; formsIndex?: string; wordsMutable?: true };
 type FormCandidate = { lemma: string; pos: string };
 const formIndexes = new Map<string, Promise<Record<string, FormCandidate[]>>>();
 const FORMS_INDEX = /^forms-v1-[0-9a-f]{12}$/;
@@ -18,7 +18,9 @@ const MAX_INDEX_BYTES = 192 * 1024;
 const MAX_CACHED_WORDS = 64;
 const CURRENT_TTL = 60_000;
 let current: { request: Promise<Publication | null>; expires: number } | undefined;
-const entries = new Map<string, Promise<DictionaryLookup>>();
+const WORD_TTL = 60_000;
+type EntryRequest = { request: Promise<DictionaryLookup>; expires: number };
+const entries = new Map<string, EntryRequest>();
 const requests = new Map<string, Promise<DictionaryLookup>>();
 const indexes = new Map<string, Promise<Record<string, string[]>>>();
 
@@ -63,10 +65,12 @@ async function activeRelease(): Promise<Publication | null> {
         const manifest = raw as Record<string, unknown>;
         if (manifest.schema !== "oewn-r2-current-v1" || typeof manifest.release !== "string" || !RELEASE.test(manifest.release) ||
           (manifest.caseIndex !== undefined && (typeof manifest.caseIndex !== "string" || !CASE_INDEX.test(manifest.caseIndex))) ||
-          (manifest.formsIndex !== undefined && (typeof manifest.formsIndex !== "string" || !FORMS_INDEX.test(manifest.formsIndex) || !manifest.caseIndex))) {
+          (manifest.formsIndex !== undefined && (typeof manifest.formsIndex !== "string" || !FORMS_INDEX.test(manifest.formsIndex) || !manifest.caseIndex)) ||
+          Object.prototype.hasOwnProperty.call(manifest, "wordBase") ||
+          (manifest.wordsMutable !== undefined && manifest.wordsMutable !== true)) {
           throw new Error("Invalid dictionary manifest");
         }
-        return { release: manifest.release, caseIndex: manifest.caseIndex as string | undefined, formsIndex: manifest.formsIndex as string | undefined };
+        return { release: manifest.release, caseIndex: manifest.caseIndex as string | undefined, formsIndex: manifest.formsIndex as string | undefined, wordsMutable: manifest.wordsMutable as Publication["wordsMutable"] };
       });
     current = { request, expires: Date.now() + CURRENT_TTL };
     void request.catch(() => { if (current?.request === request) current = undefined; });
@@ -83,10 +87,11 @@ const POS_NAMES: Readonly<Record<string, string>> = {
   r: "adverb",
 };
 
-function parseEntry(value: unknown, release: string, lookupKey: string): DictionaryLookup {
+function parseEntry(value: unknown, publication: Publication, lookupKey: string): DictionaryLookup {
   if (!value || typeof value !== "object") throw new Error("Invalid dictionary entry");
   const entry = value as Record<string, unknown>;
-  if (entry.schema !== "oewn-r2-entry-v1" || entry.release !== release || entry.lookupKey !== lookupKey || !Array.isArray(entry.senses)) {
+  if (entry.schema !== "oewn-r2-entry-v1" || typeof entry.release !== "string" || !RELEASE.test(entry.release) ||
+    (!publication.wordsMutable && entry.release !== publication.release) || entry.lookupKey !== lookupKey || !Array.isArray(entry.senses)) {
     throw new Error("Dictionary entry identity mismatch");
   }
   const seen = new Set<string>();
@@ -100,7 +105,7 @@ function parseEntry(value: unknown, release: string, lookupKey: string): Diction
     }
     seen.add(sense.id);
     const pos = sense.pos.trim();
-    return { id: sense.id, pos: Object.prototype.hasOwnProperty.call(POS_NAMES, pos) ? POS_NAMES[pos] : pos, meaning: sense.meaning, source: { lemma: lookupKey, release } };
+    return { id: sense.id, pos: Object.prototype.hasOwnProperty.call(POS_NAMES, pos) ? POS_NAMES[pos] : pos, meaning: sense.meaning, source: { lemma: lookupKey, release: entry.release as string } };
   });
   return senses.length ? { kind: "unmapped", senses } : { kind: "missing" };
 }
@@ -109,19 +114,24 @@ function trimCache<T>(cache: Map<string, T>): void {
   if (cache.size > MAX_CACHED_WORDS) cache.delete(cache.keys().next().value!);
 }
 
-function exactEntry(release: string, lookupKey: string): Promise<DictionaryLookup> {
-  const path = dictionaryWordPath(release, lookupKey);
-  let pending = entries.get(path);
+function exactEntry(publication: Publication, lookupKey: string): Promise<DictionaryLookup> {
+  const path = dictionaryWordPath(publication.release, lookupKey);
+  const mutable = !!publication.wordsMutable;
+  const entryCacheKey = `${mutable ? "mutable" : "immutable"}/${path}`;
+  const cached = entries.get(entryCacheKey);
+  let pending = cached && Date.now() < cached.expires ? cached.request : undefined;
   if (!pending) {
-    pending = fetch(booksUrl(path)).then(async (response): Promise<DictionaryLookup> => {
+    pending = fetch(booksUrl(path), mutable ? { cache: "no-cache" } : undefined).then(async (response): Promise<DictionaryLookup> => {
       if (response.status === 404) return { kind: "missing" };
       if (!response.ok) throw new Error("Dictionary entry unavailable");
-      return parseEntry(await jsonResponse(response, MAX_ENTRY_BYTES), release, lookupKey);
+      return parseEntry(await jsonResponse(response, MAX_ENTRY_BYTES), publication, lookupKey);
     }).catch((): DictionaryLookup => ({ kind: "error" }));
-    entries.set(path, pending);
+    const entryRequest = { request: pending, expires: Infinity };
+    entries.set(entryCacheKey, entryRequest);
     trimCache(entries);
     void pending.then((result) => {
-      if (result.kind === "error" && entries.get(path) === pending) entries.delete(path);
+      if (result.kind === "error" && entries.get(entryCacheKey) === entryRequest) entries.delete(entryCacheKey);
+      else entryRequest.expires = mutable ? Date.now() + WORD_TTL : Infinity;
     });
   }
   return pending;
@@ -233,7 +243,7 @@ async function lookupForms(publication: Publication, word: string): Promise<Dict
   }
   const matches: StandardSense[][] = [];
   for (const [lemma, parts] of byLemma) {
-    const result = await exactEntry(publication.release, lemma);
+    const result = await exactEntry(publication, lemma);
     if (result.kind === "error") return result;
     if (result.kind !== "unmapped") {
       if (explicit.length) return { kind: "error" };
@@ -255,7 +265,7 @@ export async function lookupStandardWord(word: string): Promise<DictionaryLookup
   try { publication = await activeRelease(); } catch { return { kind: "error" }; }
   if (!publication) return null;
   const { release } = publication;
-  const cacheKey = `${release}/${publication.caseIndex ?? "exact"}/${publication.formsIndex ?? "no-forms"}/${lookupKey}`;
+  const cacheKey = `${publication.wordsMutable ? "mutable" : "immutable"}/${release}/${publication.caseIndex ?? "exact"}/${publication.formsIndex ?? "no-forms"}/${lookupKey}`;
   let pending = requests.get(cacheKey);
   if (!pending) {
     pending = (async (): Promise<DictionaryLookup> => {
@@ -269,16 +279,18 @@ export async function lookupStandardWord(word: string): Promise<DictionaryLookup
         const seen = new Set(base.senses.map(sense => sense.id));
         return { kind: "unmapped", senses: [...base.senses, ...forms.senses.filter(sense => !seen.has(sense.id))] };
       };
-      const exact = await exactEntry(release, lookupKey);
+      const exact = await exactEntry(publication, lookupKey);
       if (exact.kind !== "missing" || !publication.caseIndex) return withForms(exact);
       const candidates = await caseCandidates(publication, lookupKey);
       if (candidates.length > 1) return { kind: "ambiguous" };
       if (candidates.length === 0) return withForms({ kind: "missing" });
-      return withForms(await exactEntry(release, candidates[0]));
+      return withForms(await exactEntry(publication, candidates[0]));
     })().catch((): DictionaryLookup => ({ kind: "error" }));
     requests.set(cacheKey, pending);
     trimCache(requests);
-    void pending.then((result) => { if (result.kind === "error" && requests.get(cacheKey) === pending) requests.delete(cacheKey); });
+    // Stable results are only coalesced while in flight. Keeping a second result TTL could
+    // outlive a constituent word TTL (especially a case/inflection alias) and hide an edit.
+    void pending.then((result) => { if ((publication.wordsMutable || result.kind === "error") && requests.get(cacheKey) === pending) requests.delete(cacheKey); });
   }
   return pending;
 }
