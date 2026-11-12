@@ -9,10 +9,9 @@ import { useT, type Key } from "@/lib/i18n";
 import { LOOKUP_SITES, lookupUrl, type LookupSite } from "@/lib/lookup-links";
 import { surfaceOffset } from "@/lib/text";
 import { FloatingAside } from "@/components/floating-card";
-import { SentenceHint } from "@/components/help-panels";
 import { SIDE_PANEL } from "@/components/side-panel";
 import { cn, SpeakButton } from "@/components/ui";
-import { WordMeaning } from "@/components/word-feedback";
+import { sendWordFeedback, WordMeaning } from "@/components/word-feedback";
 import { CreditLine } from "@/components/credit-line";
 import { WordSensePanel, type WordSensePanelProps } from "@/components/word-sense-panel";
 import { WordIpa } from "@/components/word-ipa";
@@ -31,6 +30,7 @@ export type CardState = {
   status: "ready" | "unknown";
   others?: OtherMeaning[];
   coined?: boolean;
+  trickyMeaning?: boolean;
   /** Public id of the reader whose suggested meaning this is. */
   credit?: string;
   fullSentence?: string;
@@ -73,8 +73,14 @@ export function wholeSentence(paragraph: string, surface: string, at: number): s
 
 export type PhraseHit = {
   key: string;
-  entry: { meaning: string; pos?: string; example?: string; here?: string; credit?: string };
+  entry: { meaning: string; pos?: string; example?: string; here?: string; whyHard?: string; credit?: string };
   matched: string;
+};
+
+export type StandardSaveFallback = {
+  lemma: string;
+  pos: string;
+  meaning: string;
 };
 
 const LOOKUP_LABEL = {
@@ -155,7 +161,6 @@ export function WordCard({
   anchor,
   onClose,
   onToggle,
-  onSentenceHelp,
   meaningContent,
   sensePanel,
   compactLookups = true,
@@ -179,9 +184,7 @@ export function WordCard({
   saved: boolean;
   anchor: HTMLElement | null;
   onClose: (restoreFocus?: boolean) => void;
-  onToggle: () => void;
-  /** Opens the paragraph panel with this sentence's note. Absent: no sentence hint. */
-  onSentenceHelp?: () => void;
+  onToggle: (fallback?: StandardSaveFallback) => void;
   /** Backend-independent view data and actions, already resolved for this exact target. */
   sensePanel?: WordSensePanelProps;
   /** Optional demo presentation; normal readers use sensePanel or the existing community meaning. */
@@ -198,10 +201,6 @@ export function WordCard({
   const targetPos = (
     activePhrase ? activePhrase.entry.pos : state.status === "ready" ? state.pos : ""
   )?.trim();
-  // A sentence note belongs to a chapter, or to a recovered extra by its id. The tapped place's
-  // own chapter is the reader's edition index; for an extra, that id is the only usable key.
-  const sentenceChapter =
-    typeof noteChapter === "string" ? noteChapter : (state.chapter ?? noteChapter ?? chapter);
   useEffect(() => {
     const body = bodyRef.current;
     if (!body) return;
@@ -294,8 +293,26 @@ export function WordCard({
           ) : undefined,
           ...choiceActions,
           onWrite: () => undefined,
+          onStandardWrong: () => {
+            void sendWordFeedback(
+              { ...report, senseMeaning: fixedSense?.meaning ?? targetMeaning },
+              "wrong_meaning",
+            );
+          },
+          onNoMatch: () => {
+            void sendWordFeedback(report, "missing_meaning");
+          },
         }
       : undefined;
+  const standardSaveSense =
+    !activePhrase && !state.ready
+      ? fixedSense ??
+        (choiceActions.vote.selectedId && standardLookup?.kind === "unmapped"
+          ? standardLookup.senses.find((s) => s.id === choiceActions.vote.selectedId)
+          : undefined) ??
+        (standardLookup?.kind === "unmapped" ? standardLookup.senses[0] : undefined)
+      : undefined;
+  const effectiveCanSave = canSave || (!phrasePending && Boolean(standardSaveSense));
   return (
     <FloatingAside
       anchor={anchor}
@@ -342,8 +359,18 @@ export function WordCard({
                 "inline-flex size-11 shrink-0 items-center justify-center rounded transition-colors duration-100 hover:bg-sheet disabled:cursor-not-allowed disabled:opacity-40",
                 saved ? "text-accent" : "text-ink/80 hover:text-ink",
               )}
-              disabled={!saved && !canSave}
-              onClick={onToggle}
+              disabled={!saved && !effectiveCanSave}
+              onClick={() =>
+                onToggle(
+                  !activePhrase && !state.ready && standardSaveSense
+                    ? {
+                        lemma: (standardSaveSense.source?.lemma ?? state.key).toLowerCase(),
+                        pos: standardSaveSense.pos,
+                        meaning: standardSaveSense.meaning,
+                      }
+                    : undefined,
+                )
+              }
               aria-pressed={saved}
               aria-label={t(saved ? "card.savedTarget" : "card.addTarget", { word: target })}
               title={t(saved ? "card.savedTarget" : "card.addTarget", { word: target })}
@@ -466,16 +493,6 @@ export function WordCard({
             <p className="font-sans text-sm leading-5 text-muted" role={standardLookup.kind === "error" ? "alert" : "status"} data-dictionary-status>
               {t(standardLookup.kind === "ambiguous" ? "card.senses.ambiguous" : standardLookup.kind === "error" ? "card.senses.error" : "card.senses.missing")}
             </p>
-          ) : null}
-          {/* One small line when the word list has a note for this sentence; the note opens in
-              the paragraph panel. It shows nothing when there is none. */}
-          {onSentenceHelp ? (
-            <SentenceHint
-              bookId={bookId}
-              chapter={sentenceChapter}
-              sentence={state.fullSentence ?? state.sentence}
-              onOpen={onSentenceHelp}
-            />
           ) : null}
         </div>
       </div>

@@ -25,7 +25,7 @@ import { bookHasUserWork } from "@/lib/shelf-work";
 import { useShelfRemove } from "@/lib/shelf-remove";
 import type { Book } from "@/lib/vocab-model";
 import { useVocab } from "@/lib/vocab-store";
-import { navigate, discoverPosition, rememberDiscoverPosition } from "@/lib/router";
+import { navigate, discoverPosition, rememberDiscoverPosition, trackDiscoverScroll } from "@/lib/router";
 import { discoverSearch, type DiscoverView } from "@/lib/discover-route";
 import { DiscoverGenres } from "@/components/discover-genres";
 import { NewBooksCarousel } from "@/components/new-books-carousel";
@@ -97,6 +97,64 @@ function CardSkeleton() {
 type Row = DiscoverRow;
 const discoverSnapshot = sessionSnapshot<{ rows: Row[]; rails: DiscoverRailSpec[] | null; complete: boolean }>();
 
+function sameDiscoverRow(a: Row, b: Row): boolean {
+  return (
+    a.key === b.key &&
+    a.title === b.title &&
+    a.author === b.author &&
+    a.lexile === b.lexile &&
+    a.isbn === b.isbn &&
+    a.series === b.series &&
+    a.seriesNumber === b.seriesNumber &&
+    a.category === b.category &&
+    a.oldFashioned === b.oldFashioned &&
+    a.oldFashionedReason === b.oldFashionedReason &&
+    a.coverUrl === b.coverUrl &&
+    a.updated === b.updated &&
+    a.added === b.added &&
+    (a.pack?.rev ?? "") === (b.pack?.rev ?? "") &&
+    (a.pack?.epub.sha256 ?? "") === (b.pack?.epub.sha256 ?? "") &&
+    (a.list?.glossary.sha256 ?? "") === (b.list?.glossary.sha256 ?? "") &&
+    (a.genres?.length ?? 0) === (b.genres?.length ?? 0) &&
+    (a.genres ?? []).every((genre, index) => genre === b.genres?.[index])
+  );
+}
+
+function sameDiscoverRows(a: readonly Row[], b: readonly Row[]): boolean {
+  return a === b || (a.length === b.length && a.every((row, index) => sameDiscoverRow(row, b[index]!)));
+}
+
+function sameRailSpecs(a: DiscoverRailSpec[] | null, b: DiscoverRailSpec[] | null): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+
+function sameDiscoverRecords(a: readonly DiscoverRecord[], b: readonly DiscoverRecord[]): boolean {
+  return (
+    a === b ||
+    (a.length === b.length &&
+      a.every((row, index) => {
+        const other = b[index]!;
+        return (
+          row.bookId === other.bookId &&
+          row.packId === other.packId &&
+          row.rev === other.rev &&
+          row.sha256 === other.sha256 &&
+          row.catalog === other.catalog &&
+          row.listSource === other.listSource
+        );
+      }))
+  );
+}
+
+function sameStringSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a === b) return true;
+  if (a.size !== b.size) return false;
+  for (const id of a) {
+    if (!b.has(id)) return false;
+  }
+  return true;
+}
+
 /**
  * Every book we have, from the books host. The two catalog files are one fetch each. Covers load as
  * they come near the screen. A word list or an e-book is fetched only when the plus on a cover is tapped.
@@ -138,7 +196,7 @@ export function DiscoverScreen({
   const [linkedDetail, setLinkedDetail] = useState("");
   const detailId = routeBookId ? linkedDetail : view.detail ?? "";
   function changeView(patch: Partial<DiscoverView>, replace = false) {
-    rememberDiscoverPosition(limit);
+    if (!replace) rememberDiscoverPosition(limit);
     const origin = replace ? window.history.state?.discoverOrigin : `${window.location.pathname}${window.location.search}`;
     navigate({ kind: "discover", category, browse: { ...view, view: "results", ...patch } }, { replace, state: origin ? { discoverOrigin: origin } : null });
   }
@@ -227,10 +285,10 @@ export function DiscoverScreen({
         })) : discoverSnapshot.read()?.rows.filter((row) => row.kind === "list") ?? [];
         const next = { rows: [...classics, ...words], rails: railFile === undefined ? discoverSnapshot.read()?.rails ?? null : railFile, complete: Boolean(lists) };
         if (!discoverSnapshot.publish(ticket, next)) return;
-        setRows(next.rows);
-        setRailSpecs(next.rails);
-        setRecords(shelfMarks.records);
-        setCustomPacks(shelfMarks.custom);
+        setRows((prev) => (sameDiscoverRows(prev, next.rows) ? prev : next.rows));
+        setRailSpecs((prev) => (sameRailSpecs(prev, next.rails) ? prev : next.rails));
+        setRecords((prev) => (sameDiscoverRecords(prev, shelfMarks.records) ? prev : shelfMarks.records));
+        setCustomPacks((prev) => (sameStringSet(prev, shelfMarks.custom) ? prev : shelfMarks.custom));
         setError("");
         // The catalogs are fresh: notice which installed books have a newer word list.
         void autoUpdateWordLists();
@@ -251,8 +309,8 @@ export function DiscoverScreen({
     void loadDiscoverRecords()
       .then((shelfMarks) => {
         if (!alive) return;
-        setRecords(shelfMarks.records);
-        setCustomPacks(shelfMarks.custom);
+        setRecords((prev) => (sameDiscoverRecords(prev, shelfMarks.records) ? prev : shelfMarks.records));
+        setCustomPacks((prev) => (sameStringSet(prev, shelfMarks.custom) ? prev : shelfMarks.custom));
       })
       .catch(() => undefined);
     return () => {
@@ -334,9 +392,9 @@ export function DiscoverScreen({
   }, [shown, series]);
 
   const filterKey = `${category}\0${collection}\0${genre}\0${view.view}\0${query}\0${sort}\0${band}\0${author}\0${series}`;
-  const [windowState, setWindowState] = useState({ key: filterKey, limit: Math.max(DISCOVER_PAGE, discoverPosition()?.limit ?? 0) });
-  if (windowState.key !== filterKey) setWindowState({ key: filterKey, limit: Math.max(DISCOVER_PAGE, discoverPosition()?.limit ?? 0) });
-  const limit = windowState.key === filterKey ? windowState.limit : DISCOVER_PAGE;
+  const savedLimit = Math.max(DISCOVER_PAGE, discoverPosition()?.limit ?? 0);
+  const [windowState, setWindowState] = useState({ key: filterKey, limit: savedLimit });
+  const limit = windowState.key === filterKey ? Math.max(windowState.limit, savedLimit) : savedLimit;
   const visible = shown.slice(0, limit);
   const hasMore = visible.length < shown.length;
   const moreRef = useRef<HTMLDivElement | null>(null);
@@ -349,7 +407,7 @@ export function DiscoverScreen({
     if (!detailId) window.scrollTo({ top: saved?.y ?? 0 });
   }, [ready, addressKey, detailId, limit]);
   useEffect(() => {
-    const save = () => { if (!detailId) rememberDiscoverPosition(limit); };
+    const save = () => { if (!detailId) trackDiscoverScroll(limit); };
     window.addEventListener("scroll", save, { passive: true });
     return () => window.removeEventListener("scroll", save);
   }, [limit, detailId]);
@@ -371,16 +429,17 @@ export function DiscoverScreen({
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
-          setWindowState((prev) =>
-            prev.key === filterKey ? { key: filterKey, limit: prev.limit + DISCOVER_PAGE } : prev,
-          );
+          setWindowState((prev) => ({
+            key: filterKey,
+            limit: (prev.key === filterKey ? Math.max(prev.limit, savedLimit) : savedLimit) + DISCOVER_PAGE,
+          }));
         }
       },
       { rootMargin: "280px" },
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore, filterKey, limit]);
+  }, [hasMore, filterKey, limit, savedLimit]);
 
 
   async function addList(pack: WordListPack) {
@@ -475,7 +534,15 @@ export function DiscoverScreen({
   const shelfLookup = useMemo(() => {
     const targets = new Map(rows.map((row) => [row.key, { ...row, catalog: (row.kind === "classic" ? "public-books" : "word-lists") as CatalogName }]));
     const lookup = createDiscoverShelfLookup(shelf, records, [...targets.values()]);
-    return (row: Row) => lookup(targets.get(row.key)!);
+    const results = new Map<string, ReturnType<typeof lookup>>();
+    return (row: Row) => {
+      let cached = results.get(row.key);
+      if (!cached) {
+        cached = lookup(targets.get(row.key)!);
+        results.set(row.key, cached);
+      }
+      return cached;
+    };
   }, [rows, shelf, records]);
 
   function cardModel(row: Row) {
@@ -581,7 +648,7 @@ export function DiscoverScreen({
     );
   }
 
-  function renderCard(row: Row) {
+  function renderCard(row: Row, index = 0) {
     const model = cardModel(row);
     const { needs, item, busy, cardError, why, note, reason, lexile, state } = model;
     return (
@@ -608,7 +675,7 @@ export function DiscoverScreen({
             data-card-detail
             data-tilt
           >
-            <BookCover title={row.title} author={row.author} cover={row.coverUrl} whenVisible look={coverLookOf(row.category, row.series)} />
+            <BookCover title={row.title} author={row.author} cover={row.coverUrl} whenVisible={index >= 6} look={coverLookOf(row.category, row.series)} />
           </button>
           {/* Who maintains the word list, on the cover's top-left: the same place on every card,
               whatever the title's length or the tags below. The add button keeps the bottom-right. */}
@@ -706,6 +773,7 @@ export function DiscoverScreen({
                 data-discover-category-tab={id}
                 className={cn(subTabs.tab, on ? subTabs.on : subTabs.off)}
                 onClick={() => {
+                  if (on && !routeBookId && !discoverSearch(view)) return;
                   // One address per tab, so a tab can be linked and found by a search engine.
                   navigate({ kind: "discover", category: id }, { replace: true });
                 }}
@@ -718,6 +786,7 @@ export function DiscoverScreen({
         <WeeklyQuota />
       </div>
       {category === "novel" ? <DiscoverGenres genre={genre} onSelect={(value) => {
+        if (value === genre && !collection && !query) return;
         if (value) changeView({ genre: value, q: undefined, collection: undefined, author: undefined, series: undefined, detail: undefined });
         else changeView({ genre: undefined, collection: undefined, q: undefined, band: undefined, author: undefined, series: undefined, sort: undefined, detail: undefined });
       }} /> : null}

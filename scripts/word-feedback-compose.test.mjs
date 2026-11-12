@@ -35,9 +35,12 @@ test('dictionary community composer stays collapsed and preserves text on failed
     assert.equal(document.querySelector('textarea'), null);
     assert.equal(document.querySelector('[data-part="no-meaning"]'), null);
     assert.equal(document.querySelector('[data-feedback-missing]'), null);
+    assert.equal(document.querySelector('[data-community-compose-heading]')?.textContent, 'card.senses.communityNone');
     assert.equal(sends, 0);
     await click(document.querySelector('[data-feedback-add-meaning]'));
+    assert.equal(document.querySelector('[data-community-compose-heading]')?.textContent, 'card.senses.community');
     const textarea = document.querySelector('textarea'); assert.ok(textarea);
+    assert.equal(textarea.getAttribute('aria-label'), 'card.feedbackWriteCommunityPrompt');
     const propsKey = Object.keys(textarea).find(k => k.startsWith('__reactProps$'));
     await act(async () => textarea[propsKey].onChange({ target: { value: 'Where two sides meet.' } }));
     await click(document.querySelector('[data-feedback-suggestion-send]'));
@@ -45,7 +48,8 @@ test('dictionary community composer stays collapsed and preserves text on failed
     assert.equal(document.querySelector('textarea').value, 'Where two sides meet.');
     assert.equal(document.querySelector('[data-feedback-submitted]'), null);
     status = 200; await click(document.querySelector('[data-feedback-suggestion-send]'));
-    assert.ok(document.querySelector('[data-feedback-submitted]'));
+    assert.ok(document.querySelector('[data-feedback-submitted]')?.textContent.includes('card.feedbackCommunityWrote'));
+    assert.equal(document.querySelector('[data-community-compose-heading]')?.textContent, 'card.senses.community');
     assert.equal(document.querySelector('textarea'), null);
   } finally {
     await act(async () => root.unmount()); dom.window.close(); globalThis.fetch = fetchBefore;

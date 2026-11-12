@@ -634,11 +634,86 @@ function flattenToc(nodes: TocNode[]): { title: string; href: string }[] {
   return out.filter((item) => item.href && !/^(nav|toc|cover)/i.test(item.href));
 }
 
-function headingSplit(body: Element): { title: string; holder: HTMLElement }[] {
+const CHAPTER_HEADING_RE =
+  /^(?:chapter|chap\.?|stave|act|scene|letter)\s+(?:\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/i;
+const PART_HEADING_RE =
+  /^(?:part|book|volume|vol\.?)\s+(?:\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i;
+const ROMAN_HEADING_RE = /^[IVXLCDM]{1,7}\.?$/;
+
+function isExplicitChapterBlock(el: Element): boolean {
+  const txt = textOf(el);
+  if (!txt || txt.length > 90 || englishLetters(txt) < 2) return false;
+  if (CHAPTER_HEADING_RE.test(txt)) return true;
+  const tag = localName(el);
+  if ((tag === "h1" || tag === "h2" || tag === "h3") && ROMAN_HEADING_RE.test(txt)) return true;
+  const cls = el.getAttribute("class") ?? "";
+  return (tag === "p" || tag === "div") && /\bchap(?:ter)?(?:[-_a-z0-9]*)?\b/i.test(cls);
+}
+
+function foldBannerMarks(body: Element, marks: Element[]): { title: string; holder: HTMLElement }[] {
+  const out: { title: string; holder: HTMLElement }[] = [];
+  let pendingStart: Element | null = null;
+  let includeBodyStart = false;
+  let pendingBanner = "";
+  const leading = sliceBetween(body, null, marks[0] ?? null);
+  const leadingLetters = englishLetters(leading.textContent ?? "");
+  if (leadingLetters >= 60) {
+    out.push({ title: "", holder: leading });
+  } else if (leadingLetters > 0 && marks.length > 0) {
+    includeBodyStart = true;
+    pendingBanner = englishTitle(textOf(leading), "");
+  }
+  for (let i = 0; i < marks.length; i += 1) {
+    const mark = marks[i]!;
+    const next = marks[i + 1] ?? null;
+    const rawMarkTitle = englishTitle(textOf(mark), "");
+    const slice = sliceBetween(body, mark, next);
+    const bodyLetters = Math.max(0, englishLetters(slice.textContent ?? "") - englishLetters(mark.textContent ?? ""));
+    if (next && bodyLetters < 40 && (localName(mark) === "h1" || PART_HEADING_RE.test(rawMarkTitle))) {
+      if (!pendingStart && !includeBodyStart) pendingStart = mark;
+      pendingBanner = pendingBanner ? `${pendingBanner} - ${rawMarkTitle}` : rawMarkTitle;
+      continue;
+    }
+    const useBodyStart = includeBodyStart;
+    const start = useBodyStart ? null : (pendingStart ?? mark);
+    const title = rawMarkTitle || pendingBanner;
+    pendingStart = null;
+    includeBodyStart = false;
+    pendingBanner = "";
+    out.push({ title, holder: !useBodyStart && start === mark ? slice : sliceBetween(body, start, next) });
+  }
+  if (pendingStart || includeBodyStart) {
+    out.push({ title: pendingBanner, holder: sliceBetween(body, includeBodyStart ? null : pendingStart, null) });
+  }
+  return out;
+}
+
+function headingSplit(body: Element, multiChapterSplit = false): { title: string; holder: HTMLElement }[] {
   const headings = (tag: string) =>
     [...body.querySelectorAll(tag)].filter(
       (heading) => englishLetters(heading.textContent ?? "") >= 2,
     );
+  if (multiChapterSplit) {
+    const h1 = headings("h1");
+    const h2 = headings("h2");
+    if (h2.length >= 2 && h1.length >= 1) {
+      const combined = [...body.querySelectorAll("h1, h2")].filter(
+        (heading) => englishLetters(heading.textContent ?? "") >= 2,
+      );
+      if (combined.length >= 2) return foldBannerMarks(body, combined);
+    }
+    const tier =
+      h1.length >= 2
+        ? h1
+        : h2.length >= 2
+          ? h2
+          : headings("h3").length >= 2
+            ? headings("h3")
+            : [...body.querySelectorAll("h1, h2, h3, p, div")].filter(isExplicitChapterBlock);
+    if (tier.length >= 2) return foldBannerMarks(body, tier);
+    const fallbackHeading = h1[0] ?? h2[0] ?? headings("h3")[0];
+    return [{ title: englishTitle(textOf(fallbackHeading), ""), holder: sliceBetween(body, null, null) }];
+  }
   const marks =
     headings("h1").length >= 2 ? headings("h1") : headings("h2").length >= 2 ? headings("h2") : [];
   if (marks.length < 2) {
@@ -651,16 +726,69 @@ function headingSplit(body: Element): { title: string; holder: HTMLElement }[] {
   }));
 }
 
-function mergeShort(chapters: EpubChapter[]): EpubChapter[] {
+function tocSliceSplit(holder: HTMLElement, rawTitle: string): { title: string; holder: HTMLElement }[] | null {
+  const explicit = [...holder.querySelectorAll("h1, h2, h3, p, div")].filter(isExplicitChapterBlock);
+  let marks = explicit;
+  if (marks.length < 2) {
+    const h12 = [...holder.querySelectorAll("h1, h2")].filter(
+      (h) => englishLetters(h.textContent ?? "") >= 2,
+    );
+    if (h12.length >= 2) {
+      const substantial = h12.filter((mark, i) => {
+        const slice = sliceBetween(holder, mark, h12[i + 1] ?? null);
+        return englishLetters(slice.textContent ?? "") - englishLetters(mark.textContent ?? "") >= 80;
+      });
+      if (substantial.length >= 2) marks = h12;
+    }
+  }
+  if (marks.length < 2) return null;
+  const pieces = foldBannerMarks(holder, marks);
+  const viable = pieces.filter((piece) => englishLetters(piece.holder.textContent ?? "") >= 40);
+  if (viable.length < 2) return null;
+  if (pieces[0] && !pieces[0].title) pieces[0].title = rawTitle;
+  return pieces;
+}
+
+function startsStandaloneChapter(body: Element): { isChapter: boolean; title: string } {
+  let proseBefore = 0;
+  for (const el of [...body.querySelectorAll("h1, h2, h3, p, div")]) {
+    const txt = textOf(el);
+    if (!txt) continue;
+    if (proseBefore < 40 && isExplicitChapterBlock(el)) {
+      return { isChapter: true, title: englishTitle(txt, "") };
+    }
+    proseBefore += englishLetters(txt);
+    if (proseBefore >= 40) break;
+  }
+  return { isChapter: false, title: "" };
+}
+
+function mergeShort(chapters: EpubChapter[], multiChapterSplit = false): EpubChapter[] {
   const merged: EpubChapter[] = [];
-  for (const chapter of chapters) {
+  for (let i = 0; i < chapters.length; i += 1) {
+    const chapter = chapters[i]!;
     const previous = merged[merged.length - 1];
     const letters = englishLetters(chapter.paragraphs.join(" "));
-    if (previous && letters < 40) {
-      previous.title = englishTitle(`${previous.title}. ${chapter.title}`, previous.title);
-      previous.html = `${previous.html}${chapter.html}`;
-      previous.paragraphs = [...previous.paragraphs, ...chapter.paragraphs];
-      continue;
+    if (letters < 40) {
+      if (multiChapterSplit && CHAPTER_HEADING_RE.test(chapter.title) && letters >= 20) {
+        merged.push(chapter);
+        continue;
+      }
+      const next = chapters[i + 1];
+      if (multiChapterSplit && next && PART_HEADING_RE.test(chapter.title)) {
+        if (!CHAPTER_HEADING_RE.test(next.title)) {
+          next.title = englishTitle(`${chapter.title} - ${next.title}`, next.title);
+        }
+        next.html = `${chapter.html}${next.html}`;
+        next.paragraphs = [...chapter.paragraphs, ...next.paragraphs];
+        continue;
+      }
+      if (previous) {
+        previous.title = englishTitle(`${previous.title}. ${chapter.title}`, previous.title);
+        previous.html = `${previous.html}${chapter.html}`;
+        previous.paragraphs = [...previous.paragraphs, ...chapter.paragraphs];
+        continue;
+      }
     }
     merged.push(chapter);
   }
@@ -1091,7 +1219,8 @@ export async function parseEpub(
   // Div paragraphs apply only when every spine content document has no <p> at all.
   // One <p> anywhere keeps today's paragraph list, byte for byte.
   // Blockquote children stay inside one paragraph unless the word list opts in.
-  const blockquoteSplit = options.segmentation === 2;
+  const blockquoteSplit = (options.segmentation ?? 1) >= 2;
+  const multiChapterSplit = (options.segmentation ?? 1) >= 3;
   let divParagraphs = true;
   for (const item of spineRefs) {
     const spineDoc = await loadDoc(item.path);
@@ -1165,10 +1294,16 @@ export async function parseEpub(
    * `Title_split_*`) belong to many entries, so they stay out. A non-linear spine
    * item is not a reading file and does not break the chain.
    */
-  async function continuationRenders(originPath: string): Promise<{ paragraphs: string[]; html: string }[]> {
-    const out: { paragraphs: string[]; html: string }[] = [];
+  async function continuationRenders(
+    originPath: string,
+  ): Promise<{
+    appended: { paragraphs: string[]; html: string }[];
+    promoted: { path: string; title: string; body: Element }[];
+  }> {
+    const appended: { paragraphs: string[]; html: string }[] = [];
+    const promoted: { path: string; title: string; body: Element }[] = [];
     const start = spineRefs.findIndex((item) => item.path === originPath);
-    if (start < 0) return out;
+    if (start < 0) return { appended, promoted };
     let previous = originPath;
     for (let i = start + 1; i < spineRefs.length; i += 1) {
       const item = spineRefs[i];
@@ -1179,12 +1314,39 @@ export async function parseEpub(
       previous = item.path;
       const extraDoc = await loadDoc(item.path);
       if (!extraDoc?.body || looksLikeContents(extraDoc)) continue;
+      if (multiChapterSplit) {
+        const splitHead = startsStandaloneChapter(extraDoc.body);
+        if (splitHead.isChapter && englishLetters(extraDoc.body.textContent ?? "") >= 40) {
+          attached.add(item.path);
+          promoted.push({ path: item.path, title: splitHead.title, body: extraDoc.body });
+          continue;
+        }
+      }
       const extra = await renderFragment(extraDoc.body, zip, item.path, divParagraphs, blockquoteSplit);
       if (!extra) continue;
+      if (promoted.length > 0) {
+        const tail = promoted[promoted.length - 1];
+        if (tail) {
+          const holder = inertCloneWith(tail.body, extraDoc.body);
+          tail.body = holder;
+          attached.add(item.path);
+          continue;
+        }
+      }
       attached.add(item.path);
-      out.push(extra);
+      appended.push(extra);
     }
-    return out;
+    return { appended, promoted };
+  }
+
+  function inertCloneWith(first: Element, second: Element): HTMLElement {
+    const inert = document.implementation.createHTMLDocument("");
+    const holder = inert.createElement("div");
+    holder.append(
+      ...[...first.childNodes].map((n) => inert.importNode(n, true)),
+      ...[...second.childNodes].map((n) => inert.importNode(n, true)),
+    );
+    return holder;
   }
 
   /** True when this contents file has no paragraphs the reader would keep. A short heading is not empty. */
@@ -1282,8 +1444,16 @@ export async function parseEpub(
       const end = nextAnchor ? findById(body, nextAnchor) : null;
       const holder = sliceBetween(body, start, end);
       const before = chapters.length;
-      await push(holder, entry.title, path, chapters.length);
-      if (chapters.length !== before + 1) {
+      const subPieces = multiChapterSplit && !nextAnchor ? tocSliceSplit(holder, entry.title) : null;
+      if (subPieces) {
+        for (const piece of subPieces) {
+          if (chapters.length >= CHAPTER_CAP) break;
+          await push(piece.holder, piece.title, path, chapters.length);
+        }
+      } else {
+        await push(holder, entry.title, path, chapters.length);
+      }
+      if (chapters.length === before) {
         // A short heading is not empty, so its split files stay ordinary extras.
         // Only a file with zero paragraphs is filled, and the fill is an extra.
         if (lastSlice && (await fileIsEmpty(body, path))) await recoverEmptyToc(path, entry.title);
@@ -1300,9 +1470,22 @@ export async function parseEpub(
       const letters = englishLetters(last.paragraphs.join(" "));
       const standsAlone = before === 0 || letters >= 40;
       if (!standsAlone) continue;
-      for (const extra of await continuationRenders(path)) {
+      const cont = await continuationRenders(path);
+      for (const extra of cont.appended) {
         last.paragraphs.push(...extra.paragraphs);
         last.html += extra.html;
+      }
+      for (const prom of cont.promoted) {
+        if (chapters.length >= CHAPTER_CAP) break;
+        const promSlices = tocSliceSplit(sliceBetween(prom.body, null, null), prom.title);
+        if (promSlices) {
+          for (const piece of promSlices) {
+            if (chapters.length >= CHAPTER_CAP) break;
+            await push(piece.holder, piece.title, prom.path, chapters.length);
+          }
+        } else {
+          await push(prom.body, prom.title, prom.path, chapters.length);
+        }
       }
     }
     if (chapters.length >= 2) {
@@ -1312,6 +1495,23 @@ export async function parseEpub(
         const end = item.nextAnchor ? findById(item.body, item.nextAnchor) : null;
         const holder = sliceBetween(item.body, null, end);
         const index = item.at + shift;
+        const subPieces = multiChapterSplit && !item.nextAnchor ? tocSliceSplit(holder, item.title) : null;
+        if (subPieces) {
+          let inserted = 0;
+          for (const piece of subPieces) {
+            if (chapters.length >= CHAPTER_CAP) break;
+            const sub = await heldChapter(piece.holder, piece.title, item.path, index + inserted);
+            if (!sub) continue;
+            chapters.splice(index + inserted, 0, sub);
+            stamp(sub, item.path);
+            inserted += 1;
+          }
+          shift += inserted;
+          if (inserted === 0 && item.lastSlice && (await fileIsEmpty(item.body, item.path))) {
+            await recoverEmptyToc(item.path, item.title);
+          }
+          continue;
+        }
         const chapter = await heldChapter(holder, item.title, item.path, index);
         if (!chapter) {
           if (item.lastSlice && (await fileIsEmpty(item.body, item.path)))
@@ -1325,9 +1525,18 @@ export async function parseEpub(
         const letters = englishLetters(chapter.paragraphs.join(" "));
         const standsAlone = item.at === 0 || letters >= 40;
         if (!standsAlone) continue;
-        for (const extra of await continuationRenders(item.path)) {
+        const cont = await continuationRenders(item.path);
+        for (const extra of cont.appended) {
           chapter.paragraphs.push(...extra.paragraphs);
           chapter.html += extra.html;
+        }
+        for (const prom of cont.promoted) {
+          if (chapters.length >= CHAPTER_CAP) break;
+          const promChapter = await heldChapter(prom.body, prom.title, prom.path, index + 1);
+          if (!promChapter) continue;
+          chapters.splice(index + 1, 0, promChapter);
+          stamp(promChapter, prom.path);
+          shift += 1;
         }
       }
     }
@@ -1350,7 +1559,7 @@ export async function parseEpub(
       const doc = await loadDoc(path);
       if (!doc?.body || looksLikeContents(doc)) continue;
       const body = doc.body;
-      const pieces = headingSplit(body);
+      const pieces = headingSplit(body, multiChapterSplit);
       for (const piece of pieces) {
         if (chapters.length >= CHAPTER_CAP) break;
         await push(piece.holder, piece.title, path, chapters.length);
@@ -1358,7 +1567,7 @@ export async function parseEpub(
     }
   }
 
-  const ready = mergeShort(chapters).filter(
+  const ready = mergeShort(chapters, multiChapterSplit).filter(
     (chapter) => englishLetters(chapter.paragraphs.join(" ")) >= 20,
   );
   // Extras are spine files this chapter list never shows. The fallback already

@@ -41,7 +41,51 @@ function letters(text: string): { chars: string; at: number[] } {
 const END = new Set([".", "?", "!"]);
 
 /** Short words that end in a full stop without ending the sentence ("Mr. Brown"). */
-const TITLES = new Set(["mr", "mrs", "ms", "dr", "st", "jr", "sr", "prof", "mt", "vs", "etc", "no"]);
+const TITLES = new Set([
+  "mr", "mrs", "ms", "dr", "st", "jr", "sr", "prof", "mt", "vs", "etc", "no",
+  "capt", "col", "gen", "lt", "sgt", "maj", "rev", "hon", "pres", "gov", "sen", "rep",
+  "ave", "co", "inc", "ltd", "fig", "ch", "vol", "pp", "ed", "al", "approx", "dept", "cf", "viz",
+]);
+
+const ALWAYS_MID_ABBREV = new Set(["e.g", "i.e", "viz", "cf"]);
+
+function insideUnclosedShortExclamation(text: string, i: number): boolean {
+  let openDouble = -1;
+  let openSingle = -1;
+  for (let k = 0; k < i; k += 1) {
+    const c = text[k];
+    if (c === "“") openDouble = k;
+    else if (c === "”") openDouble = -1;
+    else if (c === "‘") openSingle = k;
+    else if (c === "’" && !(/[A-Za-z0-9]/.test(text[k - 1] ?? "") && /[A-Za-z0-9]/.test(text[k + 1] ?? ""))) {
+      openSingle = -1;
+    }
+  }
+  const openAt = Math.max(openDouble, openSingle);
+  if (openAt < 0) return false;
+  const closeChar = openAt === openDouble ? "”" : "’";
+  const reopenChar = openAt === openDouble ? "“" : "‘";
+  let closesLater = false;
+  for (let k = i + 1; k < text.length; k += 1) {
+    const c = text[k];
+    if (c === reopenChar) break;
+    if (c === closeChar) {
+      if (c === "’" && /[A-Za-z0-9]/.test(text[k - 1] ?? "") && /[A-Za-z0-9]/.test(text[k + 1] ?? "")) continue;
+      closesLater = true;
+      break;
+    }
+  }
+  if (!closesLater) return false;
+  let clauseStart = openAt + 1;
+  for (let k = i - 1; k > openAt; k -= 1) {
+    if (END.has(text[k] ?? "")) {
+      clauseStart = k + 1;
+      break;
+    }
+  }
+  const words = text.slice(clauseStart, i).trim().split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.length <= 3;
+}
 
 /**
  * Does the mark at `i` end a sentence? Only when space, a closing quote or the end follows (so
@@ -53,11 +97,19 @@ function endsSentence(text: string, i: number): boolean {
   let j = i + 1;
   while (j < text.length && /["'”’)\]]/.test(text[j] ?? "")) j += 1;
   if (j < text.length && !/\s/.test(text[j] ?? "")) return false;
+  let next = j;
+  while (next < text.length && /\s/.test(text[next] ?? "")) next += 1;
+  const nextChar = text[next] ?? "";
   if (ch === ".") {
-    const word = /([A-Za-z]+)$/.exec(text.slice(Math.max(0, i - 6), i))?.[1] ?? "";
+    if (text[i - 1] === "." && /^[a-z]/.test(nextChar)) return false;
+    const dotted = /([A-Za-z]\.[A-Za-z])$/.exec(text.slice(Math.max(0, i - 4), i))?.[1]?.toLowerCase();
+    if (dotted && (ALWAYS_MID_ABBREV.has(dotted) || /^[a-z0-9,;(]/.test(nextChar))) return false;
+    const word = /([A-Za-z]+)$/.exec(text.slice(Math.max(0, i - 8), i))?.[1] ?? "";
     if (TITLES.has(word.toLowerCase())) return false;
     // A single capital letter is an initial ("J. K. Rowling").
     if (/^[A-Z]$/.test(word)) return false;
+  } else if (j === i + 1 && insideUnclosedShortExclamation(text, i)) {
+    return false;
   }
   return true;
 }

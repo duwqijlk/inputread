@@ -7,7 +7,7 @@
  * sync merge and by the tests.
  */
 import { bookSyncKey, sourceKey } from "./sync-merge.ts";
-import type { VocabEntry, WordSource } from "./vocab-model.ts";
+import { isDue, type VocabEntry, type WordSource } from "./vocab-model.ts";
 
 /** A word keeps at most this many sources. The newest ones stay. */
 export const MAX_SOURCES = 12;
@@ -21,6 +21,41 @@ export const hasSourceFrom = (word: Pick<VocabEntry, "sources">, bookKey: string
 
 export function wordsFromBook<T extends Pick<VocabEntry, "sources">>(words: readonly T[], bookKey: string): T[] {
   return words.filter((word) => hasSourceFrom(word, bookKey));
+}
+
+/** Count saved words and due words per `bookSyncKey` in one pass across the wordbook. */
+export function countsByBookKey(
+  words: readonly Pick<VocabEntry, "sources" | "stage" | "dueAt">[],
+  now = Date.now(),
+): Map<string, { words: number; due: number }> {
+  const counts = new Map<string, { words: number; due: number }>();
+  for (const word of words) {
+    const due = isDue(word as VocabEntry, now);
+    if (word.sources.length === 1) {
+      const key = word.sources[0]!.book;
+      const entry = counts.get(key);
+      if (entry) {
+        entry.words += 1;
+        if (due) entry.due += 1;
+      } else {
+        counts.set(key, { words: 1, due: due ? 1 : 0 });
+      }
+      continue;
+    }
+    const seen = new Set<string>();
+    for (const source of word.sources) {
+      if (seen.has(source.book)) continue;
+      seen.add(source.book);
+      const entry = counts.get(source.book);
+      if (entry) {
+        entry.words += 1;
+        if (due) entry.due += 1;
+      } else {
+        counts.set(source.book, { words: 1, due: due ? 1 : 0 });
+      }
+    }
+  }
+  return counts;
 }
 
 /** How much a source tells: a stored place and a chapter are worth more than a bare sentence. */

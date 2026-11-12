@@ -35,6 +35,15 @@ test("carousel banners reserve title, author, late blurb and optional facts spac
   assert.doesNotMatch(featured, /h-\[4\.25rem\]/, "mobile facts reserve two lines, not three");
 });
 
+test("carousel and Discover avoid horizontal card shift, scroll-anchor jumps, render-phase double renders, and unthrottled history IPC", () => {
+  assert.match(source, /\[overflow-anchor:none\]/, "carousel disables CSS scroll anchoring across keyed banner swaps");
+  assert.match(source, /preloadFeaturedBooks\?\.\(rows\)/, "carousel preloads tones, blurbs, and covers for upcoming slides");
+  assert.doesNotMatch(source, /translateX\(/, "outer banner card perimeter stays stationary during slide transitions");
+  const discover = readFileSync(new URL("../src/components/discover.tsx", import.meta.url), "utf8");
+  assert.match(discover, /trackDiscoverScroll\(limit\)/, "scroll events update position in memory and debounce history.replaceState");
+  assert.doesNotMatch(discover, /if \(windowState\.key !== filterKey\) setWindowState/, "category and genre switches do not trigger a synchronous double render");
+});
+
 test("real React carousel timers, pauses, catalog identities and dynamic motion preferences", async (t) => {
   const dom = new JSDOM('<!doctype html><html data-theme="light"><body><div id="root"></div></body></html>', { url: "https://test.invalid" });
   const originals = new Map();

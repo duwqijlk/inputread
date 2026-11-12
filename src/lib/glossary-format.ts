@@ -107,11 +107,12 @@ export type GlossaryFile = {
    */
   spine?: { merge: Record<string, string> };
   /**
-   * Optional paragraph rule. `2` splits a chapter-wrapper blockquote (a calibre class,
+   * Optional segmentation rule. `2` splits a chapter-wrapper blockquote (a calibre class,
    * or a blockquote that contains an h1–h4) into its headings and paragraphs.
-   * Omit it and every blockquote stays one paragraph, the same ids as before.
+   * `3` also sub-splits multi-chapter spine files or coarse TOC slices on chapter headings.
+   * Omit it and every blockquote and chapter slice stays as before.
    */
-  segmentation?: 2;
+  segmentation?: 2 | 3;
 };
 
 export const DEFAULT_WHY_HARD = "This word is harder than everyday English.";
@@ -924,7 +925,13 @@ export const LIMITS = {
   phrases: 5000,
   mainIdea: 400,
   paragraphSimple: 3000,
+  clues: 8,
+  clue: 320,
   sentenceSimple: 800,
+  sentenceCore: 240,
+  sentenceChunks: 8,
+  sentenceChunk: 320,
+  sentencePattern: 280,
   grammar: 400,
   hardWords: 20,
   phraseKey: 60,
@@ -1231,6 +1238,24 @@ function checkExtras(
         const ctx = context(where, raw.context);
         const mainIdea = textField(issues, where, raw.mainIdea, "mainIdea", LIMITS.mainIdea, true);
         const simple = textField(issues, where, raw.simple, "simple", LIMITS.paragraphSimple, true);
+        let clues: string[] | undefined;
+        if (raw.clues !== undefined) {
+          if (
+            !Array.isArray(raw.clues) ||
+            raw.clues.some((c) => typeof c !== "string" || !c.trim())
+          ) {
+            issues.error(`${where}: "clues" must be a list of short English reading clues.`);
+          } else if (raw.clues.length > LIMITS.clues) {
+            issues.error(`${where}: too many "clues" (the limit is ${LIMITS.clues}).`);
+          } else {
+            const cleaned: string[] = [];
+            for (const item of raw.clues as string[]) {
+              const one = textField(issues, where, item, "clues", LIMITS.clue, true);
+              if (one) cleaned.push(one);
+            }
+            if (cleaned.length) clues = cleaned;
+          }
+        }
         let hardWords: string[] | undefined;
         if (raw.hardWords !== undefined) {
           if (
@@ -1253,7 +1278,7 @@ function checkExtras(
           return;
         }
         seen.add(id);
-        mark(`paragraph ${chapter}/${paragraph}`, ctx, mainIdea, simple, ...(hardWords ?? []));
+        mark(`paragraph ${chapter}/${paragraph}`, ctx, mainIdea, simple, ...(clues ?? []), ...(hardWords ?? []));
         const credit = creditField(issues, where, raw.credit);
         list.push({
           chapter,
@@ -1261,6 +1286,7 @@ function checkExtras(
           context: ctx,
           mainIdea,
           simple,
+          ...(clues?.length ? { clues } : {}),
           ...(hardWords?.length ? { hardWords } : {}),
           ...(credit ? { credit } : {}),
         });
@@ -1285,17 +1311,43 @@ function checkExtras(
           return;
         }
         const chapter = noteChapter(raw.chapter, where);
+        const hasParagraph = raw.paragraph !== undefined;
+        const paragraph = hasParagraph ? place(raw.paragraph, where, "paragraph", 0) : undefined;
         const ctx = context(where, raw.context);
         const simple = textField(issues, where, raw.simple, "simple", LIMITS.sentenceSimple, true);
-        // Grammar is help, not the note itself: a note with only an easier sentence still shows.
+        // Grammar and 3-step structure fields are optional extra help: a note with only `simple` still shows.
         const grammar = textField(issues, where, raw.grammar, "grammar", LIMITS.grammar, false);
-        if (chapter === null || !ctx || !simple) return;
-        mark(`sentence ${chapter}/${at + 1}`, ctx, simple, grammar);
+        const core = textField(issues, where, raw.core, "core", LIMITS.sentenceCore, false);
+        let chunks: string[] | undefined;
+        if (raw.chunks !== undefined) {
+          if (
+            !Array.isArray(raw.chunks) ||
+            raw.chunks.some((c) => typeof c !== "string" || !c.trim())
+          ) {
+            issues.error(`${where}: "chunks" must be a list of short English breakdown lines.`);
+          } else if (raw.chunks.length > LIMITS.sentenceChunks) {
+            issues.error(`${where}: too many "chunks" (the limit is ${LIMITS.sentenceChunks}).`);
+          } else {
+            const cleaned: string[] = [];
+            for (const item of raw.chunks as string[]) {
+              const one = textField(issues, where, item, "chunks", LIMITS.sentenceChunk, true);
+              if (one) cleaned.push(one);
+            }
+            if (cleaned.length) chunks = cleaned;
+          }
+        }
+        const pattern = textField(issues, where, raw.pattern, "pattern", LIMITS.sentencePattern, false);
+        if (chapter === null || (hasParagraph && paragraph === null) || !ctx || !simple) return;
+        mark(`sentence ${chapter}/${at + 1}`, ctx, simple, grammar, core, ...(chunks ?? []), pattern);
         const credit = creditField(issues, where, raw.credit);
         list.push({
           chapter,
+          ...(paragraph !== undefined && paragraph !== null ? { paragraph } : {}),
           context: ctx,
           simple,
+          ...(core ? { core } : {}),
+          ...(chunks?.length ? { chunks } : {}),
+          ...(pattern ? { pattern } : {}),
           ...(grammar ? { grammar } : {}),
           ...(credit ? { credit } : {}),
         });
@@ -1347,10 +1399,12 @@ function checkExtras(
           if (example) entry.example = example;
           const here = textField(issues, where, raw.here, "here", LIMITS.here, false);
           if (here) entry.here = here;
+          const whyHard = textField(issues, where, raw.whyHard, "whyHard", LIMITS.whyHard, false);
+          if (whyHard) entry.whyHard = whyHard;
           const credit = creditField(issues, where, raw.credit);
           if (credit) entry.credit = credit;
           if (!meaning) continue;
-          mark(`phrase ${key}`, meaning, here, example, ...(forms ?? []));
+          mark(`phrase ${key}`, meaning, here, whyHard, example, ...(forms ?? []));
           map[key] = entry;
         }
         if (Object.keys(map).length) out.phrases = map;
@@ -1505,8 +1559,8 @@ export function validateGlossary(input: unknown, options: ValidateOptions = {}):
     if (merge) out.spine = { merge };
   }
   if (data.segmentation !== undefined) {
-    if (data.segmentation === 2) out.segmentation = 2;
-    else issues.warn('"segmentation" must be 2 to split chapter-wrapper blockquotes. It was ignored.');
+    if (data.segmentation === 2 || data.segmentation === 3) out.segmentation = data.segmentation;
+    else issues.warn('"segmentation" must be 2 or 3. It was ignored.');
   }
 
   const rows = Object.entries(data.glossary as Record<string, unknown>);
@@ -1827,7 +1881,10 @@ export function checkExtrasAgainstBook(
   });
   (file.sentences ?? []).forEach((note, at) => {
     checked += 1;
-    const where = `Sentence note ${at + 1} (chapter ${note.chapter})`;
+    const where =
+      note.paragraph !== undefined
+        ? `Sentence note ${at + 1} (chapter ${note.chapter}, paragraph ${note.paragraph})`
+        : `Sentence note ${at + 1} (chapter ${note.chapter})`;
     const chapter =
       typeof note.chapter === "string" ? looseExtras.get(note.chapter) : looseChapters[note.chapter];
     if (!chapter) {
@@ -1837,6 +1894,25 @@ export function checkExtrasAgainstBook(
           : `${where}: the book has only ${chapters.length} chapters, so chapter ${note.chapter} does not exist (the first chapter is 0).`,
       );
       return;
+    }
+    if (note.paragraph !== undefined) {
+      const pText = chapter[note.paragraph];
+      if (pText === undefined) {
+        report(
+          `${where}: chapter ${note.chapter} has only ${chapter.length} paragraphs, so paragraph ${note.paragraph} does not exist (the first paragraph is 0).`,
+        );
+        return;
+      }
+      if (!has(pText, note.context)) {
+        const elsewhere = chapter.findIndex((t) => has(t, note.context));
+        if (elsewhere >= 0) {
+          moved += 1;
+          report(
+            `${where}: the context ${q(note.context)} is in paragraph ${elsewhere} of that chapter, not in paragraph ${note.paragraph}. Fix the paragraph number.`,
+          );
+          return;
+        }
+      }
     }
     if (!chapter.some((t) => has(t, note.context))) {
       const other = looseChapters.findIndex((c) => c.some((t) => has(t, note.context)));
@@ -1852,13 +1928,58 @@ export function checkExtrasAgainstBook(
   return { errors, warnings, checked, missing, moved };
 }
 
+function chaptersAppearShifted(
+  file: GlossaryFile,
+  chapterParagraphs: ReadonlyArray<ReadonlyArray<string>>,
+): boolean {
+  if (chapterParagraphs.length < 2) return false;
+  let normChapters: string[][] | undefined;
+  const getNormChapter = (c: number): string[] => {
+    if (!normChapters) normChapters = chapterParagraphs.map((list) => list.map(normText));
+    return normChapters[c] ?? [];
+  };
+  let checked = 0;
+  let inHome = 0;
+  let inOther = 0;
+  outer: for (const entry of Object.values(file.glossary)) {
+    for (const sense of entry.senses ?? []) {
+      for (const anchor of sense.anchors ?? []) {
+        if (anchor.chapter === undefined || !anchor.context) continue;
+        const ctx = normText(anchor.context);
+        if (ctx.length < 12) continue;
+        checked += 1;
+        if (getNormChapter(anchor.chapter).some((p) => includesText(p, ctx))) {
+          inHome += 1;
+        } else {
+          for (let i = 0; i < chapterParagraphs.length; i += 1) {
+            if (i === anchor.chapter) continue;
+            if (getNormChapter(i).some((p) => includesText(p, ctx))) {
+              inOther += 1;
+              break;
+            }
+          }
+        }
+        if (checked >= 40) break outer;
+      }
+    }
+  }
+  return checked >= 2 && inHome * 4 < checked && inOther * 2 >= checked - inHome;
+}
+
 /**
  * If the list says how many chapters the author saw and this copy of the book has a
- * different number, chapter/occurrence numbers cannot be trusted. Drop them and keep
- * the context text, which still works.
+ * different number — or if `chapterParagraphs` shows that same-count chapters shifted
+ * (for example front matter replaced back matter) — chapter/occurrence numbers cannot
+ * be trusted. Drop them and keep the context text, which still works.
  */
-export function forBook(file: GlossaryFile, chapterCount: number): GlossaryFile {
-  if (!file.chapters || file.chapters === chapterCount) return file;
+export function forBook(
+  file: GlossaryFile,
+  chapterCount: number,
+  chapterParagraphs?: ReadonlyArray<ReadonlyArray<string>>,
+): GlossaryFile {
+  const countChanged = Boolean(file.chapters && file.chapters !== chapterCount);
+  const shifted = !countChanged && chapterParagraphs ? chaptersAppearShifted(file, chapterParagraphs) : false;
+  if (!countChanged && !shifted) return file;
   const glossary: Record<string, GlossaryEntry> = {};
   for (const [lemma, entry] of Object.entries(file.glossary)) {
     if (!entry.senses) {

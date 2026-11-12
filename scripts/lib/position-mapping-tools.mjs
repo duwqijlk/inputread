@@ -43,9 +43,9 @@ export async function readPositionSource({ epub: epubPath, glossary: glossaryPat
   const file = check.file;
   need(JSON.stringify(Object.keys(raw.glossary)) === JSON.stringify(Object.keys(file.glossary)),
     "Glossary keys require normalization; live-equivalent installation is uncertain");
-  need(raw.segmentation === undefined || raw.segmentation === 2, "Unsupported segmentation option");
+  need(raw.segmentation === undefined || raw.segmentation === 2 || raw.segmentation === 3, "Unsupported segmentation option");
   if (raw.spine !== undefined) need(JSON.stringify(raw.spine) === JSON.stringify(file.spine), "Unsupported or discarded spine.merge settings");
-  const parseOptions = { cover: false, ...(file.segmentation === 2 ? { segmentation: 2 } : {}) };
+  const parseOptions = { cover: false, ...(file.segmentation === 2 || file.segmentation === 3 ? { segmentation: file.segmentation } : {}) };
   let book = await app.epub.parseEpub(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), parseOptions);
   const merge = file.spine?.merge ?? {};
   const warnings = app.epub.spineFileWarnings(merge, book);
@@ -60,7 +60,7 @@ export async function readPositionSource({ epub: epubPath, glossary: glossaryPat
       marks.sparse, marks.tricky, used.phrases ?? {});
     need(html, "Reader chapter linking produced no HTML");
     const root = document.createElement("article");
-    if (file.segmentation === 2) root.setAttribute("data-segmentation", "2");
+    if (file.segmentation === 2 || file.segmentation === 3) root.setAttribute("data-segmentation", String(file.segmentation));
     root.innerHTML = html;
     const blocks = app.readerBlocks.readerParagraphBlocks(root);
     const paragraphs = blocks.map(block => app.flow.flowText(block));

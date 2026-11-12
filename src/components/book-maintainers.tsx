@@ -1,7 +1,7 @@
 import { Avatar } from "@/components/avatar";
 import { useT } from "@/lib/i18n";
 import { moreLabel } from "@/lib/contributors-file";
-import { useBookMaintainers, useContributors } from "@/lib/contributors";
+import { useBookMaintainers, useContributorMap } from "@/lib/contributors";
 import { cn } from "@/components/ui";
 
 /**
@@ -18,11 +18,11 @@ import { cn } from "@/components/ui";
 export function BookMaintainers({ bookRef, className }: { bookRef: string; className?: string }) {
   const { t } = useT();
   const books = useBookMaintainers();
-  const people = useContributors();
+  const peopleById = useContributorMap();
   const book = bookRef ? books[bookRef] : undefined;
   if (!book || book.count === 0) return null;
   const faces = book.top
-    .map((id) => people.find((person) => person.id === id))
+    .map((id) => peopleById.get(id))
     .filter((person): person is NonNullable<typeof person> => Boolean(person));
   const more = moreLabel(book.count, faces.length);
   const label = t("maintainers.aria", { n: book.count });
@@ -65,11 +65,11 @@ export function BookMaintainers({ bookRef, className }: { bookRef: string; class
 export function BookMaintainerList({ bookRef }: { bookRef: string }) {
   const { t } = useT();
   const books = useBookMaintainers();
-  const people = useContributors();
+  const peopleById = useContributorMap();
   const book = bookRef ? books[bookRef] : undefined;
   if (!book || book.count === 0) return null;
   const faces = book.top
-    .map((id) => people.find((person) => person.id === id))
+    .map((id) => peopleById.get(id))
     .filter((person): person is NonNullable<typeof person> => Boolean(person));
   const more = moreLabel(book.count, faces.length);
   return (

@@ -123,7 +123,7 @@ async function buildEpub(spec) {
   if (spec.writeTo) writeFileSync(spec.writeTo, bytes);
   return epub.parseEpub(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), {
     cover: false,
-    ...(spec.segmentation === 2 ? { segmentation: 2 } : {}),
+    ...(spec.segmentation === 2 || spec.segmentation === 3 ? { segmentation: spec.segmentation } : {}),
   });
 }
 
@@ -2132,3 +2132,127 @@ test("bundled classics keep the same chapter and paragraph text", { skip: exists
     assert.equal(hash, PUBLIC_PARAGRAPHS[id], id);
   }
 });
+
+test("segmentation 3 splits coarse Part TOC slices without changing legacy segmentation", async () => {
+  const spec = {
+    title: "Coarse Part TOC",
+    toc: [
+      { title: "Part One", href: "part1.xhtml" },
+      { title: "Part Two", href: "part2.xhtml" },
+    ],
+    spine: [
+      { id: "p1", href: "part1.xhtml" },
+      { id: "p2", href: "part2.xhtml" },
+    ],
+    files: {
+      "part1.xhtml": `<h1>Part One</h1><h2>Chapter 1: Morning</h2><p>The first chapter begins in the morning light. ${LONG}</p><h2>Chapter 2: Noon</h2><p>The second chapter begins at noon in the square. ${LONG}</p>`,
+      "part2.xhtml": `<h1>Part Two</h1><h2>Chapter 3: Dusk</h2><p>The third chapter begins at dusk by the river. ${LONG}</p><h2>Chapter 4: Night</h2><p>The fourth chapter closes the day under stars. ${LONG}</p>`,
+    },
+  };
+  const legacy = await buildEpub(spec);
+  assert.equal(legacy.chapters.length, 2);
+
+  const split = await buildEpub({ ...spec, segmentation: 3 });
+  assert.deepEqual(
+    split.chapters.map((c) => c.title),
+    ["Chapter 1: Morning", "Chapter 2: Noon", "Chapter 3: Dusk", "Chapter 4: Night"],
+  );
+  assert.equal(split.chapters[0].paragraphs[0], "Part One");
+  assert.equal(split.chapters[0].paragraphs[1], "Chapter 1: Morning");
+  assert.match(split.chapters[1].paragraphs[1], /second chapter begins at noon/);
+  assert.equal(split.chapters[2].paragraphs[0], "Part Two");
+});
+
+test("segmentation 3 handles Part h1 + Chapter h2, h3 or p.chapter headings, and short chapter or Part boundaries", async () => {
+  const partAndH2 = await buildEpub({
+    title: "Part Banner Fallback",
+    toc: [],
+    ncx: null,
+    segmentation: 3,
+    spine: [{ id: "all", href: "book.xhtml" }],
+    files: {
+      "book.xhtml": `<h1>Part I: Autumn</h1><h2>Chapter 1</h2><p>Autumn leaves fell across the lane. ${LONG}</p><h2>Chapter 2</h2><p>Frost arrived before sunrise. ${LONG}</p>`,
+    },
+  });
+  assert.deepEqual(partAndH2.chapters.map((c) => c.title), ["Chapter 1", "Chapter 2"]);
+  assert.equal(partAndH2.chapters[0].paragraphs[0], "Part I: Autumn");
+
+  const pChapter = await buildEpub({
+    title: "Styled Paragraph Headings",
+    toc: [],
+    ncx: null,
+    segmentation: 3,
+    spine: [{ id: "all", href: "styled.xhtml" }],
+    files: {
+      "styled.xhtml": `<p class="chapter">Chapter One</p><p>First styled chapter body stays separate. ${LONG}</p><p class="chapter">Chapter Two</p><p>Second styled chapter body stays separate. ${LONG}</p>`,
+    },
+  });
+  assert.deepEqual(pChapter.chapters.map((c) => c.title), ["Chapter One", "Chapter Two"]);
+
+  // Short Chapter 2 (>= 20 and < 40 letters) stays its own chapter; short Part Two merges forward into Chapter 3.
+  const shortBoundaries = await buildEpub({
+    title: "Short Boundaries",
+    segmentation: 3,
+    toc: [
+      { title: "Chapter 1", href: "c1.xhtml" },
+      { title: "Chapter 2", href: "c2.xhtml" },
+      { title: "Part Two", href: "p2.xhtml" },
+      { title: "Chapter 3", href: "c3.xhtml" },
+    ],
+    spine: [
+      { id: "c1", href: "c1.xhtml" },
+      { id: "c2", href: "c2.xhtml" },
+      { id: "p2", href: "p2.xhtml" },
+      { id: "c3", href: "c3.xhtml" },
+    ],
+    files: {
+      "c1.xhtml": `<h1>Chapter 1</h1><p>First full chapter with plenty of words. ${LONG}</p>`,
+      "c2.xhtml": `<h1>Chapter 2</h1><p>Short epigram note here.</p>`,
+      "p2.xhtml": `<h1>Part Two: The Return Home</h1>`,
+      "c3.xhtml": `<h1>Chapter 3</h1><p>Third full chapter opens after the part page. ${LONG}</p>`,
+    },
+  });
+  assert.deepEqual(
+    shortBoundaries.chapters.map((c) => c.title),
+    ["Chapter 1", "Chapter 2", "Chapter 3"],
+  );
+  assert.equal(
+    shortBoundaries.chapters[1].paragraphs.join(" ").includes("Part Two"),
+    false,
+    "Part Two banner must merge forward into Chapter 3, never backward onto Chapter 2",
+  );
+  assert.match(shortBoundaries.chapters[2].paragraphs[0], /Part Two/);
+});
+
+test("segmentation 3 promotes an unlisted _split_001 that starts a new chapter while keeping real continuations", async () => {
+  const spec = {
+    title: "Unlisted Chapter Split",
+    toc: [
+      { title: "Chapter One", href: "story_c01_split_000.xhtml" },
+      { title: "Chapter Three", href: "story_c03.xhtml" },
+    ],
+    spine: [
+      { id: "c1a", href: "story_c01_split_000.xhtml" },
+      { id: "c1b", href: "story_c01_split_001.xhtml" },
+      { id: "c1c", href: "story_c01_split_002.xhtml" },
+      { id: "c3", href: "story_c03.xhtml" },
+    ],
+    files: {
+      "story_c01_split_000.xhtml": `<h1>Chapter One</h1><p>Opening paragraph of chapter one. ${LONG}</p>`,
+      "story_c01_split_001.xhtml": `<p>Continuation paragraph still inside chapter one. ${LONG}</p>`,
+      "story_c01_split_002.xhtml": `<h1>Chapter Two</h1><p>Unlisted split file actually begins chapter two. ${LONG}</p>`,
+      "story_c03.xhtml": `<h1>Chapter Three</h1><p>Opening paragraph of chapter three. ${LONG}</p>`,
+    },
+  };
+  const legacy = await buildEpub(spec);
+  assert.equal(legacy.chapters.length, 2);
+
+  const governed = await buildEpub({ ...spec, segmentation: 3 });
+  assert.deepEqual(
+    governed.chapters.map((c) => c.title),
+    ["Chapter One", "Chapter Two", "Chapter Three"],
+  );
+  assert.equal(governed.chapters[0].paragraphs.length, 3);
+  assert.match(governed.chapters[1].paragraphs[1], /begins chapter two/);
+});
+

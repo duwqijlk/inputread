@@ -25,14 +25,13 @@ import {
   useProgress,
   type BookProgress,
 } from "@/lib/progress-store";
-import { summarize } from "@/lib/srs";
 import { useVocab } from "@/lib/vocab-store";
 import type { Book, VocabEntry } from "@/lib/vocab-model";
 import { useT, type Key } from "@/lib/i18n";
 import { useClassicBookIds, useClassicsRunning } from "@/lib/classics";
 import { bookHasUserWork } from "@/lib/shelf-work";
 import { bookSyncKey } from "@/lib/sync-merge";
-import { wordsFromBook } from "@/lib/wordbook";
+import { countsByBookKey } from "@/lib/wordbook";
 import { useShelfRemove } from "@/lib/shelf-remove";
 import { SHELF_MENU_ARM_MS, shelfPressDown, shelfPressMove, shelfPressRelease } from "@/lib/phone-gestures";
 import { BookCover, talkCoverTone, useCovers, type CoverLook } from "@/components/book-cover";
@@ -217,7 +216,7 @@ function RenameDialog({ book, onClose }: { book: Book | null; onClose: () => voi
                 maxLength={80}
               />
             </label>
-            <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
               <Dialog.Close className={btn.quiet}>{t("common.cancel")}</Dialog.Close>
               <button type="submit" className={btn.primary}>
                 {t("common.save")}
@@ -803,21 +802,19 @@ export function Shelf({
     () => books.filter((book) => book.id !== pendingId),
     [books, pendingId],
   );
-  const rows = useMemo<Row[]>(
-    () =>
-      liveBooks.map((book) => {
-        const mine = wordsFromBook(words, bookSyncKey(book));
-        const stat = summarize(mine);
-        return {
-          book,
-          progress: progress[book.id],
-          fraction: overallProgress(progress[book.id]),
-          words: mine.length,
-          due: stat.due,
-        };
-      }),
-    [liveBooks, words, progress],
-  );
+  const rows = useMemo<Row[]>(() => {
+    const counts = countsByBookKey(words);
+    return liveBooks.map((book) => {
+      const stat = counts.get(bookSyncKey(book));
+      return {
+        book,
+        progress: progress[book.id],
+        fraction: overallProgress(progress[book.id]),
+        words: stat?.words ?? 0,
+        due: stat?.due ?? 0,
+      };
+    });
+  }, [liveBooks, words, progress]);
 
   /** Recent first: the book read last, then the book added last. */
   const recent = useMemo(() => {

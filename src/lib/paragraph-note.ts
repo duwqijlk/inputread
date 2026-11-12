@@ -29,6 +29,7 @@ import { looseText } from "./help-match.ts";
 export type ParagraphNote = {
   mainIdea: string;
   simple: string;
+  clues?: string[];
   hardWords: string[];
   /** Public id of the reader whose explanation this note uses. */
   credit?: string;
@@ -51,6 +52,12 @@ export function cleanParagraphNote(value: unknown): ParagraphNote | null {
   const mainIdea = cleanNoteText(row.mainIdea, 400);
   const simple = cleanNoteText(row.simple, 4000);
   if (!mainIdea || !simple) return null;
+  const clues = Array.isArray(row.clues)
+    ? row.clues
+        .map((item) => cleanNoteText(item, 320))
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
   const hardWords = Array.isArray(row.hardWords)
     ? row.hardWords
         .map((item) => cleanNoteText(item, 40))
@@ -58,7 +65,13 @@ export function cleanParagraphNote(value: unknown): ParagraphNote | null {
         .slice(0, 8)
     : [];
   const credit = typeof row.credit === "string" && CREDIT_ID.test(row.credit) ? row.credit : undefined;
-  return { mainIdea, simple, hardWords, ...(credit ? { credit } : {}) };
+  return {
+    mainIdea,
+    simple,
+    ...(clues.length ? { clues } : {}),
+    hardWords,
+    ...(credit ? { credit } : {}),
+  };
 }
 
 export type UnresolvedNote = (entry: ParagraphHelp, why: "no-match" | "ambiguous", matches: number) => void;

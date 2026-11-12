@@ -15,7 +15,9 @@ export function DiscoverGenres({ genre, onSelect }: {
   useEffect(() => {
     const node = strip.current;
     if (!node) return;
+    let alive = true;
     const measure = () => {
+      if (!alive) return;
       const next = {
         overflow: node.scrollWidth > node.clientWidth + 1,
         left: node.scrollLeft > 1,
@@ -23,24 +25,29 @@ export function DiscoverGenres({ genre, onSelect }: {
       };
       setEdges((old) => old.overflow === next.overflow && old.left === next.left && old.right === next.right ? old : next);
     };
-    const selected = node.querySelector<HTMLElement>('[aria-pressed="true"]');
-    if (selected) {
-      const viewport = node.getBoundingClientRect();
-      const item = selected.getBoundingClientRect();
-      if (item.left < viewport.left) node.scrollLeft -= viewport.left - item.left;
-      else if (item.right > viewport.right) node.scrollLeft += item.right - viewport.right;
-    }
     measure();
+    void document.fonts?.ready?.then(measure).catch(() => undefined);
     node.addEventListener("scroll", measure, { passive: true });
     window.addEventListener("resize", measure);
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
     observer?.observe(node);
-    for (const child of node.children) observer?.observe(child);
     return () => {
+      alive = false;
       node.removeEventListener("scroll", measure);
       window.removeEventListener("resize", measure);
       observer?.disconnect();
     };
+  }, [locale]);
+
+  useEffect(() => {
+    const node = strip.current;
+    if (!node) return;
+    const selected = node.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!selected) return;
+    const viewport = node.getBoundingClientRect();
+    const item = selected.getBoundingClientRect();
+    if (item.left < viewport.left) node.scrollLeft -= viewport.left - item.left;
+    else if (item.right > viewport.right) node.scrollLeft += item.right - viewport.right;
   }, [genre, locale]);
 
   function move(direction: number) {

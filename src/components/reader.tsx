@@ -1501,39 +1501,6 @@ export function ReaderScreen({
     speakEnglish(saying);
   }
 
-  /** A hard word from the paragraph panel: find it in the paragraph and open its normal card. */
-  function pickFromParagraph(word: string) {
-    if (!help) return;
-    const el = paragraphElement(help.index);
-    if (!el) return;
-    const tokens = (word.match(new RegExp(TAP_WORD_PATTERN, "gu")) ?? []).map((t) =>
-      plainSurface(t),
-    );
-    if (tokens.length === 0) return;
-    const buttons = [...el.querySelectorAll<HTMLElement>("[role=button][data-word]")];
-    const same = (i: number) =>
-      tokens.every((t, k) => plainSurface(buttons[i + k]?.dataset.word ?? "") === t);
-    let at = -1;
-    for (let i = 0; i < buttons.length; i += 1) {
-      if (same(i)) {
-        at = i;
-        break;
-      }
-    }
-    if (at < 0) {
-      at = buttons.findIndex((b) => tokens.includes(plainSurface(b.dataset.word ?? "")));
-      if (at < 0) return;
-      pickButton(buttons[at] as Element);
-      return;
-    }
-    const group = buttons.slice(at, at + tokens.length);
-    const best =
-      group.find((b) => b.classList.contains("book-hard") || b.classList.contains("book-tricky")) ??
-      group.find((b) => b.classList.contains("book-phrase")) ??
-      [...group].sort((a, b) => (b.dataset.word?.length ?? 0) - (a.dataset.word?.length ?? 0))[0];
-    if (best) pickButton(best);
-  }
-
   if (missing) {
     return (
       <MissingBook
@@ -1603,6 +1570,7 @@ export function ReaderScreen({
         status: "ready",
         others: choice.others,
         coined: gloss.coined === true,
+        trickyMeaning: choice.at >= 0 && gloss.senses?.[choice.at]?.trickyMeaning === true,
         example: exampleOf(gloss, sentence),
         senseIndex: choice.at,
         context,
@@ -1833,7 +1801,11 @@ export function ReaderScreen({
             ref={articleRef}
             className="book-body"
             lang="en"
-            data-segmentation={book.segmentation === 2 ? "2" : undefined}
+            data-segmentation={
+              book.segmentation === 2 || book.segmentation === 3
+                ? String(book.segmentation)
+                : undefined
+            }
             data-word-hints={prefs.wordHints}
             data-quiet-marks={prefs.quietMarks ? "" : undefined}
             dangerouslySetInnerHTML={{ __html: linkedHtml }}
@@ -1941,10 +1913,8 @@ export function ReaderScreen({
           state={helpState}
           anchor={anchor}
           paragraphEl={paragraphElement(help.index)}
-          startSentence={help.sentence}
           onRevealSentence={revealAboveSheet}
           onClose={closeHelp}
-          onWord={pickFromParagraph}
         />
       ) : null}
 
@@ -1970,26 +1940,25 @@ export function ReaderScreen({
           chapters={book?.chapters.length ?? 0}
           catalogId={catalogId}
           noteChapter={activeExtra?.fromToc ? activeExtra.id : viewChapter}
-          // The sentence hint opens the same panel as the ✦ of the tapped paragraph.
-          onSentenceHelp={
-            picked ? () => openHelp(picked.block, card.fullSentence || card.sentence) : undefined
-          }
           anchor={anchor}
           onClose={closeWordCard}
-          onToggle={() => {
+          onToggle={(fallback) => {
             if (!picked || !shelfBook || phrasePending) return;
-            if (!activePhrase && !card.ready) return;
-            if (alreadySaved) {
-              removeWordFromBook(bookKey, saveAs.lemma);
+            if (!activePhrase && !card.ready && !fallback) return;
+            const targetLemma = (!activePhrase && !card.ready && fallback?.lemma) || saveAs.lemma;
+            const targetPos = (!activePhrase && !card.ready && fallback?.pos) || saveAs.pos;
+            const targetMeaning = (!activePhrase && !card.ready && fallback?.meaning) || saveAs.meaning;
+            if (alreadySaved || savedKeys.has(targetLemma.toLowerCase())) {
+              removeWordFromBook(bookKey, targetLemma);
               return;
             }
             const listId = book?.bundled || listSource;
             const gloss =
-              book?.glossary[saveAs.lemma] ?? book?.glossary[saveAs.lemma.toLowerCase()];
+              book?.glossary[targetLemma] ?? book?.glossary[targetLemma.toLowerCase()];
             const ref = activePhrase
               ? phrasePoint(listId)
               : gloss
-                ? pointFromEntry(listId, saveAs.lemma, gloss, {
+                ? pointFromEntry(listId, targetLemma, gloss, {
                     chapter: viewChapter,
                     surface: picked.surface,
                     occurrence: picked.nth,
@@ -2009,7 +1978,7 @@ export function ReaderScreen({
                   surface: saveAs.surface,
                   savedAt: Date.now(),
                   ref,
-                  ...(saveAs.pos ? { pos: saveAs.pos } : {}),
+                  ...(targetPos ? { pos: targetPos } : {}),
                 }
               : {
                   book: bookKey,
@@ -2020,16 +1989,17 @@ export function ReaderScreen({
                   sentence,
                   surface: saveAs.surface,
                   savedAt: Date.now(),
-                  ...(saveAs.pos ? { pos: saveAs.pos } : {}),
+                  ...(targetMeaning ? { meaning: targetMeaning } : {}),
+                  ...(targetPos ? { pos: targetPos } : {}),
                 };
             saveWord(
               {
                 surface: saveAs.surface,
-                lemma: saveAs.lemma,
-                pos: saveAs.pos,
-                meaning: ref ? "" : saveAs.meaning,
+                lemma: targetLemma,
+                pos: targetPos,
+                meaning: ref ? "" : targetMeaning,
                 whyHard: "",
-                recommend: !isEasyKey(saveAs.lemma),
+                recommend: !isEasyKey(targetLemma),
                 sentence,
               },
               source,

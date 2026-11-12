@@ -68,8 +68,8 @@ if (!file || flag("--help")) {
 
 const segmentationArg = value("--segmentation");
 const segmentation = segmentationArg === undefined ? undefined : Number(segmentationArg);
-if (segmentationArg !== undefined && segmentation !== 2) {
-  console.error('--segmentation must be 2 (omit it to keep each blockquote as one paragraph).');
+if (segmentationArg !== undefined && segmentation !== 2 && segmentation !== 3) {
+  console.error('--segmentation must be 2 or 3 (omit it to keep legacy segmentation).');
   process.exit(2);
 }
 

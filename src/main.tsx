@@ -20,6 +20,26 @@ if (import.meta.env.DEV && window.location.pathname === "/shelf/" && new URLSear
   void import("./dev/word-senses-demo").then(({ WordSensesDemo }) => {
     createRoot(document.getElementById("root") as HTMLElement).render(<StrictMode><ErrorBoundary><WordSensesDemo /></ErrorBoundary></StrictMode>);
   });
+} else if (import.meta.env.DEV && /^\/shelf\/?$/.test(window.location.pathname) && new URLSearchParams(window.location.search).get("demo") === "companion") {
+  void import("./dev/companion-preview").then(({ bootCompanionPreview }) => {
+    void bootCompanionPreview(document.getElementById("root") as HTMLElement);
+  });
+} else if (import.meta.env.DEV && window.location.pathname.startsWith("/read/")) {
+  const devBookId = decodeURIComponent(window.location.pathname.slice(6).replace(/\/$/, ""));
+  void finishDeviceWipe()
+    .catch(() => false)
+    .then(() => import("./dev/companion-preview"))
+    .then(({ syncDevReadPackIfStale }) => syncDevReadPackIfStale(devBookId))
+    .catch(() => undefined)
+    .finally(() => {
+      createRoot(document.getElementById("root") as HTMLElement).render(
+        <StrictMode>
+          <ErrorBoundary>
+            <MarginApp />
+          </ErrorBoundary>
+        </StrictMode>,
+      );
+    });
 } else {
   // A sign-out asked for this device to be cleared: do it before the app reads any storage.
   void finishDeviceWipe()

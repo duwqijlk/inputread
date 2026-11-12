@@ -14,8 +14,8 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSheetDrag } from "@/components/floating-card";
-import { BookCover, coverLookOf, talkCoverTone } from "@/components/book-cover";
-import { useBookTone } from "@/lib/cover-tone";
+import { BookCover, coverLookOf, preloadCoverImage, talkCoverTone } from "@/components/book-cover";
+import { preloadBookTone, useBookTone } from "@/lib/cover-tone";
 import { bump } from "@/lib/motion";
 import type { ShelfState } from "@/components/shelf-actions";
 import { btn, cn } from "@/components/ui";
@@ -25,7 +25,7 @@ import { lexileMeasure } from "@/lib/lexile";
 import type { CatalogPack } from "@/lib/packs";
 import type { WordListPack } from "@/lib/word-list-catalog";
 import { useT } from "@/lib/i18n";
-import { useBookBlurb } from "@/lib/book-blurbs";
+import { preloadBookBlurb, useBookBlurb } from "@/lib/book-blurbs";
 import { BookMaintainerList, BookMaintainers } from "@/components/book-maintainers";
 import { catalogRef } from "@/lib/catalog-id";
 import { SITE } from "@/lib/page-meta";
@@ -321,6 +321,15 @@ function useRailPages(ref: React.RefObject<HTMLElement | null>, count: number): 
     };
   }, [ref, count]);
   return state;
+}
+
+/** Preload cover images, extracted tones, and blurbs for all slides in the new-books carousel. */
+export function preloadFeaturedBooks(rows: readonly DiscoverRow[]): void {
+  for (const row of rows) {
+    preloadCoverImage?.(row.coverUrl);
+    if (row.coverUrl) preloadBookTone?.(row.coverUrl);
+    preloadBookBlurb?.(row.kind === "classic" ? "public" : "lists", row.id);
+  }
 }
 
 /**

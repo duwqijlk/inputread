@@ -107,32 +107,92 @@ export function pickSentenceHelp(
   return best;
 }
 
+export type SentenceMatchScope = {
+  /** 0-based paragraph index on screen, used when a sentence note pins `paragraph`. */
+  paragraph?: number;
+  /** Paragraph texts of the chapter on screen, for shifted-paragraph fallback. */
+  chapterTexts?: readonly string[];
+  /** Paragraph texts of all numbered chapters in the book, so home-chapter matches do not leak elsewhere. */
+  bookChapters?: readonly (readonly string[] | undefined)[];
+};
+
 /**
  * The sentence notes whose `context` is inside one paragraph, in reading order. The same chapter
  * rule as pickSentenceHelp: an ordinary extra (-1) has none, an extra id matches only that id, and a
- * numbered chapter takes every numbered note (the context decides, so another edition's chapter
- * number still finds its sentence).
+ * numbered chapter takes every numbered note unless `scope` proves the note already belongs to a
+ * different chapter or paragraph in this book.
  */
 export function sentenceNotesIn(
   list: readonly SentenceHelp[],
   chapter: number | string,
   paragraphText: string,
+  scope?: SentenceMatchScope,
 ): SentenceHelp[] {
   if (typeof chapter === "number" && chapter < 0) return [];
   const text = looseText(paragraphText);
   if (text === "") return [];
-  const found: { at: number; entry: SentenceHelp }[] = [];
+  const looseChapterTexts = scope?.chapterTexts ? scope.chapterTexts.map((t) => looseText(t)) : undefined;
+  let looseBook: Map<number, string[]> | undefined;
+  const chapterHasContext = (chapterIndex: number, needle: string): boolean => {
+    const raw = scope?.bookChapters?.[chapterIndex];
+    if (!raw) return false;
+    if (!looseBook) looseBook = new Map();
+    let cached = looseBook.get(chapterIndex);
+    if (!cached) {
+      cached = raw.map((t) => looseText(t));
+      looseBook.set(chapterIndex, cached);
+    }
+    return cached.some((p) => includesLoose(p, needle));
+  };
+
+  const found: { at: number; sameChapter: boolean; entry: SentenceHelp }[] = [];
   for (const entry of list) {
     if (typeof chapter === "string") {
       if (entry.chapter !== chapter) continue;
     } else if (typeof entry.chapter !== "number") continue;
     const c = looseText(entry.context);
     if (!c || !includesLoose(text, c)) continue;
+
+    const sameChapter = entry.chapter === chapter;
+    if (!sameChapter && typeof entry.chapter === "number" && scope?.bookChapters) {
+      // Only fall back across chapters when the note's own chapter is absent or lacks this sentence.
+      if (chapterHasContext(entry.chapter, c)) continue;
+    }
+
+    if (sameChapter && entry.paragraph !== undefined && scope?.paragraph !== undefined && looseChapterTexts) {
+      const homeText = looseChapterTexts[entry.paragraph] ?? "";
+      if (includesLoose(homeText, c)) {
+        if (scope.paragraph !== entry.paragraph) continue;
+      } else {
+        let bestParagraph = -1;
+        let bestGap = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < looseChapterTexts.length; i += 1) {
+          if (!includesLoose(looseChapterTexts[i] ?? "", c)) continue;
+          const gap = Math.abs(i - entry.paragraph);
+          if (gap < bestGap) {
+            bestGap = gap;
+            bestParagraph = i;
+          }
+        }
+        if (bestParagraph >= 0 && scope.paragraph !== bestParagraph) continue;
+      }
+    }
+
     // A match through glued words has no plain position; it keeps its list order at the end.
     const at = ` ${text} `.indexOf(` ${c} `);
-    found.push({ at: at < 0 ? Number.MAX_SAFE_INTEGER : at, entry });
+    found.push({ at: at < 0 ? Number.MAX_SAFE_INTEGER : at, sameChapter, entry });
   }
-  return found.sort((a, b) => a.at - b.at).map((item) => item.entry);
+  found.sort((a, b) => a.at - b.at || (a.sameChapter === b.sameChapter ? 0 : a.sameChapter ? -1 : 1));
+  const kept: SentenceHelp[] = [];
+  const seenSameChapterAt = new Set<number>();
+  for (const item of found) {
+    if (item.at < Number.MAX_SAFE_INTEGER) {
+      if (item.sameChapter) seenSameChapterAt.add(item.at);
+      else if (seenSameChapterAt.has(item.at)) continue;
+    }
+    kept.push(item.entry);
+  }
+  return kept;
 }
 
 /* ------------------------------------------------------------------ verb forms */
@@ -1814,11 +1874,10 @@ const PARAGRAPH_BLOCKS = "p, h1, h2, h3, h4, li, blockquote, div[data-para]";
  * is paragraph 0, matching the importer's whole-fragment fallback.
  */
 export function paragraphBlocks(root: ParentNode, segmentation?: number): Element[] {
+  const attr = root instanceof Element ? root.getAttribute("data-segmentation") : null;
   const split =
-    segmentation === 2 ||
-    (segmentation === undefined &&
-      root instanceof Element &&
-      root.getAttribute("data-segmentation") === "2");
+    (segmentation !== undefined && segmentation >= 2) ||
+    (segmentation === undefined && (attr === "2" || attr === "3"));
   const out: Element[] = [];
   for (const block of Array.from(root.querySelectorAll(PARAGRAPH_BLOCKS))) {
     if (skipNestedParagraph(block, split)) continue;

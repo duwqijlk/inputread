@@ -1,14 +1,13 @@
 import { ChevronDown, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { getParagraphNoteFlags, paragraphBlocks, sentenceHelpNow } from "@/lib/help-lookup";
+import { getParagraphNoteFlags, paragraphBlocks } from "@/lib/help-lookup";
 import { useT } from "@/lib/i18n";
-import { loadSentenceView, type ParagraphHelpView, type SentenceInParagraph } from "@/lib/help-flow";
+import type { ParagraphHelpView, SentenceInParagraph } from "@/lib/help-flow";
 import { FloatingAside } from "@/components/floating-card";
 import { btn, cn } from "@/components/ui";
 import { CreditLine } from "@/components/credit-line";
 import { flowText } from "@/lib/flow-text";
-import { containsContext } from "@/lib/help-match";
 import { noteSentenceRange } from "@/lib/note-sentence";
 import { SIDE_PANEL } from "@/components/side-panel";
 
@@ -184,66 +183,75 @@ function placeMark(block: Element, mark: Element): void {
 export type ParagraphPanelState =
   { status: "loading" } | { status: "none" } | { status: "ready"; view: ParagraphHelpView };
 
+type HelpTabId = "paragraph" | "grammar" | "sentences";
+
 export function ParagraphPanel({
   state,
   anchor,
   paragraphEl,
-  startSentence,
   onRevealSentence,
   onClose,
-  onWord,
 }: {
   state: ParagraphPanelState;
   /** the paragraph the card should sit next to on a wide screen */
   anchor: HTMLElement | null;
   /** the paragraph on the page, so the sentences the notes explain can be marked in it */
   paragraphEl?: Element | null;
-  /** the sentence a word card was opened on: its note starts selected */
-  startSentence?: string;
   /** Keep a marked sentence in view: called with its top and bottom on screen. */
   onRevealSentence?: (top: number, bottom: number) => void;
   onClose: () => void;
-  onWord: (word: string) => void;
 }) {
   const { t } = useT();
-  // The simple retelling is what the ✦ is for, so it is open as soon as the panel appears.
   const [open, setOpen] = useState(true);
   const paragraph = state.status === "ready" ? state.view.paragraph : null;
+  const grammar = state.status === "ready" ? state.view.grammar : [];
   const sentences = state.status === "ready" ? state.view.sentences : [];
   const [chosen, setChosen] = useState<number | null>(null);
-  // Both kinds of help: one tab each, so a phone sheet shows one at a time instead of a long stack.
-  const both = Boolean(paragraph) && sentences.length > 0;
-  const [tab, setTab] = useState<"paragraph" | "sentences">("paragraph");
-  // Coming from a word card, the note of that sentence is the one the reader asked about.
-  useEffect(() => {
-    if (!startSentence || sentences.length === 0) return;
-    const at = sentences.findIndex((note) => containsContext(startSentence, note.context));
-    if (at >= 0) {
-      setChosen(at);
-      setTab("sentences");
-    }
-    // Only when the notes arrive: a later click picks freely.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sentences.length, startSentence]);
-  const showParagraph = Boolean(paragraph) && (!both || tab === "paragraph");
-  const showSentences = sentences.length > 0 && (!both || tab === "sentences");
-  // With no sentence marked, keep the paragraph itself in view above a phone sheet. (The marks
-  // reveal their own sentence when the sentence tab is on.)
+
+  const availableTabs: Array<{ id: HelpTabId; label: string }> = [];
+  if (paragraph) availableTabs.push({ id: "paragraph", label: t("hp.tabParagraph") });
+  if (grammar.length > 0) {
+    availableTabs.push({
+      id: "grammar",
+      label: grammar.length > 1 ? `${t("hp.tabGrammar")} · ${grammar.length}` : t("hp.tabGrammar"),
+    });
+  }
+  if (sentences.length > 0) {
+    availableTabs.push({ id: "sentences", label: `${t("hp.tabSentences")} · ${sentences.length}` });
+  }
+
+  const [tab, setTab] = useState<HelpTabId>("paragraph");
+  const activeTab: HelpTabId = availableTabs.some((item) => item.id === tab)
+    ? tab
+    : (availableTabs[0]?.id ?? "paragraph");
+  const hasTabs = availableTabs.length > 1;
+  const showParagraph = Boolean(paragraph) && activeTab === "paragraph";
+  const showGrammar = grammar.length > 0 && activeTab === "grammar";
+  const showSentences = sentences.length > 0 && activeTab === "sentences";
+  const activeMarkContexts = showGrammar
+    ? grammar.map((note) => note.context)
+    : showSentences
+      ? sentences.map((note) => note.context)
+      : [];
+
+  // With no sentence marked, keep the paragraph itself in view above a phone sheet.
   const ready = state.status !== "loading";
   useEffect(() => {
-    if (!ready || showSentences || !paragraphEl || !onRevealSentence) return;
+    if (!ready || activeMarkContexts.length > 0 || !paragraphEl || !onRevealSentence) return;
     const frame = requestAnimationFrame(() => {
       const box = paragraphEl.getBoundingClientRect();
       onRevealSentence(box.top, box.bottom);
     });
     return () => cancelAnimationFrame(frame);
-  }, [ready, showSentences, paragraphEl, onRevealSentence]);
+  }, [ready, activeMarkContexts.length, paragraphEl, onRevealSentence]);
+
   return (
     <FloatingAside
       anchor={anchor}
       onClose={onClose}
       label={t("hp.panelAria")}
       kind="para"
+      desktopWidth={27 * 16}
       className={cn(
         "scroll-thin fixed z-40 overflow-y-auto overscroll-contain [overflow-anchor:none] border-float-edge bg-float px-5 text-ink shadow-pop ",
         "inset-x-0 bottom-0 max-h-[52dvh] rounded-t-3xl border-t pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]",
@@ -253,10 +261,10 @@ export function ParagraphPanel({
     >
       <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-line md:hidden" aria-hidden />
       {paragraphEl ? <KeepClear el={paragraphEl} /> : null}
-      {paragraphEl && showSentences ? (
+      {paragraphEl && activeMarkContexts.length > 0 ? (
         <SentenceMarks
           paragraphEl={paragraphEl}
-          contexts={sentences.map((note) => note.context)}
+          contexts={activeMarkContexts}
           chosen={chosen}
           onChoose={setChosen}
           onReveal={onRevealSentence}
@@ -296,33 +304,35 @@ export function ParagraphPanel({
           </p>
         ) : (
           <>
-            {both ? (
+            {hasTabs ? (
               <div
                 role="tablist"
                 aria-label={t("hp.panelAria")}
-                className="grid grid-cols-2 gap-1 rounded-xl bg-paper/70 p-1"
+                className={cn(
+                  "grid gap-1 rounded-xl bg-paper/70 p-1",
+                  availableTabs.length === 3 ? "grid-cols-3" : "grid-cols-2",
+                )}
                 data-part="help-tabs"
               >
-                {(["paragraph", "sentences"] as const).map((kind) => (
+                {availableTabs.map((item) => (
                   <button
-                    key={kind}
+                    key={item.id}
                     type="button"
                     role="tab"
-                    aria-selected={tab === kind}
-                    data-tab={kind}
+                    aria-selected={activeTab === item.id}
+                    data-tab={item.id}
                     onClick={(event) => {
-                      setTab(kind);
+                      setChosen(null);
+                      setTab(item.id);
                       // A new tab starts at its top; the browser's scroll anchoring would keep the old offset.
                       event.currentTarget.closest("aside")?.scrollTo?.(0, 0);
                     }}
                     className={cn(
-                      "min-h-10 rounded-lg px-3 text-sm font-medium transition-colors",
-                      tab === kind ? "bg-card text-ink shadow-xs" : "text-muted hover:text-ink",
+                      "min-h-10 rounded-lg px-2.5 text-sm font-medium transition-colors",
+                      activeTab === item.id ? "bg-card text-ink shadow-xs" : "text-muted hover:text-ink",
                     )}
                   >
-                    {kind === "paragraph"
-                      ? t("hp.tabParagraph")
-                      : `${t("hp.tabSentences")} · ${sentences.length}`}
+                    {item.label}
                   </button>
                 ))}
               </div>
@@ -334,11 +344,11 @@ export function ParagraphPanel({
                 aria-label={t("hp.paragraphSection")}
                 data-part="paragraph-help"
               >
-                {both ? null : <h3 className="sr-only">{t("hp.paragraphSection")}</h3>}
+                {hasTabs ? null : <h3 className="sr-only">{t("hp.paragraphSection")}</h3>}
                 <section className="grid gap-1" aria-label={t("hp.mainIdea")}>
                   <h4 className="text-xs font-semibold tracking-wide text-accent">{t("hp.mainIdea")}</h4>
                   <p
-                    className="break-words text-[1.05rem] leading-relaxed font-medium"
+                    className="break-words font-display text-[1.05rem] leading-relaxed text-ink"
                     lang="en"
                     data-part="main-idea"
                   >
@@ -366,7 +376,7 @@ export function ParagraphPanel({
                   </h4>
                   {open ? (
                     <p
-                      className="break-words text-[1.02rem] leading-relaxed"
+                      className="break-words text-[0.96rem] leading-relaxed text-muted"
                       lang="en"
                       data-part="simple"
                     >
@@ -375,26 +385,25 @@ export function ParagraphPanel({
                   ) : null}
                 </section>
 
-                {paragraph.hardWords.length > 0 ? (
-                  <section className="grid gap-1.5" aria-label={t("hp.hardWords")}>
-                    <h4 className="text-xs font-semibold tracking-wide text-accent">{t("hp.hardHint")}</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {paragraph.hardWords.map((word) => (
-                        <button
-                          key={word}
-                          type="button"
-                          data-hard-word={word}
-                          onClick={() => onWord(word)}
-                          lang="en"
-                          className="min-h-9 max-w-full break-words rounded border border-line px-3.5 text-[0.95rem] font-medium hover:bg-accent-soft"
-                        >
-                          {word}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                ) : null}
                 <HelpSource credit={paragraph.credit} />
+              </section>
+            ) : null}
+
+            {showGrammar ? (
+              <section
+                className="grid min-w-0"
+                aria-label={t("hp.grammarSection")}
+                data-part="grammar-help"
+              >
+                {hasTabs ? null : <h3 className="sr-only">{t("hp.grammarSection")}</h3>}
+                {grammar.map((note, at) => (
+                  <GrammarNote
+                    key={`${at}:${note.context}`}
+                    note={note}
+                    chosen={chosen === at}
+                    onChoose={() => setChosen((now) => (now === at ? null : at))}
+                  />
+                ))}
               </section>
             ) : null}
 
@@ -404,7 +413,7 @@ export function ParagraphPanel({
                 aria-label={t("hp.sentenceSection")}
                 data-part="sentences"
               >
-                {both ? null : <h3 className="sr-only">{t("hp.sentenceSection")}</h3>}
+                {hasTabs ? null : <h3 className="sr-only">{t("hp.sentenceSection")}</h3>}
                 {sentences.map((note, at) => (
                   <SentenceNote
                     key={`${at}:${note.context}`}
@@ -422,7 +431,7 @@ export function ParagraphPanel({
           className="border-t border-line pt-3 text-xs leading-snug text-muted"
           data-part="help-footer"
         >
-          {t("hp.footer")}
+          {showGrammar ? t("hp.footerGrammar") : t("hp.footer")}
         </p>
       </div>
     </FloatingAside>
@@ -455,10 +464,128 @@ function HelpSource({ credit }: { credit?: string }) {
   );
 }
 
+function splitChunk(raw: string): { quote: string; note: string } {
+  const match = /\s*(?:->|\u2192)\s*/.exec(raw);
+  if (!match || match.index <= 0) return { quote: "", note: raw.trim() };
+  const quote = raw
+    .slice(0, match.index)
+    .trim()
+    .replace(/^['"“”‘’]+|['"“”‘’]+$/g, "")
+    .trim();
+  const note = raw.slice(match.index + match[0].length).trim();
+  return quote && note ? { quote, note } : { quote: "", note: raw.trim() };
+}
+
+function TargetSentenceButton({
+  sentence,
+  chosen,
+  onChoose,
+}: {
+  sentence: string;
+  chosen: boolean;
+  onChoose: () => void;
+}) {
+  const { t } = useT();
+  return (
+    <button
+      type="button"
+      onClick={onChoose}
+      aria-pressed={chosen}
+      aria-label={`${t("hp.original")}: ${sentence}`}
+      className={cn(
+        "min-h-11 break-words rounded-r-md py-1 pr-1 pl-3 text-left font-display text-[0.95rem] leading-relaxed italic transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+        chosen
+          ? "border-l-[3px] border-accent bg-mark text-ink"
+          : "border-l-[3px] border-line text-muted hover:text-ink",
+      )}
+      lang="en"
+      data-part="sentence-context"
+    >
+      {sentence}
+    </button>
+  );
+}
+
 /**
- * One sentence note in the paragraph panel: the original sentence as a quote, then the help. A tap
- * on the quote marks that sentence more strongly in the page, so the reader can see which one it
- * explains. Notes are separated by a rule, not boxed, so a phone sheet keeps its width for text.
+ * Syntactic / grammatical breakdown for one sentence inside the paragraph (Grammar tab).
+ * Always displays the complete resolved sentence (`note.sentence`) so every analyzed clause
+ * literally belongs to the displayed sentence, and avoids repeating the paragraph's plain summary
+ * when clause chunks are present.
+ */
+function GrammarNote({
+  note,
+  chosen,
+  onChoose,
+}: {
+  note: SentenceInParagraph;
+  chosen: boolean;
+  onChoose: () => void;
+}) {
+  const { t } = useT();
+  const hasChunks = Boolean(note.chunks && note.chunks.length > 0);
+  return (
+    <div
+      className="grid min-w-0 gap-3 border-t border-line/70 py-3.5 first:border-t-0 first:pt-0 last:pb-0"
+      data-grammar-note
+      data-sentence-note
+      data-chosen={chosen ? "" : undefined}
+    >
+      <div className="grid gap-1">
+        <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.original")}</span>
+        <TargetSentenceButton sentence={note.sentence} chosen={chosen} onChoose={onChoose} />
+      </div>
+
+      {hasChunks ? (
+        <div className="grid gap-1.5">
+          <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.chunks")}</span>
+          <ul
+            className="grid gap-2 border-l-2 border-line py-0.5 pl-3 text-[0.92rem] leading-relaxed"
+            aria-label={t("hp.chunks")}
+            data-part="sentence-chunks"
+          >
+            {note.chunks?.map((chunk, index) => {
+              const parsed = splitChunk(chunk);
+              return (
+                <li key={`${index}:${chunk.slice(0, 24)}`} className="break-words" lang="en">
+                  {parsed.quote ? (
+                    <>
+                      <span className="font-display font-bold text-ink">{parsed.quote}</span>
+                      <span className="mx-1.5 text-faint" aria-hidden>—</span>
+                      <span className="text-muted">{parsed.note}</span>
+                    </>
+                  ) : (
+                    <span className="text-muted">{parsed.note}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : (
+        <p className="break-words font-display text-[1.02rem] leading-relaxed text-ink" lang="en" data-part="easier">
+          {note.simple}
+        </p>
+      )}
+
+      {note.pattern ? (
+        <p className="break-words text-xs leading-relaxed text-muted" lang="en" data-part="sentence-pattern">
+          <span className="mr-1.5 font-semibold text-accent">{t("hp.pattern")}</span>
+          {note.pattern}
+        </p>
+      ) : null}
+
+      {note.grammar ? (
+        <p className="break-words text-sm leading-relaxed text-muted" lang="en" data-part="grammar">
+          <span className="mr-1.5 text-xs font-semibold text-accent">{t("hp.grammar")}</span>
+          {note.grammar}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Reader-submitted or plain single-sentence help (Sentence help tab).
  */
 function SentenceNote({
   note,
@@ -469,38 +596,16 @@ function SentenceNote({
   chosen: boolean;
   onChoose: () => void;
 }) {
-  const { t } = useT();
   return (
     <div
-      className="grid min-w-0 gap-2 border-t border-line/70 py-3.5 first:border-t-0 first:pt-0 last:pb-0"
+      className="grid min-w-0 gap-2.5 border-t border-line/70 py-3.5 first:border-t-0 first:pt-0 last:pb-0"
       data-sentence-note
       data-chosen={chosen ? "" : undefined}
     >
-      <button
-        type="button"
-        onClick={onChoose}
-        aria-pressed={chosen}
-        aria-label={`${t("hp.original")}: ${note.context}`}
-        className={cn(
-          "min-h-11 break-words rounded-r-md py-1 pr-1 pl-3 text-left font-display text-[0.95rem] leading-relaxed italic transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-          chosen
-            ? "border-l-[3px] border-accent bg-mark text-ink"
-            : "border-l-[3px] border-line text-muted hover:text-ink",
-        )}
-        lang="en"
-        data-part="sentence-context"
-      >
-        {note.context}
-      </button>
-      <p className="break-words text-[1.02rem] leading-relaxed" lang="en" data-part="easier">
+      <TargetSentenceButton sentence={note.sentence} chosen={chosen} onChoose={onChoose} />
+      <p className="break-words font-display text-[1.02rem] leading-relaxed text-ink" lang="en" data-part="easier">
         {note.simple}
       </p>
-      {note.grammar ? (
-        <p className="break-words rounded-md bg-paper/70 px-2.5 py-1.5 text-sm leading-snug" lang="en" data-part="grammar">
-          <span className="mr-1.5 text-xs font-semibold text-accent">{t("hp.grammar")}</span>
-          {note.grammar}
-        </p>
-      ) : null}
       <HelpSource credit={note.credit} />
     </div>
   );
@@ -639,62 +744,5 @@ function SentenceMarks({
       ))}
     </>,
     document.body,
-  );
-}
-
-/* ------------------------------------------------------------------ sentence hint (inside the word card) */
-
-/**
- * One quiet line under the meaning when the word list has a note for this sentence. It takes no
- * more room than a link: the note itself opens in the paragraph panel, the same place as the ✦ mark,
- * so a reader learns one place for paragraph and sentence help. Most sentences have no note, and
- * then nothing is drawn.
- */
-export function SentenceHint({
-  bookId,
-  chapter,
-  sentence,
-  onOpen,
-}: {
-  bookId: string;
-  chapter: number | string;
-  sentence: string;
-  onOpen: () => void;
-}) {
-  const { t } = useT();
-  // Known at once when the book's notes are in memory, so the link is part of the card's first
-  // frame instead of appearing a moment later and pushing the footer down.
-  const known = () => {
-    const now = sentenceHelpNow(bookId, chapter, sentence);
-    return now === undefined ? undefined : Boolean(now?.simple?.trim());
-  };
-  const [has, setHas] = useState<boolean>(() => known() ?? false);
-
-  useEffect(() => {
-    let live = true;
-    const now = known();
-    setHas(now ?? false);
-    if (now !== undefined) return;
-    void loadSentenceView({ bookId, chapter, text: sentence }).then((view) => {
-      if (live) setHas(view !== null);
-    });
-    return () => {
-      live = false;
-    };
-    // `known` reads the same three values.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, chapter, sentence]);
-
-  if (!has) return null;
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="inline-flex min-h-8 items-center gap-1 justify-self-start self-start text-xs font-medium text-accent hover:underline"
-      data-sentence-hint
-    >
-      <span aria-hidden>✦</span>
-      {t("hp.explain")}
-    </button>
   );
 }

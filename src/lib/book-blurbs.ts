@@ -8,9 +8,12 @@ import { blurbKey, parseBlurbFile, type BlurbKind, type BookBlurb } from "@/lib/
  * so reopening its sheet does not ask again. A failed read is forgotten and tried next time.
  */
 const seen = new Map<string, Promise<BookBlurb>>();
+const resolved = new Map<string, BookBlurb>();
 
 function loadBlurb(kind: BlurbKind, id: string): Promise<BookBlurb> {
   const key = blurbKey(kind, id);
+  const hit = resolved.get(key);
+  if (hit) return Promise.resolve(hit);
   let blurb = seen.get(key);
   if (!blurb) {
     // no-cache: an edit in the admin shows up on the next open, as the catalogs do.
@@ -24,6 +27,10 @@ function loadBlurb(kind: BlurbKind, id: string): Promise<BookBlurb> {
         if (/html/i.test(response.headers.get("content-type") ?? "")) return { zh: "", en: "" };
         return response.json().then(parseBlurbFile);
       })
+      .then((value) => {
+        resolved.set(key, value);
+        return value;
+      })
       .catch(() => {
         seen.delete(key);
         return { zh: "", en: "" };
@@ -33,9 +40,16 @@ function loadBlurb(kind: BlurbKind, id: string): Promise<BookBlurb> {
   return blurb;
 }
 
+/** Warm a summary into memory ahead of time (for example, upcoming carousel slides). */
+export function preloadBookBlurb(kind: BlurbKind, id: string): void {
+  if (kind && id) void loadBlurb(kind, id);
+}
+
 /** Forget a cached summary, so the admin sees a save at once. */
 export function forgetBlurb(kind: BlurbKind, id: string): void {
-  seen.delete(blurbKey(kind, id));
+  const key = blurbKey(kind, id);
+  seen.delete(key);
+  resolved.delete(key);
 }
 
 /**
@@ -43,19 +57,29 @@ export function forgetBlurb(kind: BlurbKind, id: string): void {
  * There is no fallback to the other language: a Chinese screen shows Chinese or nothing.
  */
 export function useBookBlurb(book: { kind: BlurbKind; id: string } | null, locale: Locale): string {
-  const [blurb, setBlurb] = useState("");
   const kind = book?.kind;
   const id = book?.id;
+  const key = kind && id ? blurbKey(kind, id) : "";
+  const cached = key ? resolved.get(key) : undefined;
+  const [loaded, setLoaded] = useState<{ key: string; value: BookBlurb } | null>(() =>
+    cached ? { key, value: cached } : null,
+  );
   useEffect(() => {
-    setBlurb("");
-    if (!kind || !id) return;
+    if (!kind || !id || !key) return;
+    const hit = resolved.get(key);
+    if (hit) {
+      setLoaded((prev) => (prev?.key === key && prev.value === hit ? prev : { key, value: hit }));
+      return;
+    }
     let alive = true;
     void loadBlurb(kind, id).then((value) => {
-      if (alive) setBlurb(value[locale]);
+      if (alive) setLoaded({ key, value });
     });
     return () => {
       alive = false;
     };
-  }, [kind, id, locale]);
-  return blurb;
+  }, [kind, id, key]);
+  if (!key) return "";
+  if (cached) return cached[locale];
+  return loaded?.key === key ? loaded.value[locale] : "";
 }

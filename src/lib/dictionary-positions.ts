@@ -87,6 +87,29 @@ export async function mappedPosition(catalogId: string, position: DictionaryPosi
   if (!cleanCatalogRef(catalogId)) return null;
   const [entries, key] = await Promise.all([loadMappings(catalogId), positionKey(catalogId, position)]);
   const row = entries.find(item => item.positionKey === key);
-  return row && row.chapterSha256 === position.chapterSha256 && row.paragraphIndex === position.paragraphIndex &&
-    row.paragraphSha256 === position.paragraphSha256 && row.offset === position.offset && row.surface === position.surface ? row : null;
+  if (row) {
+    return row.chapterSha256 === position.chapterSha256 && row.paragraphIndex === position.paragraphIndex &&
+      row.paragraphSha256 === position.paragraphSha256 && row.offset === position.offset && row.surface === position.surface ? row : null;
+  }
+  // Cross-edition fallback: when another EPUB edition alters a different paragraph in the chapter
+  // (changing chapterSha256 and possibly shifting paragraphIndex), an unchanged paragraph still has
+  // the exact same paragraphSha256 + code-point offset + surface. Require self-consistent row keys
+  // and fail closed if identical paragraphs in the book map that token to different senses.
+  const candidates = entries.filter(
+    item =>
+      item.chapterSha256 !== position.chapterSha256 &&
+      item.paragraphSha256 === position.paragraphSha256 &&
+      item.offset === position.offset &&
+      item.surface === position.surface,
+  );
+  if (candidates.length === 0) return null;
+  const verified: PositionMapping[] = [];
+  for (const item of candidates) {
+    if ((await positionKey(catalogId, item)) === item.positionKey) verified.push(item);
+  }
+  const first = verified[0];
+  if (!first) return null;
+  if (verified.some(item => item.senseId !== first.senseId || item.lemma !== first.lemma)) return null;
+  verified.sort((a, b) => Math.abs(a.paragraphIndex - position.paragraphIndex) - Math.abs(b.paragraphIndex - position.paragraphIndex));
+  return verified[0] ?? null;
 }

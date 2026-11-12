@@ -16,10 +16,29 @@ const coverLinks = sessionSnapshot<PackLinks>();
 
 // Only successful exact URLs, never image bytes. New revisions still track their own load.
 const seenImages = new Map<string, true>();
+const preloadingImages = new Set<string>();
 function rememberImage(url: string) {
   seenImages.delete(url);
   seenImages.set(url, true);
   if (seenImages.size > 400) seenImages.delete(seenImages.keys().next().value!);
+}
+
+/** Warm a cover picture into the browser cache and seenImages ahead of carousel rotation. */
+export function preloadCoverImage(url: string | undefined): void {
+  if (!url || seenImages.has(url) || preloadingImages.has(url) || typeof Image !== "function") return;
+  preloadingImages.add(url);
+  const img = new Image();
+  const cross = coverCrossOrigin(url);
+  if (cross) img.crossOrigin = cross;
+  img.decoding = "async";
+  img.onload = () => {
+    preloadingImages.delete(url);
+    rememberImage(url);
+  };
+  img.onerror = () => {
+    preloadingImages.delete(url);
+  };
+  img.src = url;
 }
 
 /**

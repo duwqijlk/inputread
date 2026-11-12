@@ -160,3 +160,38 @@ test('reader reuses exact rendered paragraph array until root, text, chapter or 
  assert.match(reader,/positionParagraphs: positionChapter\?\.texts \?\? \[\]/);
  dom.window.close();
 });
+
+test('cross-edition paragraph fingerprint fallback matches shifted chapter and fails closed on ambiguous twins',async()=>{
+ const m=load();const row=await fixture(m);
+ const shiftedChapter=['Editor note added in another edition.','The 😀 bank.'];
+ const shiftedPos=await m.dictionaryPosition(shiftedChapter,1,6,'bank');
+ assert.ok(shiftedPos);assert.notEqual(shiftedPos.chapterSha256,row.chapterSha256);
+ const native=globalThis.fetch;
+ try{
+  globalThis.fetch=async()=>mappingResponse([row]);
+  const hit=await m.mappedPosition(catalogId,shiftedPos);
+  assert.deepEqual(hit,row);
+
+  // Two identical paragraphs in canonical chapter with the SAME senseId resolve to nearest paragraphIndex.
+  const twinChapters=['The 😀 bank.','The 😀 bank.'];
+  const p0=await m.dictionaryPosition(twinChapters,0,6,'bank');
+  const p1=await m.dictionaryPosition(twinChapters,1,6,'bank');
+  const r0={...p0,positionKey:await m.positionKey(catalogId,p0),senseId:'opaque-existing-id',lemma:'bank',release:'oewn-2025-test',reviewedAt:1};
+  const r1={...p1,positionKey:await m.positionKey(catalogId,p1),senseId:'opaque-existing-id',lemma:'bank',release:'oewn-2025-test',reviewedAt:1};
+  const mSame=load();
+  globalThis.fetch=async()=>mappingResponse([r0,r1]);
+  const sameHit=await mSame.mappedPosition(catalogId,shiftedPos);
+  assert.equal(sameHit?.paragraphIndex,1);
+
+  // Two identical paragraphs with DIFFERENT senseIds fail closed instead of guessing.
+  const mConflict=load();
+  globalThis.fetch=async()=>mappingResponse([r0,{...r1,senseId:'other-sense-id'}]);
+  assert.equal(await mConflict.mappedPosition(catalogId,shiftedPos),null);
+
+  // Forged positionKey on a different chapterSha256 row still fails closed.
+  const mTampered=load();
+  globalThis.fetch=async()=>mappingResponse([{...row,positionKey:'f'.repeat(64)}]);
+  assert.equal(await mTampered.mappedPosition(catalogId,shiftedPos),null);
+ }finally{globalThis.fetch=native;}
+});
+

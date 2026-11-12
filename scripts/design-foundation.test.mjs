@@ -170,3 +170,18 @@ test("title hierarchy stays bold and book titles retain their display face", () 
   assert.match(read("src/components/shelf-book-info.tsx"), /font-display text-lg leading-snug font-semibold" lang="en"/);
   assert.match(read("src/components/book-cover.tsx"), /rounded-cover/);
 });
+
+test("multi-action dialog footers and admin feedback toolbars wrap instead of overflowing", () => {
+  const ownEpub = read("src/components/own-epub-dialog.tsx");
+  assert.match(ownEpub, /w-\[min\(32rem,calc\(100vw-2rem\)\)\]/, "trusted three-button pairing dialog fits comfortably");
+  assert.match(ownEpub, /data-own-epub-actions[^>]*sm:flex-wrap|sm:flex-wrap[^>]*data-own-epub-actions/, "pairing footer wraps safely");
+  assert.match(ownEpub, /state\.phase === "checking" && source === "library"/, "library check progress stays on the library button");
+  assert.match(ownEpub, /state\.phase === "checking" && source === "file"/, "file picker only shows working when checking a chosen file");
+
+  const adminPage = read("src/components/admin-page.tsx");
+  assert.doesNotMatch(adminPage, /sm:flex-nowrap/, "nine admin tabs wrap instead of overflowing max-w-5xl");
+
+  const feedbackAdmin = read("src/components/word-taps-admin.tsx");
+  assert.match(feedbackAdmin, /className="grid gap-3[^"]*" data-admin-feedback-toolbar/, "feedback search row and filter pills stack cleanly");
+  assert.doesNotMatch(feedbackAdmin, /inline-flex rounded-xl border border-line\/80 bg-paper\/60/, "segmented filter groups allow wrapping");
+});

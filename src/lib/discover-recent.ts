@@ -57,18 +57,21 @@ export function isRecentUpdate(updated: string, now: Date, days = RECENT_UPDATE_
   return at >= recentWindowStart(now, days) && at <= now.getTime();
 }
 
-function byNewest<T extends { added: string; title: string }>(a: T, b: T): number {
-  const at = updateInstant(b.added)! - updateInstant(a.added)!;
-  return at || a.title.localeCompare(b.title);
-}
-
 /** Newest first. Same time keeps title order. Books with no usable `added` time are left out. */
 export function recentUpdates<T extends { added: string; title: string }>(
   rows: readonly T[],
   now: Date,
   days = RECENT_UPDATE_DAYS,
 ): T[] {
-  return rows.filter((row) => isRecentUpdate(row.added, now, days)).sort(byNewest);
+  const min = recentWindowStart(now, days);
+  const max = now.getTime();
+  const stamped: Array<{ row: T; at: number }> = [];
+  for (const row of rows) {
+    const at = updateInstant(row.added);
+    if (at != null && at >= min && at <= max) stamped.push({ row, at });
+  }
+  stamped.sort((a, b) => (b.at - a.at) || a.row.title.localeCompare(b.row.title));
+  return stamped.map((item) => item.row);
 }
 
 /**
@@ -81,11 +84,13 @@ export function newestUpdates<T extends { added: string; title: string }>(
   now: Date,
   limit = RECENT_ROW_WIDE,
 ): T[] {
-  return rows
-    .filter((row) => {
-      const at = updateInstant(row.added);
-      return at != null && at <= now.getTime();
-    })
-    .sort(byNewest)
-    .slice(0, limit);
+  if (limit <= 0) return [];
+  const max = now.getTime();
+  const stamped: Array<{ row: T; at: number }> = [];
+  for (const row of rows) {
+    const at = updateInstant(row.added);
+    if (at != null && at <= max) stamped.push({ row, at });
+  }
+  stamped.sort((a, b) => (b.at - a.at) || a.row.title.localeCompare(b.row.title));
+  return stamped.slice(0, limit).map((item) => item.row);
 }

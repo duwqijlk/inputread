@@ -7,7 +7,7 @@ import { bookSyncKey } from "@/lib/sync-merge";
 import { isDue, isMastered, type Book, type VocabEntry } from "@/lib/vocab-model";
 import { useVocab } from "@/lib/vocab-store";
 import { focusSentence } from "@/lib/text";
-import { hasSourceFrom } from "@/lib/wordbook";
+import { countsByBookKey, hasSourceFrom } from "@/lib/wordbook";
 import { useGlossFiles, usePresentedWord } from "@/components/presented-word";
 import { presentWord } from "@/lib/gloss-ref";
 import { WordSources } from "@/components/word-sources";
@@ -297,10 +297,10 @@ export function Notebook({
         ],
       }));
   }, [words, bookId, activeKey]);
-  const perBook = useMemo(
-    () => new Map(books.map((book) => [book.id, words.filter((word) => hasSourceFrom(word, bookSyncKey(book))).length])),
-    [books, words],
-  );
+  const perBook = useMemo(() => {
+    const counts = countsByBookKey(words);
+    return new Map(books.map((book) => [book.id, counts.get(bookSyncKey(book))?.words ?? 0]));
+  }, [books, words]);
   const stats = useMemo(() => summarize(scoped), [scoped]);
   const streak = useMemo(() => streakOf(log), [log]);
 

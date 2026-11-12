@@ -45,7 +45,7 @@ function extrasNow(bookId: string): BookExtras | null | undefined {
 }
 
 /** The text of every paragraph of a stored chapter, numbered the way the reader and the word lists number them. */
-function chapterTexts(chapter: Pick<StoredChapter, "html" | "paragraphs">, segmentation?: 2): string[] {
+function chapterTexts(chapter: Pick<StoredChapter, "html" | "paragraphs">, segmentation?: 2 | 3): string[] {
   if (chapter.html && typeof DOMParser !== "undefined") {
     const doc = new DOMParser().parseFromString(`<div>${chapter.html}</div>`, "text/html");
     return paragraphBlocks(doc.body, segmentation).map((block) => flowText(block));
@@ -178,12 +178,23 @@ export async function getParagraphNoteFlags(
   texts: readonly string[],
 ): Promise<boolean[]> {
   try {
-    const owners = await noteOwnersOf(bookId, chapter, texts);
-    const sentences = (await extrasOf(bookId))?.sentences ?? [];
+    const [owners, extras, stored] = await Promise.all([
+      noteOwnersOf(bookId, chapter, texts),
+      extrasOf(bookId),
+      textsOf(bookId),
+    ]);
+    const sentences = extras?.sentences ?? [];
+    const bookChapters: (readonly string[] | undefined)[] = stored ? [...stored.chapters] : [];
+    if (typeof chapter === "number" && chapter >= 0) bookChapters[chapter] = texts;
     return texts.map(
       (text, index) =>
         owners[index] != null ||
-        (sentences.length > 0 && sentenceNotesIn(sentences, chapter, text).length > 0),
+        (sentences.length > 0 &&
+          sentenceNotesIn(sentences, chapter, text, {
+            paragraph: index,
+            chapterTexts: texts,
+            bookChapters,
+          }).length > 0),
     );
   } catch {
     return texts.map(() => false);
@@ -195,11 +206,21 @@ export async function getSentenceNotesIn(
   bookId: string,
   chapter: number | string,
   paragraphText: string,
+  paragraph?: number,
+  texts?: readonly string[],
 ): Promise<SentenceHelp[]> {
   try {
-    const extras = await extrasOf(bookId);
+    const [extras, stored] = await Promise.all([extrasOf(bookId), textsOf(bookId)]);
     if (!extras?.sentences.length) return [];
-    return sentenceNotesIn(extras.sentences, chapter, paragraphText);
+    const bookChapters: (readonly string[] | undefined)[] = stored ? [...stored.chapters] : [];
+    if (typeof chapter === "number" && chapter >= 0 && texts) bookChapters[chapter] = texts;
+    const resolvedTexts =
+      texts ?? (typeof chapter === "number" && chapter >= 0 ? bookChapters[chapter] : undefined);
+    return sentenceNotesIn(extras.sentences, chapter, paragraphText, {
+      paragraph,
+      chapterTexts: resolvedTexts,
+      bookChapters: bookChapters.length > 0 ? bookChapters : undefined,
+    });
   } catch {
     return [];
   }

@@ -95,7 +95,11 @@ export function comparePlan(
       }),
     );
   }
-  const used = forBook(file, book.chapters.length);
+  const used = forBook(
+    file,
+    book.chapters.length,
+    book.chapters.map((chapter) => chapter.paragraphs),
+  );
   const found = checkAgainstBook(used, indexStoredBook(book), false);
   if (found.missing > 0) {
     warnings.push(tr("plan.missingPlaces", { missing: found.missing, checked: found.checked }));
@@ -132,7 +136,11 @@ export async function applyGlossary(
 ): Promise<ImportResult> {
   const book = await loadStoredBook(bookId);
   if (!book) throw new Error(tr("err.bookGone"));
-  const used = forBook(file, book.chapters.length);
+  const used = forBook(
+    file,
+    book.chapters.length,
+    book.chapters.map((chapter) => chapter.paragraphs),
+  );
   let written = 0;
   let kept = 0;
   let multi = 0;
