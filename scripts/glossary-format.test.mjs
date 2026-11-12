@@ -5,7 +5,7 @@ import { loadAppModules } from "./lib/app-modules.mjs";
 const { format, text, help } = await loadAppModules();
 const ok = (value) => format.validateGlossary(value);
 
-test("segmentation 2 is kept, and any other value is only a warning", () => {
+test("segmentation 2 and 3 are kept, and any other value is only a warning", () => {
   const good = ok({
     version: 2,
     segmentation: 2,
@@ -13,9 +13,16 @@ test("segmentation 2 is kept, and any other value is only a warning", () => {
   });
   assert.equal(good.ok, true);
   assert.equal(good.file.segmentation, 2);
+  const good3 = ok({
+    version: 2,
+    segmentation: 3,
+    glossary: { lantern: { meaning: "A light." } },
+  });
+  assert.equal(good3.ok, true);
+  assert.equal(good3.file.segmentation, 3);
   const ignored = ok({
     version: 2,
-    segmentation: 1,
+    segmentation: 4,
     glossary: { lantern: { meaning: "A light." } },
   });
   assert.equal(ignored.ok, true);
@@ -629,4 +636,78 @@ test("lookupKey stems irregulars and -oes/-ves correctly without breaking conson
   const forms = new Map();
   assert.equal(text.resolveGlossKey("goes", keys, forms), "go");
 });
+
+test("sentence notes keep optional paragraph index and checkExtrasAgainstBook flags moved paragraphs", () => {
+  const checked = ok({
+    version: 2,
+    glossary: { lantern: { meaning: "A light." } },
+    sentences: [
+      { chapter: 0, paragraph: 1, context: "It was a dark night", simple: "The night was dark." },
+    ],
+  });
+  assert.equal(checked.ok, true, checked.errors.join("\n"));
+  assert.equal(checked.file.sentences[0].paragraph, 1);
+
+  const goodBook = [{ paragraphs: ["Chapter One", "It was a dark night when he arrived."] }];
+  assert.equal(format.checkExtrasAgainstBook(checked.file, goodBook, true).missing, 0);
+
+  const movedBook = [{ paragraphs: ["It was a dark night when he arrived.", "Later paragraph."] }];
+  const movedReport = format.checkExtrasAgainstBook(checked.file, movedBook, true);
+  assert.equal(movedReport.missing, 1);
+  assert.match(movedReport.errors.join("\n"), /paragraph 0 of that chapter, not in paragraph 1/);
+});
+
+test("forBook strips stale chapter and occurrence anchors when same-count chapters are shifted", () => {
+  const raw = ok({
+    version: 2,
+    chapters: 3,
+    glossary: {
+      bank: {
+        meaning: "Land beside a river.",
+        senses: [
+          {
+            meaning: "The grassy side of a river.",
+            trickyMeaning: true,
+            anchors: [
+              { chapter: 1, occurrence: 1, context: "sitting by her sister on the bank" },
+              { chapter: 2, occurrence: 1, context: "walked along the steep river bank" },
+              { chapter: 2, occurrence: 2, context: "rested near the mossy river bank" },
+            ],
+          },
+          { meaning: "A place that keeps money.", default: true },
+        ],
+      },
+    },
+  });
+  assert.equal(raw.ok, true);
+
+  // Same total chapter count (3 === 3), but preface was dropped and an epilogue added:
+  // old chapter 1 is now chapter 0, old chapter 2 is now chapter 1.
+  const shiftedBookParagraphs = [
+    ["Alice was sitting by her sister on the bank in the afternoon."],
+    ["She walked along the steep river bank.", "Then she rested near the mossy river bank."],
+    ["Epilogue added at the end of this edition."],
+  ];
+  const adapted = format.forBook(raw.file, 3, shiftedBookParagraphs);
+  const picked = format.pickSense("bank", adapted.glossary.bank, {
+    chapter: 0,
+    surface: "bank",
+    occurrence: 1,
+    paragraph: shiftedBookParagraphs[0][0],
+    before: "Alice was sitting by her sister on the ",
+  });
+  assert.equal(picked.via, "context");
+  assert.equal(picked.meaning, "The grassy side of a river.");
+
+  // When the canonical chapters match in place, exact chapter + occurrence anchors stay intact.
+  const canonicalParagraphs = [
+    ["Preface of the canonical edition."],
+    ["Alice was sitting by her sister on the bank in the afternoon."],
+    ["She walked along the steep river bank.", "Then she rested near the mossy river bank."],
+  ];
+  const untouched = format.forBook(raw.file, 3, canonicalParagraphs);
+  assert.equal(untouched.glossary.bank.senses[0].anchors[0].chapter, 1);
+  assert.equal(untouched.glossary.bank.senses[0].anchors[0].occurrence, 1);
+});
+
 

@@ -21,33 +21,43 @@ const CACHE_KEY = "cibian-cover-tone-v1";
 const CACHE_MAX = 400;
 const memory = new Map<string, string>();
 const pending = new Map<string, Promise<string>>();
+let hydrated = false;
 
-function readCache(): Record<string, string> {
+function ensureHydrated(): void {
+  if (hydrated) return;
+  hydrated = true;
   try {
-    return JSON.parse(localStorage.getItem(CACHE_KEY) || "{}") as Record<string, string>;
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return;
+    const all = JSON.parse(raw) as Record<string, unknown>;
+    for (const [url, hex] of Object.entries(all)) {
+      if (typeof hex === "string" && !memory.has(url)) memory.set(url, hex);
+    }
   } catch {
-    return {};
+    // Corrupted or blocked storage: memory cache still works for this session.
   }
 }
 
 function writeCache(url: string, hex: string): void {
+  ensureHydrated();
+  memory.delete(url);
+  memory.set(url, hex);
+  while (memory.size > CACHE_MAX) {
+    const oldest = memory.keys().next().value;
+    if (oldest === undefined) break;
+    memory.delete(oldest);
+  }
   try {
-    const all = readCache();
-    all[url] = hex;
-    const keys = Object.keys(all);
-    for (const key of keys.slice(0, Math.max(0, keys.length - CACHE_MAX))) delete all[key];
-    localStorage.setItem(CACHE_KEY, JSON.stringify(all));
+    localStorage.setItem(CACHE_KEY, JSON.stringify(Object.fromEntries(memory)));
   } catch {
     // Only a convenience: the colour is picked again next time.
   }
 }
 
 function loadTone(url: string): Promise<string> {
-  const known = memory.get(url) ?? readCache()[url];
-  if (known !== undefined) {
-    memory.set(url, known);
-    return Promise.resolve(known);
-  }
+  ensureHydrated();
+  const known = memory.get(url);
+  if (known !== undefined) return Promise.resolve(known);
   const running = pending.get(url);
   if (running) return running;
   const job = new Promise<string>((resolve) => {
@@ -73,13 +83,17 @@ function loadTone(url: string): Promise<string> {
     image.onerror = () => resolve("");
     image.src = url;
   }).then((hex) => {
-    memory.set(url, hex);
     writeCache(url, hex);
     pending.delete(url);
     return hex;
   });
   pending.set(url, job);
   return job;
+}
+
+/** Warm a cover's extracted tone ahead of time so carousel transitions never snap from grey. */
+export function preloadBookTone(cover: string | undefined): void {
+  if (cover) void loadTone(cover);
 }
 
 /**
@@ -89,16 +103,27 @@ function loadTone(url: string): Promise<string> {
  */
 export function useBookTone(cover: string | undefined, fixed?: string): CSSProperties {
   const theme = usePrefs((state) => state.theme);
-  const [picked, setPicked] = useState<string>(() => (cover ? memory.get(cover) ?? "" : ""));
+  ensureHydrated();
+  const cached = cover ? memory.get(cover) : undefined;
+  const [loaded, setLoaded] = useState<{ url: string; hex: string } | null>(() =>
+    cover && cached !== undefined ? { url: cover, hex: cached } : null,
+  );
   useEffect(() => {
     if (fixed || !cover) return;
+    ensureHydrated();
+    const hit = memory.get(cover);
+    if (hit !== undefined) {
+      setLoaded((prev) => (prev?.url === cover && prev.hex === hit ? prev : { url: cover, hex: hit }));
+      return;
+    }
     let alive = true;
     void loadTone(cover).then((hex) => {
-      if (alive) setPicked(hex);
+      if (alive) setLoaded({ url: cover, hex });
     });
     return () => {
       alive = false;
     };
   }, [cover, fixed]);
-  return useMemo(() => toneStyle(fixed || picked, theme), [fixed, picked, theme]);
+  const activeHex = fixed || (cached !== undefined ? cached : cover && loaded?.url === cover ? loaded.hex : "");
+  return useMemo(() => toneStyle(activeHex, theme), [activeHex, theme]);
 }

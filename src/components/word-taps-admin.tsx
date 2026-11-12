@@ -157,7 +157,7 @@ export function WordTapsAdmin() {
   return (
     <div className="grid gap-5" data-admin-word-analytics>
       {/* Sub Tab Navigation */}
-      <div className="flex items-center gap-1.5 rounded-xl border border-line/60 bg-paper/60 p-1 w-fit text-xs font-semibold">
+      <div className="flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-line/60 bg-paper/60 p-1 w-fit text-xs font-semibold">
         <button
           type="button"
           onClick={() => setSubTab("taps")}
@@ -339,15 +339,15 @@ function WordTapsSubView() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-line/80 bg-card p-4 shadow-2xs sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line/80 bg-card p-4 shadow-2xs">
         <form
-          className="flex min-w-0 flex-1 flex-wrap gap-2 sm:flex-nowrap"
+          className="flex min-w-[min(100%,24rem)] flex-1 flex-wrap items-center gap-2 sm:flex-nowrap"
           onSubmit={(event) => {
             event.preventDefault();
             void load(1, filter, search, bookFilter);
           }}
         >
-          <div className="relative min-w-0 flex-1">
+          <div className="relative min-w-[12rem] flex-1">
             <input
               className={cn(field, "min-w-0 flex-1 pl-8 text-sm")}
               type="search"
@@ -368,16 +368,16 @@ function WordTapsSubView() {
             onChange={(e) => setBookFilter(e.target.value)}
           />
 
-          <button type="submit" className={cn(btn.primary, "px-4 text-xs font-semibold")}>
+          <button type="submit" className={cn(btn.primary, "shrink-0 px-4 text-xs font-semibold")}>
             {t("admin.taps.find")}
           </button>
         </form>
 
-        <div className="inline-flex rounded-xl border border-line/80 bg-paper/60 p-1 text-xs">
+        <div className="flex flex-wrap items-center gap-0.5 rounded-xl border border-line/80 bg-paper/60 p-1 text-xs">
           <button
             type="button"
             className={cn(
-              "rounded-lg px-3 py-1 font-semibold transition-colors",
+              "whitespace-nowrap rounded-lg px-3 py-1 font-semibold transition-colors",
               filter === "missing"
                 ? "bg-card text-ink shadow-2xs"
                 : "text-muted hover:text-ink",
@@ -389,7 +389,7 @@ function WordTapsSubView() {
           <button
             type="button"
             className={cn(
-              "rounded-lg px-3 py-1 font-semibold transition-colors",
+              "whitespace-nowrap rounded-lg px-3 py-1 font-semibold transition-colors",
               filter === "resolved"
                 ? "bg-card text-ink shadow-2xs"
                 : "text-muted hover:text-ink",
@@ -401,7 +401,7 @@ function WordTapsSubView() {
           <button
             type="button"
             className={cn(
-              "rounded-lg px-3 py-1 font-semibold transition-colors",
+              "whitespace-nowrap rounded-lg px-3 py-1 font-semibold transition-colors",
               filter === "all"
                 ? "bg-card text-ink shadow-2xs"
                 : "text-muted hover:text-ink",
@@ -489,7 +489,7 @@ function WordTapsSubView() {
                     ) : null}
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2.5">
                     {row.status !== "resolved" ? (
                       <button
                         type="button"
@@ -497,23 +497,23 @@ function WordTapsSubView() {
                         onClick={() => void handleResolveTap(row)}
                         className={cn(
                           btn.quiet,
-                          "h-7 min-h-0 px-2.5 text-xs text-accent hover:bg-accent-soft border border-accent/25 font-semibold",
+                          "h-7 min-h-0 gap-1 border border-accent/25 px-2.5 text-xs font-semibold text-accent hover:bg-accent-soft",
                         )}
                       >
-                        <Check className="size-3.5 mr-1 inline" />
+                        <Check className="size-3.5 shrink-0" />
                         {isResolving ? t("admin.action.resolving") : t("admin.action.resolve")}
                       </button>
                     ) : (
-                      <span className="inline-flex items-center text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                        <Check className="size-3.5 mr-1" />
+                      <span className="inline-flex shrink-0 items-center whitespace-nowrap text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                        <Check className="mr-1 size-3.5 shrink-0" />
                         {t("admin.action.resolvedDone")}
                       </span>
                     )}
 
-                    <span className="rounded bg-accent-soft px-3 py-1 font-display text-xs font-bold text-accent">
+                    <span className="shrink-0 whitespace-nowrap rounded bg-accent-soft px-3 py-1 font-display text-xs font-bold text-accent">
                       {t("admin.taps.clickCount", { n: row.tapCount })}
                     </span>
-                    <span className="text-xs text-muted">
+                    <span className="shrink-0 whitespace-nowrap text-xs text-muted">
                       {formatShanghaiDate(row.lastTappedAt)}
                     </span>
                   </div>
@@ -736,15 +736,15 @@ function WordFeedbackSubView() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-line/80 bg-card p-4 shadow-2xs sm:flex-row sm:items-center sm:justify-between">
+      <div className="grid gap-3 rounded-2xl border border-line/80 bg-card p-4 shadow-2xs" data-admin-feedback-toolbar>
         <form
-          className="flex min-w-0 flex-1 flex-wrap gap-2 sm:flex-nowrap"
+          className="flex flex-wrap items-center gap-2 sm:flex-nowrap"
           onSubmit={(event) => {
             event.preventDefault();
             void load(1, reasonFilter, statusFilter, search, bookFilter);
           }}
         >
-          <div className="relative min-w-0 flex-1">
+          <div className="relative min-w-[12rem] flex-1">
             <input
               className={cn(field, "min-w-0 flex-1 pl-8 text-sm")}
               type="search"
@@ -757,7 +757,7 @@ function WordFeedbackSubView() {
           </div>
 
           <input
-            className={cn(field, "w-full text-sm sm:w-44")}
+            className={cn(field, "w-full text-sm sm:w-48")}
             type="search"
             value={bookFilter}
             placeholder={t("admin.taps.bookFilterPlaceholder")}
@@ -765,18 +765,18 @@ function WordFeedbackSubView() {
             onChange={(e) => setBookFilter(e.target.value)}
           />
 
-          <button type="submit" className={cn(btn.primary, "px-4 text-xs font-semibold")}>
+          <button type="submit" className={cn(btn.primary, "shrink-0 px-4 text-xs font-semibold")}>
             {t("admin.taps.find")}
           </button>
         </form>
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Reason filters */}
-          <div className="inline-flex rounded-xl border border-line/80 bg-paper/60 p-1 text-xs">
+          <div className="flex flex-wrap items-center gap-0.5 rounded-xl border border-line/80 bg-paper/60 p-1 text-xs">
             <button
               type="button"
               className={cn(
-                "rounded-lg px-3 py-1 font-semibold transition-colors",
+                "whitespace-nowrap rounded-lg px-3 py-1 font-semibold transition-colors",
                 reasonFilter === "all"
                   ? "bg-card text-ink shadow-2xs"
                   : "text-muted hover:text-ink",
@@ -788,7 +788,7 @@ function WordFeedbackSubView() {
             <button
               type="button"
               className={cn(
-                "rounded-lg px-3 py-1 font-semibold transition-colors",
+                "whitespace-nowrap rounded-lg px-3 py-1 font-semibold transition-colors",
                 reasonFilter === "too_hard"
                   ? "bg-card text-ink shadow-2xs"
                   : "text-muted hover:text-ink",
@@ -800,7 +800,7 @@ function WordFeedbackSubView() {
             <button
               type="button"
               className={cn(
-                "rounded-lg px-3 py-1 font-semibold transition-colors",
+                "whitespace-nowrap rounded-lg px-3 py-1 font-semibold transition-colors",
                 reasonFilter === "wrong_meaning"
                   ? "bg-card text-ink shadow-2xs"
                   : "text-muted hover:text-ink",
@@ -812,7 +812,7 @@ function WordFeedbackSubView() {
             <button
               type="button"
               className={cn(
-                "rounded-lg px-3 py-1 font-semibold transition-colors",
+                "whitespace-nowrap rounded-lg px-3 py-1 font-semibold transition-colors",
                 reasonFilter === "missing_meaning"
                   ? "bg-card text-ink shadow-2xs"
                   : "text-muted hover:text-ink",
@@ -824,7 +824,7 @@ function WordFeedbackSubView() {
             <button
               type="button"
               className={cn(
-                "rounded-lg px-3 py-1 font-semibold transition-colors",
+                "whitespace-nowrap rounded-lg px-3 py-1 font-semibold transition-colors",
                 reasonFilter === "suggested"
                   ? "bg-card text-ink shadow-2xs"
                   : "text-muted hover:text-ink",
@@ -836,11 +836,11 @@ function WordFeedbackSubView() {
           </div>
 
           {/* Status filters */}
-          <div className="inline-flex rounded-xl border border-line/80 bg-paper/60 p-1 text-xs">
+          <div className="flex flex-wrap items-center gap-0.5 rounded-xl border border-line/80 bg-paper/60 p-1 text-xs">
             <button
               type="button"
               className={cn(
-                "rounded-lg px-2.5 py-1 font-semibold transition-colors",
+                "whitespace-nowrap rounded-lg px-2.5 py-1 font-semibold transition-colors",
                 statusFilter === "all"
                   ? "bg-card text-ink shadow-2xs"
                   : "text-muted hover:text-ink",
@@ -852,7 +852,7 @@ function WordFeedbackSubView() {
             <button
               type="button"
               className={cn(
-                "rounded-lg px-2.5 py-1 font-semibold transition-colors",
+                "whitespace-nowrap rounded-lg px-2.5 py-1 font-semibold transition-colors",
                 statusFilter === "pending"
                   ? "bg-card text-ink shadow-2xs"
                   : "text-muted hover:text-ink",
@@ -864,7 +864,7 @@ function WordFeedbackSubView() {
             <button
               type="button"
               className={cn(
-                "rounded-lg px-2.5 py-1 font-semibold transition-colors",
+                "whitespace-nowrap rounded-lg px-2.5 py-1 font-semibold transition-colors",
                 statusFilter === "resolved"
                   ? "bg-card text-ink shadow-2xs"
                   : "text-muted hover:text-ink",
@@ -876,7 +876,7 @@ function WordFeedbackSubView() {
             <button
               type="button"
               className={cn(
-                "rounded-lg px-2.5 py-1 font-semibold transition-colors",
+                "whitespace-nowrap rounded-lg px-2.5 py-1 font-semibold transition-colors",
                 statusFilter === "reopened"
                   ? "bg-card text-ink shadow-2xs"
                   : "text-muted hover:text-ink",
@@ -998,7 +998,7 @@ function WordFeedbackSubView() {
                     ) : null}
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2.5">
                     {row.status !== "resolved" ? (
                       <button
                         type="button"
@@ -1006,23 +1006,23 @@ function WordFeedbackSubView() {
                         onClick={() => void handleResolveFeedback(row)}
                         className={cn(
                           btn.quiet,
-                          "h-7 min-h-0 px-2.5 text-xs text-accent hover:bg-accent-soft border border-accent/25 font-semibold",
+                          "h-7 min-h-0 gap-1 border border-accent/25 px-2.5 text-xs font-semibold text-accent hover:bg-accent-soft",
                         )}
                       >
-                        <Check className="size-3.5 mr-1 inline" />
+                        <Check className="size-3.5 shrink-0" />
                         {isResolving ? t("admin.action.resolving") : t("admin.action.resolve")}
                       </button>
                     ) : (
-                      <span className="inline-flex items-center text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                        <Check className="size-3.5 mr-1" />
+                      <span className="inline-flex shrink-0 items-center whitespace-nowrap text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                        <Check className="mr-1 size-3.5 shrink-0" />
                         {t("admin.action.resolvedDone")}
                       </span>
                     )}
 
-                    <span className="rounded bg-accent-soft px-3 py-1 font-display text-xs font-bold text-accent">
+                    <span className="shrink-0 whitespace-nowrap rounded bg-accent-soft px-3 py-1 font-display text-xs font-bold text-accent">
                       {t("admin.feedback.reportCount", { n: row.count })}
                     </span>
-                    <span className="text-xs text-muted">
+                    <span className="shrink-0 whitespace-nowrap text-xs text-muted">
                       {formatShanghaiDate(row.lastReportedAt)}
                     </span>
                   </div>

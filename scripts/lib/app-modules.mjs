@@ -137,7 +137,9 @@ export async function readBook(path, options = {}) {
   const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   let parsed = await epub.parseEpub(buffer, {
     cover: false,
-    ...(options.segmentation === 2 ? { segmentation: 2 } : {}),
+    ...(options.segmentation === 2 || options.segmentation === 3
+      ? { segmentation: options.segmentation }
+      : {}),
   });
   const merge = options.merge;
   const spineWarnings =

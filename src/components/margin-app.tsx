@@ -95,6 +95,13 @@ const TutorialDialog = lazy(() => import("@/components/tutorial-dialog"));
 const FeedbackTipDialog = lazy(() => import("@/components/feedback-tip-dialog"));
 const QuoteFlowDialog = lazy(() => import("@/components/quote-flow"));
 
+function preloadNavChunk(id: string): void {
+  if (id === "shelf") void import("@/components/shelf").catch(() => undefined);
+  else if (id === "discover") void import("@/components/discover").catch(() => undefined);
+  else if (id === "dashboard") void import("@/components/dashboard-page").catch(() => undefined);
+  else if (id === "words") void import("@/components/notebook").catch(() => undefined);
+}
+
 const setScreen = (route: Route, options?: { replace?: boolean; state?: unknown }) => navigate(route, options);
 
 export function MarginApp() {
@@ -260,6 +267,27 @@ export function MarginApp() {
     void autoUpdateWordLists();
     // Every catalog screen transition retries: an empty shelf's first call has nothing to do.
   }, [ready, screen.kind, catalogScreen]);
+
+  // Warm the primary navigation chunks during idle time so switching tabs does not flash a blank fallback.
+  useEffect(() => {
+    if (!ready || screen.kind === "read") return;
+    const warm = () => {
+      preloadNavChunk("discover");
+      preloadNavChunk("dashboard");
+      preloadNavChunk("words");
+      preloadNavChunk("shelf");
+    };
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof win.requestIdleCallback === "function") {
+      const id = win.requestIdleCallback(warm, { timeout: 1500 });
+      return () => win.cancelIdleCallback?.(id);
+    }
+    const timer = window.setTimeout(warm, 240);
+    return () => window.clearTimeout(timer);
+  }, [ready, screen.kind]);
 
   useEffect(() => {
     const refreshStored = () => {
@@ -525,6 +553,8 @@ export function MarginApp() {
               type="button"
               className={cn(btn.icon, "size-11", menu === "words" && "text-accent")}
               onClick={() => setScreen({ kind: "words", bookId: null })}
+              onPointerEnter={() => preloadNavChunk("words")}
+              onFocus={() => preloadNavChunk("words")}
               aria-label={t("nav.notebook")}
               aria-current={menu === "words" ? "page" : undefined}
               data-notebook-button
@@ -563,6 +593,8 @@ export function MarginApp() {
                 key={tab.id}
                 type="button"
                 onClick={tab.go}
+                onPointerEnter={() => preloadNavChunk(tab.id)}
+                onTouchStart={() => preloadNavChunk(tab.id)}
                 aria-current={tab.active ? "page" : undefined}
                 data-nav={tab.id}
                 className={cn(
@@ -814,6 +846,8 @@ function NavButton({
     <button
       type="button"
       onClick={onClick}
+      onPointerEnter={() => preloadNavChunk(id)}
+      onFocus={() => preloadNavChunk(id)}
       aria-current={active ? "page" : undefined}
       data-nav={id}
       className={cn(

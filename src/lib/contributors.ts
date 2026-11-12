@@ -15,19 +15,34 @@ import {
 
 export type { BookMaintainers, Contributor };
 
-type File = { people: Contributor[]; books: Record<string, BookMaintainers> };
+type File = {
+  people: Contributor[];
+  byId: ReadonlyMap<string, Contributor>;
+  books: Record<string, BookMaintainers>;
+};
 
 let loading: Promise<File> | null = null;
+let resolved: File | null = null;
 
 /** contributors.json, once per page: the readers, and each catalog book's maintainers. */
 function loadFile(): Promise<File> {
+  if (resolved) return Promise.resolve(resolved);
   // The file is kept 5 minutes by the browser and the CDN (functions/lib/contributors.ts).
   loading ??= fetch(booksUrl("contributors.json"))
     .then((response) => (response.ok ? response.json() : null))
-    .then((data: unknown) => ({ people: parseContributors(data), books: parseBookMaintainers(data) }))
+    .then((data: unknown) => {
+      const people = parseContributors(data);
+      const file: File = {
+        people,
+        byId: new Map(people.map((person) => [person.id, person])),
+        books: parseBookMaintainers(data),
+      };
+      resolved = file;
+      return file;
+    })
     .catch(() => {
       loading = null; // try again on the next card or visit
-      return { people: [], books: {} };
+      return { people: [], byId: new Map(), books: {} };
     });
   return loading;
 }
@@ -52,10 +67,18 @@ export function preloadContributors(): void {
   });
 }
 
+const EMPTY_PEOPLE: Contributor[] = [];
+const EMPTY_BY_ID: ReadonlyMap<string, Contributor> = new Map();
+const EMPTY_BOOKS: Record<string, BookMaintainers> = {};
+
 /** All credited readers, most help first. Empty until the file has loaded (or when there is none). */
 export function useContributors(): Contributor[] {
-  const [people, setPeople] = useState<Contributor[]>([]);
+  const [people, setPeople] = useState<Contributor[]>(() => resolved?.people ?? EMPTY_PEOPLE);
   useEffect(() => {
+    if (resolved) {
+      if (people !== resolved.people) setPeople(resolved.people);
+      return;
+    }
     let alive = true;
     void loadContributors().then((rows) => {
       if (alive) setPeople(rows);
@@ -63,21 +86,46 @@ export function useContributors(): Contributor[] {
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return people;
+  return resolved?.people ?? people;
+}
+
+/** O(1) contributor lookup by public id for card badges. */
+export function useContributorMap(): ReadonlyMap<string, Contributor> {
+  const [byId, setById] = useState<ReadonlyMap<string, Contributor>>(() => resolved?.byId ?? EMPTY_BY_ID);
+  useEffect(() => {
+    if (resolved) {
+      if (byId !== resolved.byId) setById(resolved.byId);
+      return;
+    }
+    let alive = true;
+    void loadFile().then((file) => {
+      if (alive) setById(file.byId);
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return resolved?.byId ?? byId;
 }
 
 /** The credited reader for one public id, once the file has loaded. */
 export function useContributor(id: string | undefined): Contributor | null {
-  const people = useContributors();
+  const byId = useContributorMap();
   if (!id) return null;
-  return people.find((person) => person.id === id) ?? null;
+  return byId.get(id) ?? null;
 }
 
 /** Every catalog book's maintainers, keyed by `<catalog>:<id>`. Empty until the file has loaded. */
 export function useBookMaintainers(): Record<string, BookMaintainers> {
-  const [books, setBooks] = useState<Record<string, BookMaintainers>>({});
+  const [books, setBooks] = useState<Record<string, BookMaintainers>>(() => resolved?.books ?? EMPTY_BOOKS);
   useEffect(() => {
+    if (resolved) {
+      if (books !== resolved.books) setBooks(resolved.books);
+      return;
+    }
     let alive = true;
     void loadFile().then((file) => {
       if (alive) setBooks(file.books);
@@ -85,8 +133,9 @@ export function useBookMaintainers(): Record<string, BookMaintainers> {
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return books;
+  return resolved?.books ?? books;
 }
 
 /**

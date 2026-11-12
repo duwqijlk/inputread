@@ -27,7 +27,11 @@ export type FeedbackTarget = {
   glossaryRev?: string;
 };
 
-async function send(target: FeedbackTarget, reason: FeedbackReason, suggestion?: string): Promise<boolean> {
+export async function sendWordFeedback(
+  target: FeedbackTarget,
+  reason: FeedbackReason,
+  suggestion?: string,
+): Promise<boolean> {
   const { catalogId, ...rest } = target;
   try {
     const response = await fetch("/api/feedback/word", {
@@ -46,6 +50,8 @@ async function send(target: FeedbackTarget, reason: FeedbackReason, suggestion?:
     return false;
   }
 }
+
+const send = sendWordFeedback;
 
 /**
  * Where the feedback flow is. `choose`: the three choices. `reason`: a reason was sent. `writing`:
@@ -190,11 +196,18 @@ export function WordMeaning({
     <PenLine className="size-4" aria-hidden />,
   );
 
+  const writePrompt = compactMissing
+    ? t("card.feedbackWriteCommunityPrompt")
+    : t("card.feedbackWritePrompt");
+  const writeHint = compactMissing
+    ? t("card.feedbackCommunityHint")
+    : t("card.feedbackMeaningHint");
+
   const body = (() => {
     if (step.kind === "writing") {
       return (
         <div className="grid gap-2" data-feedback-suggestion>
-          <p className="text-[0.8125rem] font-bold text-muted">{t("card.feedbackWritePrompt")}</p>
+          <p className="text-[0.8125rem] font-bold text-muted">{writePrompt}</p>
           <textarea
             // 16px everywhere: iOS Safari zooms the whole page into a smaller field and stays zoomed.
             className="min-h-[72px] w-full resize-none rounded border border-edge bg-card px-2.5 py-2 font-display text-base leading-normal text-ink placeholder:text-faint focus:border-accent focus:shadow-[0_0_0_1px_rgb(var(--accent-rgb))] focus:outline-none"
@@ -204,7 +217,7 @@ export function WordMeaning({
             autoFocus
             lang="en"
             placeholder={t("card.feedbackMeaningPlaceholder")}
-            aria-label={t("card.feedbackWritePrompt")}
+            aria-label={writePrompt}
             onChange={(event) => setText(event.target.value.slice(0, SUGGESTION_MAX))}
             data-feedback-suggestion-input
           />
@@ -213,7 +226,7 @@ export function WordMeaning({
               <span className="tabular-nums" data-feedback-suggestion-count>
                 {[...text].length}/{SUGGESTION_MAX}
               </span>{" "}
-              {t("card.feedbackMeaningHint")}
+              {writeHint}
             </span>
             <span className="ml-auto flex gap-1">
               <button
@@ -242,7 +255,7 @@ export function WordMeaning({
     if (step.kind === "reason" || step.kind === "wrote") {
       const line =
         step.kind === "wrote"
-          ? t("card.feedbackWrote")
+          ? t(compactMissing ? "card.feedbackCommunityWrote" : "card.feedbackWrote")
           : step.reason === "missing_meaning"
             ? t("card.feedbackMissingDone")
             : t("card.feedbackReasonDone", { reason: t(REASON_LABEL[step.reason]) });
@@ -293,21 +306,24 @@ export function WordMeaning({
 
   if (missing && compactMissing) {
     return (
-      <div className="grid gap-2" data-word-primary data-community-compose>
+      <div className="grid gap-1" data-word-primary data-community-compose>
+        <p className="font-sans text-sm leading-5 text-muted" data-community-compose-heading>
+          {t(step.kind === "choose" ? "card.senses.communityNone" : "card.senses.community")}
+        </p>
         {step.kind === "choose" ? (
           <button
             ref={helpRef}
             type="button"
             onClick={startWriting}
             aria-expanded={false}
-            className="inline-flex min-h-11 items-center gap-2 justify-self-start rounded px-1 font-sans text-sm font-bold text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="-ml-1 inline-flex min-h-11 items-center gap-2 justify-self-start rounded px-1 font-sans text-sm font-bold text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             data-feedback-add-meaning
           >
             <PenLine className="size-4" aria-hidden />
             {t("card.feedbackAddMeaning")}
           </button>
         ) : (
-          <div className="rounded-xl border border-line p-3" data-feedback-options>{body}{sendFailed ? <p role="alert" className="mt-2 text-sm text-warn">{t("card.feedbackFailed")}</p> : null}</div>
+          <div className="mt-1 rounded-xl border border-line p-3" data-feedback-options>{body}{sendFailed ? <p role="alert" className="mt-2 text-sm text-warn">{t("card.feedbackFailed")}</p> : null}</div>
         )}
         {children}
       </div>

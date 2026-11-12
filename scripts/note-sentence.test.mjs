@@ -45,6 +45,29 @@ test("a title, an initial or a number does not end a sentence", () => {
   assert.equal(span("A book by J. K. Rowling sat there. Next.", "Rowling sat there"), "A book by J. K. Rowling sat there.");
 });
 
+test("abbreviations, mid-sentence ellipses and unclosed quoted exclamations stay inside one sentence", () => {
+  const rabbit =
+    "There was nothing remarkable in that; nor did Alice think it strange to hear the Rabbit say, “Oh dear! Oh dear! I shall be late!” (when she thought it over afterwards, it occurred to her).";
+  assert.equal(
+    span(rabbit, "I shall be late"),
+    "There was nothing remarkable in that; nor did Alice think it strange to hear the Rabbit say, “Oh dear! Oh dear! I shall be late!”",
+  );
+  assert.equal(
+    span("“Oh dear! Oh dear! I shall be late!” she cried. Next.", "I shall be late"),
+    "“Oh dear! Oh dear! I shall be late!”",
+  );
+  assert.equal(
+    span("Bring tools, e.g. the lantern, before dark. Leave.", "the lantern"),
+    "Bring tools, e.g. the lantern, before dark.",
+  );
+  assert.equal(span("At 5 p.m. she walked out. Done.", "she walked out"), "At 5 p.m. she walked out.");
+  assert.equal(span("Then Capt. Hook laughed aloud. Stop.", "Hook laughed"), "Then Capt. Hook laughed aloud.");
+  assert.equal(
+    span("She waited... and then opened the door. Gone.", "opened the door"),
+    "She waited... and then opened the door.",
+  );
+});
+
 test("the range covers the sentence across soft hyphens and word buttons in the page", () => {
   const dom = new JSDOM(
     '<p>Halfway home. Had she not been <span data-word="carrying">car­ry­ing</span> the lantern, she would have stepped on it. She smiled.</p>',

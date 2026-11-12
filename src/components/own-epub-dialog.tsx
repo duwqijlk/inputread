@@ -33,6 +33,7 @@ function OwnEpubSession({ bookId, onClose, onSaved }: Props & { bookId: string }
   const [pack, setPack] = useState<WordListPack | null>(null);
   const [loadError, setLoadError] = useState("");
   const [stage, setStage] = useState("");
+  const [source, setSource] = useState<"file" | "library">("file");
   const [state, setState] = useState<OwnEpubState<PairPreview>>({ phase: "idle", preview: null, error: null });
   const savedCallback = useRef(onSaved);
   useLayoutEffect(() => {
@@ -98,6 +99,7 @@ function OwnEpubSession({ bookId, onClose, onSaved }: Props & { bookId: string }
 
   function onFile(file: File | undefined) {
     if (!file || !pack) return;
+    setSource("file");
     setStage("");
     void flow.start((work) => preview(file, pack, work), "checking");
   }
@@ -105,6 +107,7 @@ function OwnEpubSession({ bookId, onClose, onSaved }: Props & { bookId: string }
   function onLibrary() {
     if (!pack || !trusted) return;
     const selected = pack;
+    setSource("library");
     setStage("");
     void flow.start(async (work) => {
       const scope = requestScope(work.signal, 120000);
@@ -163,7 +166,7 @@ function OwnEpubSession({ bookId, onClose, onSaved }: Props & { bookId: string }
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/[0.32]" />
         <Dialog.Content
-          className="anim-pop fixed top-1/2 left-1/2 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-float-edge bg-float p-5 text-ink shadow-lift "
+          className="anim-pop fixed top-1/2 left-1/2 z-50 w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-float-edge bg-float p-5 text-ink shadow-lift "
           data-own-epub-phase={error ? "error" : state.phase}
           aria-busy={busy}
           onEscapeKeyDown={(event) => { if (saving) event.preventDefault(); }}
@@ -196,7 +199,7 @@ function OwnEpubSession({ bookId, onClose, onSaved }: Props & { bookId: string }
           {progress ? (
             <p className="mt-3 text-sm text-muted" role="status" data-own-epub-stage>{progress}</p>
           ) : null}
-          <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end" data-own-epub-actions>
             <button type="button" className={btn.quiet} disabled={saving} onClick={close}>{t("common.close")}</button>
             {pending ? (
               <button
@@ -210,7 +213,7 @@ function OwnEpubSession({ bookId, onClose, onSaved }: Props & { bookId: string }
                 {saving ? t("lists.saving") : state.phase === "error" ? t("lists.retrySave") : t("lists.useFile")}
               </button>
             ) : (
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                 {trusted && pack ? (
                   <button
                     type="button"
@@ -219,11 +222,15 @@ function OwnEpubSession({ bookId, onClose, onSaved }: Props & { bookId: string }
                     data-library-open
                     onClick={onLibrary}
                   >
-                    {state.phase === "downloading" ? t("lists.downloading") : t("lists.openLibrary")}
+                    {state.phase === "downloading"
+                      ? t("lists.downloading")
+                      : state.phase === "checking" && source === "library"
+                        ? t("lists.working")
+                        : t("lists.openLibrary")}
                   </button>
                 ) : null}
                 <label className={cn(btn.primary, busy || !pack ? "pointer-events-none opacity-60" : "")}>
-                  {state.phase === "checking" ? t("lists.working") : t("discover.addEpub")}
+                  {state.phase === "checking" && source === "file" ? t("lists.working") : t("discover.addEpub")}
                   <input
                     data-own-epub
                     className="sr-only"

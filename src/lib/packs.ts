@@ -220,10 +220,34 @@ export function catalogUrlProblem(value: string): Key | "" {
   }
 }
 
+type ResolvedBase = {
+  base: URL;
+  emptyHref: string;
+  dirHref: string;
+  fastDir: boolean;
+};
+
+const SAFE_SUBPATH = /^(?!\.\.?(?:\/|$))[A-Za-z0-9._-]+(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9._-]+)*$/;
+const resolvedBases = new Map<string, ResolvedBase>();
+
 /** The absolute address of a file named in the catalog. File addresses are relative to the catalog. */
 export function resolveAgainst(catalogUrl: string, file: string): string {
-  const base = new URL(catalogUrl, document.baseURI);
-  return new URL(file, base).toString();
+  const baseUri = document.baseURI;
+  const cacheKey = `${baseUri}\0${catalogUrl}`;
+  let entry = resolvedBases.get(cacheKey);
+  if (!entry) {
+    const base = new URL(catalogUrl, baseUri);
+    const emptyHref = new URL("", base).toString();
+    const dirHref = new URL("./", base).toString();
+    const fastDir =
+      dirHref.endsWith("/") && (dirHref.startsWith("http://") || dirHref.startsWith("https://"));
+    entry = { base, emptyHref, dirHref, fastDir };
+    if (resolvedBases.size >= 16) resolvedBases.clear();
+    resolvedBases.set(cacheKey, entry);
+  }
+  if (file === "") return entry.emptyHref;
+  if (entry.fastDir && SAFE_SUBPATH.test(file)) return entry.dirHref + file;
+  return new URL(file, entry.base).toString();
 }
 
 /* ------------------------------------------------------------------ loading the catalog */
@@ -237,6 +261,7 @@ export type CatalogResult = {
 };
 
 type CachedCatalog = { url: string; at: number; catalog: Catalog };
+let lastCachedSignature = "";
 
 function readCache(url: string): CachedCatalog | null {
   try {
@@ -253,7 +278,12 @@ function readCache(url: string): CachedCatalog | null {
 
 function writeCache(url: string, catalog: Catalog) {
   try {
+    const signature = `${url}\0${catalog.name}\0${catalog.updated}\0${catalog.packs
+      .map((pack) => `${pack.id}:${pack.rev}:${pack.epub.sha256}:${pack.glossary.sha256}:${pack.updated}:${pack.title}`)
+      .join(",")}`;
+    if (signature === lastCachedSignature && localStorage.getItem(CACHE_KEY)) return;
     localStorage.setItem(CACHE_KEY, JSON.stringify({ url, at: Date.now(), catalog }));
+    lastCachedSignature = signature;
   } catch {
     // The list is just not kept.
   }
@@ -431,8 +461,8 @@ function spineMergeOf(glossaryText: string): Record<string, string> | undefined 
   return merge;
 }
 
-/** `2` when the word list opts into chapter-wrapper blockquotes. Otherwise unset. */
-function segmentationOf(glossaryText: string): 2 | undefined {
+/** `2` or `3` when the word list opts into segmentation rules. Otherwise unset. */
+function segmentationOf(glossaryText: string): 2 | 3 | undefined {
   if (!glossaryText.trim()) return undefined;
   return validateGlossary(glossaryText).file?.segmentation;
 }
@@ -492,7 +522,7 @@ async function installNow(input: InstallInput): Promise<InstallResult> {
     const spineMerge = spineMergeOf(input.glossaryText);
     const segmentation = segmentationOf(input.glossaryText);
     const storedNow = existing ? await loadStoredBook(existing.bookId).catch(() => null) : null;
-    const segChanged = (storedNow?.segmentation === 2) !== (segmentation === 2);
+    const segChanged = (storedNow?.segmentation ?? 1) !== (segmentation ?? 1);
     let parsed = input.parsed;
     if ((!existing || !sameBook || spineMerge || segChanged) && !parsed)
       parsed = await parseEpub(bufferOf(input.epub), { segmentation, signal: input.signal });
@@ -511,7 +541,7 @@ async function installNow(input: InstallInput): Promise<InstallResult> {
         author,
         chapters: parsed.chapters,
         ...(parsed.extras.length > 0 ? { extras: parsed.extras } : {}),
-        ...(segmentation === 2 ? { segmentation: 2 } : {}),
+        ...(segmentation === 2 || segmentation === 3 ? { segmentation } : {}),
         glossary: {},
         pending: [],
         totalHard: 0,
@@ -527,7 +557,7 @@ async function installNow(input: InstallInput): Promise<InstallResult> {
           chapters: parsed.chapters,
           extras: parsed.extras,
         };
-        if (segmentation === 2) next.segmentation = 2;
+        if (segmentation === 2 || segmentation === 3) next.segmentation = segmentation;
         else delete next.segmentation;
         check();
         writing = true;
@@ -710,7 +740,7 @@ export async function downloadPack(
     if (keepBook && have && glossaryText) {
       const segmentation = segmentationOf(glossaryText);
       const stored = await loadStoredBook(have.bookId).catch(() => null);
-      if ((stored?.segmentation === 2) !== (segmentation === 2) && pack.epub.url) {
+      if ((stored?.segmentation ?? 1) !== (segmentation ?? 1) && pack.epub.url) {
         epub = await fetchBytes(
           resolveAgainst(catalogUrl, pack.epub.url),
           pack.epub.bytes,

@@ -7,6 +7,7 @@ import {
   addSourceTo,
   bookForSource,
   countFromBook,
+  countsByBookKey,
   hasSourceFrom,
   mergeCards,
   mergeSources,
@@ -332,4 +333,16 @@ test("two copies of one word-list pointer keep the paragraph and do not copy a m
   assert.equal(detailed[0].sentence, paragraph);
   assert.equal(detailed[0].chapter, 1);
   assert.equal(detailed[0].meaning, undefined);
+});
+
+test("countsByBookKey counts each word at most once per book and matches due schedule", () => {
+  const now = 10_000;
+  const words = [
+    { stage: 0, dueAt: 5_000, sources: [{ book: keyA, surface: "faint", savedAt: 1 }, { book: keyA, surface: "faint", savedAt: 2 }, { book: keyP, surface: "faint", savedAt: 3 }] },
+    { stage: 2, dueAt: 20_000, sources: [{ book: keyA, surface: "brisk", savedAt: 4 }] },
+    { stage: 7, dueAt: 1_000, sources: [{ book: keyA, surface: "steady", savedAt: 5 }] },
+  ];
+  const counts = countsByBookKey(words, now);
+  assert.deepEqual(counts.get(keyA), { words: 3, due: 1 });
+  assert.deepEqual(counts.get(keyP), { words: 1, due: 1 });
 });

@@ -17,15 +17,20 @@ export type ParagraphHelp = {
   context: string; // 6-14 words copied exactly from the paragraph
   mainIdea: string; // 1-2 short sentences
   simple: string; // the whole paragraph in very common words, restating only the original
+  clues?: string[]; // speaker identity, pronoun referents, subtext/irony, or cultural background clues
   hardWords?: string[]; // hardest words or phrases from the ORIGINAL paragraph; shown as tappable
   credit?: string; // public id of the reader whose explanation this note uses (see GLOSSARY_FORMAT.md)
 };
 
-/** A sentence explanation. Locate by chapter + context (verbatim snippet from the sentence). */
+/** A sentence explanation. Locate by chapter (+ optional paragraph) + context (verbatim snippet from the sentence). */
 export type SentenceHelp = {
   chapter: NoteChapter;
+  paragraph?: number; // optional 0-based paragraph index inside the chapter to disambiguate repeated snippets
   context: string; // 6-14 words copied exactly from the sentence
   simple: string; // the sentence in easier English
+  core?: string; // 5-10 word stripped backbone ("Who -> did what")
+  chunks?: string[]; // step-by-step clause/chunk breakdown in plain English
+  pattern?: string; // reusable English sentence pattern tip
   grammar?: string; // ONE line naming the tricky grammar and what it means; optional
   credit?: string; // public id of the reader whose explanation this note uses
 };
@@ -35,6 +40,7 @@ export type PhraseEntry = {
   meaning: string;
   /** The same sense, said for this sentence. Optional. Shown under the plain meaning. */
   here?: string;
+  whyHard?: string;
   pos?: "phrasal verb" | "idiom" | "phrase";
   forms?: string[]; // e.g. ["gave up", "giving up", "gives up"]
   example?: string;

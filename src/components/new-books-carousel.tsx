@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
-import { FeaturedBook, type DiscoverRow } from "@/components/discover-browse";
+import { FeaturedBook, preloadFeaturedBooks, type DiscoverRow } from "@/components/discover-browse";
 import { useT } from "@/lib/i18n";
 import { motionOff } from "@/lib/motion";
 
@@ -54,6 +54,10 @@ export function NewBooksCarousel({ rows, detailOpen, onOpen }: {
   }, [selected, key]);
 
   useEffect(() => {
+    if (rows.length > 1) preloadFeaturedBooks?.(rows);
+  }, [keys, rows]);
+
+  useEffect(() => {
     if (count < 2 || stopped || !nextKey) return;
     const timer = window.setTimeout(() => {
       direction.current = 1;
@@ -67,8 +71,8 @@ export function NewBooksCarousel({ rows, detailOpen, onOpen }: {
     previous.current = key;
     if (!changed || !frame.current || off || motionOff()) return;
     const animation = frame.current.animate([
-      { transform: `translateX(${direction.current * 16}px)`, opacity: 0.75 },
-      { transform: "translateX(0)", opacity: 1 },
+      { opacity: 0.78 },
+      { opacity: 1 },
     ], { duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
     return () => animation.cancel();
   }, [key, off]);
@@ -84,7 +88,7 @@ export function NewBooksCarousel({ rows, detailOpen, onOpen }: {
     <section
       aria-label={t("browse.carousel.label")}
       aria-roledescription={t("browse.carousel.role")}
-      className="relative"
+      className="relative [overflow-anchor:none]"
       data-new-books-carousel=""
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

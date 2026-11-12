@@ -52,7 +52,7 @@ function Frame({
             {children}
           </div>
           {footer ? (
-            <div className="flex flex-col-reverse gap-2 border-t border-line px-5 py-3 sm:flex-row sm:justify-end">
+            <div className="flex flex-col-reverse gap-2 border-t border-line px-5 py-3 sm:flex-row sm:flex-wrap sm:justify-end">
               {footer}
             </div>
           ) : null}

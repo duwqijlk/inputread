@@ -945,7 +945,7 @@ export function ConfirmDialog({
           <AlertDialog.Description className="mt-2 text-[0.95rem] text-muted">
             {description}
           </AlertDialog.Description>
-          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
             <AlertDialog.Cancel className={btn.quiet}>{t("common.cancel")}</AlertDialog.Cancel>
             <AlertDialog.Action className={btn.danger} onClick={onConfirm}>
               {confirmLabel}

@@ -71,3 +71,23 @@ test("a sentence note lights the bulb of the paragraph that holds its sentence",
     ["He went home slowly."],
   );
 });
+
+test("sentence lookup scopes repeated lines to the target paragraph and home chapter", async () => {
+  const refrain = "The clock struck twelve in the hall.";
+  const ch0 = [refrain, "Nothing happens here.", refrain];
+  const ch1 = [refrain];
+  const book = {
+    segmentation: 3,
+    chapters: [
+      { html: ch0.map((t) => `<p>${t}</p>`).join(""), paragraphs: ch0 },
+      { html: ch1.map((t) => `<p>${t}</p>`).join(""), paragraphs: ch1 },
+    ],
+  };
+  const sentence = { chapter: 0, paragraph: 2, context: "The clock struck twelve", simple: "It was midnight." };
+  globalThis.__helpLookupFixture = { book, notes: { paragraphs: [], sentences: [sentence], phrases: {} } };
+  lookup.shareStoredBook("scoped-sentence", book);
+  assert.deepEqual(await lookup.getParagraphNoteFlags("scoped-sentence", 0, ch0), [false, false, true]);
+  assert.deepEqual(await lookup.getParagraphNoteFlags("scoped-sentence", 1, ch1), [false]);
+  assert.equal((await lookup.getSentenceNotesIn("scoped-sentence", 0, ch0[0], 0)).length, 0);
+  assert.equal((await lookup.getSentenceNotesIn("scoped-sentence", 0, ch0[2], 2)).length, 1);
+});

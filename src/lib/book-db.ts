@@ -113,10 +113,11 @@ export type StoredBook = {
   /** Spine files the chapter list drops. Absent on books stored before this. */
   extras?: StoredSpineExtra[];
   /**
-   * `2` when this book's word list asked to split chapter-wrapper blockquotes.
+   * `2` when this book's word list asked to split chapter-wrapper blockquotes;
+   * `3` when it also asked to sub-split multi-chapter spine files / coarse TOC slices.
    * Absent means a blockquote stays one paragraph, the same as before that rule.
    */
-  segmentation?: 2;
+  segmentation?: 2 | 3;
   glossary: Record<string, Gloss>;
   pending: string[];
   totalHard: number;

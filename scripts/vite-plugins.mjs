@@ -139,15 +139,25 @@ function serveWordLists(dirOf) {
 
 export function publicBooks() {
   let dir = "";
+  let overlayDir = "";
   return {
     name: "margin-words:public-books",
     configResolved(config) {
       dir = join(config.root, "public-books");
+      overlayDir = process.env.PREVIEW_BOOKS_DIR ? resolve(config.root, process.env.PREVIEW_BOOKS_DIR) : "";
     },
     configureServer(server) {
+      if (overlayDir) {
+        server.middlewares.use(serveFrom(join(overlayDir, "public-books"), "/public-books/"));
+        server.middlewares.use(serveFrom(join(overlayDir, "dictionary"), "/dictionary/"));
+      }
       server.middlewares.use(serveFrom(dir, "/public-books/"));
     },
     configurePreviewServer(server) {
+      if (overlayDir) {
+        server.middlewares.use(serveFrom(join(overlayDir, "public-books"), "/public-books/"));
+        server.middlewares.use(serveFrom(join(overlayDir, "dictionary"), "/dictionary/"));
+      }
       server.middlewares.use(serveFrom(dir, "/public-books/"));
     },
   };

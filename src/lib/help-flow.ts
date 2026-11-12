@@ -5,6 +5,7 @@
  * shows a friendly message.
  */
 import { getParagraphHelp, getSentenceHelp, getSentenceNotesIn } from "@/lib/help-lookup";
+import { findNoteSentence } from "@/lib/note-sentence";
 import { cleanNoteText, cleanParagraphNote, type ParagraphNote } from "@/lib/paragraph-note";
 
 export type ParagraphView = ParagraphNote;
@@ -12,18 +13,46 @@ export type ParagraphView = ParagraphNote;
 export type SentenceView = {
   simple: string;
   grammar: string;
+  core?: string;
+  chunks?: string[];
+  pattern?: string;
   /** Public id of the reader whose explanation this note uses. */
   credit?: string;
 };
 
-/** A sentence note shown in the paragraph panel: the words that name the sentence, then its help. */
-export type SentenceInParagraph = SentenceView & { context: string };
+/**
+ * One sentence-anchored item inside the paragraph panel:
+ * - `context`: short verbatim locator snippet stored in the glossary;
+ * - `sentence`: full sentence resolved from the paragraph text so the header matches the exact scope.
+ */
+export type SentenceInParagraph = SentenceView & {
+  context: string;
+  sentence: string;
+};
 
-/** What the bulb of one paragraph opens: its paragraph note, its sentence notes, or both. */
+/**
+ * Three distinct reading-help boundaries opened by a paragraph's ✦ mark:
+ * 1. `paragraph`: paragraph-level meaning (`mainIdea` + `simple`);
+ * 2. `grammar`: editorial syntactic/grammar breakdown inside this paragraph;
+ * 3. `sentences`: reader-contributed or plain single-sentence explanations.
+ */
 export type ParagraphHelpView = {
   paragraph: ParagraphView | null;
+  grammar: SentenceInParagraph[];
   sentences: SentenceInParagraph[];
 };
+
+export function isGrammarBreakdown(view: SentenceView): boolean {
+  return !view.credit && Boolean(view.chunks?.length || view.pattern || view.grammar || view.core);
+}
+
+export function resolveFullSentence(paragraphText: string, context: string): string {
+  if (!paragraphText.trim()) return context;
+  const span = findNoteSentence(paragraphText, context);
+  if (!span) return context;
+  const full = paragraphText.slice(span.start, span.end).replace(/\u00AD/g, "").replace(/\s+/g, " ").trim();
+  return full || context;
+}
 
 const clean = cleanNoteText;
 
@@ -31,11 +60,26 @@ function asSentence(value: unknown): SentenceView | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
   const simple = clean(row.simple, 800);
-  // The easier sentence is the note; the grammar line is extra help and may be absent.
+  // The easier sentence is the note; the grammar and structure fields are extra help and may be absent.
   if (!simple) return null;
-  const grammar = clean(row.grammar, 300);
+  const grammar = clean(row.grammar, 400);
+  const core = clean(row.core, 240);
+  const chunks = Array.isArray(row.chunks)
+    ? row.chunks
+        .map((item) => clean(item, 320))
+        .filter(Boolean)
+        .slice(0, 8)
+    : [];
+  const pattern = clean(row.pattern, 280);
   const credit = typeof row.credit === "string" && /^[a-z0-9]{12}$/.test(row.credit) ? row.credit : undefined;
-  return { simple, grammar, ...(credit ? { credit } : {}) };
+  return {
+    simple,
+    grammar,
+    ...(core ? { core } : {}),
+    ...(chunks.length ? { chunks } : {}),
+    ...(pattern ? { pattern } : {}),
+    ...(credit ? { credit } : {}),
+  };
 }
 
 export async function loadParagraphView(args: {
@@ -73,15 +117,24 @@ export async function loadParagraphHelpView(args: {
   paragraph: number;
   texts: readonly string[];
 }): Promise<ParagraphHelpView | null> {
+  const paragraphText = args.texts[args.paragraph] ?? "";
   const [paragraph, notes] = await Promise.all([
     loadParagraphView(args),
-    getSentenceNotesIn(args.bookId, args.chapter, args.texts[args.paragraph] ?? "").catch(() => []),
+    getSentenceNotesIn(args.bookId, args.chapter, paragraphText, args.paragraph, args.texts).catch(() => []),
   ]);
+  const grammar: SentenceInParagraph[] = [];
   const sentences: SentenceInParagraph[] = [];
   for (const note of notes) {
     const view = asSentence(note);
     const context = clean(note.context, 300);
-    if (view && context) sentences.push({ ...view, context });
+    if (!view || !context) continue;
+    const item: SentenceInParagraph = {
+      ...view,
+      context,
+      sentence: resolveFullSentence(paragraphText, context),
+    };
+    if (isGrammarBreakdown(view)) grammar.push(item);
+    else sentences.push(item);
   }
-  return paragraph || sentences.length ? { paragraph, sentences } : null;
+  return paragraph || grammar.length || sentences.length ? { paragraph, grammar, sentences } : null;
 }

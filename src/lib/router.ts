@@ -150,16 +150,57 @@ export function parseAddress(address: string): Route | null {
 }
 
 type DiscoverPosition = { address: string; y: number; limit: number };
+let liveDiscoverPosition: DiscoverPosition | null = null;
+let discoverFlushTimer = 0;
+
+function writeDiscoverHistory(position: DiscoverPosition): void {
+  const state = window.history.state;
+  const prev = (state && typeof state === "object" ? (state as { discoverPosition?: DiscoverPosition }).discoverPosition : undefined);
+  if (prev && prev.address === position.address && prev.y === position.y && prev.limit === position.limit) return;
+  if (!prev && position.y === 0 && position.limit <= 12) return;
+  window.history.replaceState({ ...(state && typeof state === "object" ? state : {}),
+    discoverPosition: position,
+  }, "", position.address + window.location.hash);
+}
+
+function flushDiscoverPosition(): void {
+  if (!discoverFlushTimer) return;
+  window.clearTimeout(discoverFlushTimer);
+  discoverFlushTimer = 0;
+  if (liveDiscoverPosition && liveDiscoverPosition.address === currentAddress()) {
+    writeDiscoverHistory(liveDiscoverPosition);
+  }
+}
+
 export function discoverPosition(): DiscoverPosition | null {
+  const addr = currentAddress();
+  if (liveDiscoverPosition?.address === addr && Number.isFinite(liveDiscoverPosition.y) && Number.isFinite(liveDiscoverPosition.limit)) {
+    return liveDiscoverPosition;
+  }
   const value = window.history.state?.discoverPosition as DiscoverPosition | undefined;
-  return value?.address === currentAddress() && Number.isFinite(value.y) && Number.isFinite(value.limit) ? value : null;
+  return value?.address === addr && Number.isFinite(value.y) && Number.isFinite(value.limit) ? value : null;
 }
 
 export function rememberDiscoverPosition(limit: number): void {
-  const state = window.history.state;
-  window.history.replaceState({ ...(state && typeof state === "object" ? state : {}),
-    discoverPosition: { address: currentAddress(), y: window.scrollY, limit },
-  }, "", currentAddress() + window.location.hash);
+  if (discoverFlushTimer) {
+    window.clearTimeout(discoverFlushTimer);
+    discoverFlushTimer = 0;
+  }
+  const next: DiscoverPosition = { address: currentAddress(), y: window.scrollY, limit };
+  liveDiscoverPosition = next;
+  writeDiscoverHistory(next);
+}
+
+/** Zero-IPC scroll tracking: updates memory immediately and flushes history.replaceState once scrolling settles. */
+export function trackDiscoverScroll(limit: number): void {
+  liveDiscoverPosition = { address: currentAddress(), y: window.scrollY, limit };
+  if (discoverFlushTimer) window.clearTimeout(discoverFlushTimer);
+  discoverFlushTimer = window.setTimeout(() => {
+    discoverFlushTimer = 0;
+    if (liveDiscoverPosition && liveDiscoverPosition.address === currentAddress()) {
+      writeDiscoverHistory(liveDiscoverPosition);
+    }
+  }, 180);
 }
 
 function subscribe(onChange: () => void): () => void {
@@ -177,9 +218,11 @@ function subscribe(onChange: () => void): () => void {
  * of that visit opens the cards again. Every other visit clears the state.
  */
 export function navigate(route: Route, options: { replace?: boolean; state?: unknown } = {}): void {
+  flushDiscoverPosition();
   const path = routeAddress(route);
   const state = options.state === undefined ? null : options.state;
   if (currentAddress() !== path) {
+    liveDiscoverPosition = null;
     if (options.replace) window.history.replaceState(state, "", path);
     else window.history.pushState(state, "", path);
   } else if (options.state !== undefined) {
@@ -219,10 +262,17 @@ export function rememberNotebookTab(tab: "words" | "quotes"): void {
   window.history.replaceState(next, "", window.location.pathname + window.location.search + window.location.hash);
 }
 
+let cachedRouteAddress = "";
+let cachedRouteValue: Route | null = null;
+
 /** The route of the address bar. An address that is not a page of the app reads as the shelf. */
 export function useRoute(): Route {
   const path = useSyncExternalStore(subscribe, currentAddress, () => "/shelf/");
-  return parseAddress(path) ?? DEFAULT_ROUTE;
+  if (cachedRouteValue && cachedRouteAddress === path) return cachedRouteValue;
+  const next = parseAddress(path) ?? DEFAULT_ROUTE;
+  cachedRouteAddress = path;
+  cachedRouteValue = next;
+  return next;
 }
 
 /** True when the address bar is not a page of the app ("/" or a typo): the caller redirects. */

@@ -45,15 +45,35 @@ test("a paragraph lists the sentence notes inside it, in reading order", () => {
   assert.equal(help.sentenceNotesIn([extra], 0, paragraph).length, 0);
 });
 
-test("the word card shows a small hint that opens the paragraph panel, not the whole note", () => {
+test("paragraph and chapter scoping prevent duplicate sentence note attachment while preserving shifted-edition fallback", () => {
+  const line = "Oh dear, I shall be late for the party tonight.";
+  const chapterTexts = [line, "A quiet bridge paragraph.", line];
+  const scoped = { chapter: 0, paragraph: 2, context: "I shall be late for the party", simple: "She is late." };
+  // Home paragraph 2 matches -> paragraph 0 with identical dialogue does NOT duplicate the note.
+  assert.equal(help.sentenceNotesIn([scoped], 0, chapterTexts[0], { paragraph: 0, chapterTexts }).length, 0);
+  assert.equal(help.sentenceNotesIn([scoped], 0, chapterTexts[2], { paragraph: 2, chapterTexts }).length, 1);
+
+  // Shifted paragraph edition (extra paragraph inserted at top, moving target to index 3) still falls back cleanly.
+  const shiftedTexts = ["Editor note.", "Intro.", "A quiet bridge paragraph.", line];
+  assert.equal(help.sentenceNotesIn([scoped], 0, shiftedTexts[3], { paragraph: 3, chapterTexts: shiftedTexts }).length, 1);
+
+  // Cross-chapter: when home chapter 0 already has the sentence, chapter 1 with the same refrain does not steal it.
+  const bookChapters = [[line], [line]];
+  assert.equal(help.sentenceNotesIn([scoped], 1, line, { paragraph: 0, chapterTexts: [line], bookChapters }).length, 0);
+
+  // Shifted-chapter edition: when chapter 0 no longer has the sentence, chapter 1 can still rescue it.
+  const movedChapters = [["Preface added in another edition."], [line]];
+  assert.equal(help.sentenceNotesIn([scoped], 1, line, { paragraph: 0, chapterTexts: [line], bookChapters: movedChapters }).length, 1);
+});
+
+test("word card and paragraph panel stay strictly separated without cross-jump links", () => {
   const card = readFileSync(new URL("../src/components/word-card.tsx", import.meta.url), "utf8");
-  assert.match(card, /import \{ SentenceHint \} from "@\/components\/help-panels";/);
-  assert.match(
-    card,
-    /<SentenceHint[\s\S]*?bookId=\{bookId\}[\s\S]*?chapter=\{sentenceChapter\}[\s\S]*?sentence=\{state\.fullSentence \?\? state\.sentence\}[\s\S]*?onOpen=\{onSentenceHelp\}/,
-  );
+  assert.doesNotMatch(card, /SentenceHint/);
+  assert.doesNotMatch(card, /onSentenceHelp/);
+  const panel = readFileSync(new URL("../src/components/help-panels.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(panel, /data-hard-word/);
   const reader = readFileSync(new URL("../src/components/reader.tsx", import.meta.url), "utf8");
-  assert.match(reader, /openHelp\(picked\.block, card\.fullSentence \|\| card\.sentence\)/, "the tapped sentence starts selected");
+  assert.doesNotMatch(reader, /pickFromParagraph/);
   assert.match(reader, /loadParagraphHelpView\(/);
 });
 
@@ -70,21 +90,19 @@ test("the panel marks the explained sentences in the page and keeps them in view
   assert.match(css, /\.book-body \{\s*\/\*[\s\S]*?\*\/\s*position: relative;\s*z-index: 2;/, "the text sits above the marks");
 });
 
-test("paragraph and sentence explanations credit a reader under the text, and tabs split the two kinds", () => {
+test("paragraph, grammar, and reader sentence help stay in separate tabs with full-sentence headers", () => {
   const panel = readFileSync(new URL("../src/components/help-panels.tsx", import.meta.url), "utf8");
-  // The source line follows the explanation it credits.
   assert.match(panel, /data-part="paragraph-help"[\s\S]*?data-part="main-idea"[\s\S]*?<HelpSource credit=\{paragraph\.credit\} \/>/);
+  assert.match(panel, /data-part="grammar-help"[\s\S]*?<GrammarNote/);
   assert.match(panel, /data-part="sentences"[\s\S]*?<SentenceNote/);
-  const source = panel.slice(panel.indexOf("function HelpSource"), panel.indexOf("function SentenceNote"));
+  const source = panel.slice(panel.indexOf("function HelpSource"), panel.indexOf("function splitChunk"));
   assert.match(source, /if \(!credit\) return null;/, "an explanation from the word list carries no label");
   assert.match(source, /data-help-source="reader"/);
   assert.match(source, /<CreditLine id=\{credit\} \/>/);
   assert.doesNotMatch(source, /useContributor|person\.|XCrun/, "source kind must not depend on loaded public profiles or a nickname");
   const sentence = panel.slice(panel.indexOf("function SentenceNote"), panel.indexOf("type MarkBox"));
-  assert.match(sentence, /<button[\s\S]*?aria-pressed=\{chosen\}[\s\S]*?data-part="sentence-context"[\s\S]*?data-part="easier"[\s\S]*?<HelpSource credit=\{note\.credit\} \/>/);
-  // Both kinds: one tab each; a word card's sentence opens on the sentence tab.
+  assert.match(sentence, /<TargetSentenceButton sentence=\{note\.sentence\}[\s\S]*?data-part="easier"[\s\S]*?<HelpSource credit=\{note\.credit\} \/>/);
   assert.match(panel, /role="tablist"[\s\S]*?data-part="help-tabs"/);
-  assert.match(panel, /setChosen\(at\);\s*setTab\("sentences"\);/);
   assert.match(panel, /data-part="help-footer"/);
 });
 

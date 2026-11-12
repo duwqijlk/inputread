@@ -81,10 +81,21 @@ export async function applyPackGlossary(
   if (rows.length === 0) throw new Error(tr("err.packListEmpty"));
   // Reading a published list is lenient: one bad entry is dropped, the rest still loads.
   let checked = pack.version === 2 ? validateGlossary(pack, { lenient: true }).file : null;
-  // If this copy of the book is split into a different number of chapters than the
-  // list was written for, the chapter numbers cannot be trusted: keep only the context text.
-  const full = checked?.chapters ? await loadStoredBook(bookId) : null;
-  if (checked && full) checked = forBook(checked, full.chapters.length);
+  // If this copy of the book is split into a different number of chapters — or shifted
+  // chapters of the same count — chapter numbers cannot be trusted: keep only the context text.
+  const hasAnchoredSenses =
+    Boolean(checked?.chapters) ||
+    Object.values(checked?.glossary ?? {}).some((entry) =>
+      entry.senses?.some((sense) => sense.anchors?.some((a) => a.chapter !== undefined && Boolean(a.context))),
+    );
+  const full = checked && hasAnchoredSenses ? await loadStoredBook(bookId) : null;
+  if (checked && full) {
+    checked = forBook(
+      checked,
+      full.chapters.length,
+      full.chapters.map((chapter) => chapter.paragraphs),
+    );
+  }
   await saveBookExtras(bookId, {
     ...(rev ? { rev } : {}),
     source: packId,

@@ -75,7 +75,7 @@ export function AdminPage() {
           <div
             role="group"
             aria-label={t("admin.title")}
-            className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-line/60 bg-line/35 p-1.5 sm:flex-nowrap"
+            className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-line/60 bg-line/35 p-1.5"
           >
             {[
               { value: "thanks" as const, label: t("admin.tab.thanks") },

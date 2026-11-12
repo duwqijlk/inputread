@@ -151,7 +151,7 @@ type GlossaryFile = {
   sentences?: SentenceNote[];             // at most 20000
   phrases?: { [phrase: string]: Phrase }; // at most 5000
   spine?: { merge: { [droppedHref: string]: string } }; // append a dropped spine file onto a chapter (section 5.3)
-  segmentation?: 2;        // optional. 2 splits a chapter-wrapper blockquote (section 5.4). Omit it and a blockquote stays one paragraph.
+  segmentation?: 2 | 3;    // optional. 2 splits chapter-wrapper blockquotes (section 5.4); 3 also sub-splits multi-chapter TOC/heading/split files (section 5.3).
 };
 ```
 
@@ -223,31 +223,32 @@ type ParagraphNote = {
   context: string;      // 6-14 words copied exactly from that paragraph (max 300 chars)
   mainIdea: string;     // 1-2 short sentences, max 400
   simple: string;       // the WHOLE paragraph again in very common words, max 3000
-  hardWords?: string[]; // up to 20 hard words/phrases taken from the ORIGINAL paragraph
 };
 ```
 
-Write notes for 1 or 2 hard or important paragraphs per chapter. Two notes for the same chapter+paragraph: only the first is used (warning).
+Write notes wherever a paragraph has real reading friction (unattributed dialogue, pronoun chains, subtext/irony, cultural background, or dense clauses). Every paragraph that contains an editorial grammar breakdown in `sentences` must also include its `ParagraphNote` (`mainIdea` + `simple`) so the paragraph-meaning tab is always present. Do not add word quick-jump lists here; word lookup belongs strictly on tapped words in the text. Two notes for the same chapter+paragraph: only the first is used (warning).
 
 ### 4.4 Sentence note
 
 ```ts
 type SentenceNote = {
   chapter: number | string; // >= 0, or an extra id "x0", "x1", … (section 5.3)
-  context: string;      // 6-14 words copied exactly from the sentence (max 300 chars); it locates the note
+  paragraph?: number;   // optional >= 0 paragraph index inside the chapter; disambiguates repeated short lines while still falling back across shifted editions
+  context: string;      // 6-14 words copied exactly from the sentence (max 300 chars); the reader resolves and displays the complete sentence
   simple: string;       // the sentence in easier English, max 800
+  chunks?: string[];    // optional, 2-4 plain-English "quote -> syntactic role" steps strictly from that single sentence, max 320 each
+  pattern?: string;     // optional, reusable sentence pattern tip, max 280
   grammar?: string;     // optional, ONE line: what is special in how the sentence is built, max 400
 };
 ```
 
-Write notes for 1 or 2 sentences with tricky grammar per chapter (inversion such as "Had she not been...", "The more..., the less...", long clauses). `simple` is what the reader always sees; add `grammar` only when the grammar itself is the hard part.
+Write notes for sentences with tricky structure (inversion such as "Nor did Alice think...", "Had she not been...", nested clauses, parenthetical interruptions, or deceptive frames built from common words). Editorial notes with `chunks`, `pattern`, or `grammar` appear in the paragraph panel's Grammar tab under the full resolved sentence; every quoted fragment before `->` in `chunks` must literally appear inside that single sentence (no obscure academic grammar jargon). Reader-credited plain paraphrases (`credit` added by the patrol) appear separately in the Sentence help tab.
 
 ### 4.5 Phrase (phrasal verbs, idioms)
 
 ```ts
 type Phrase = {
-  meaning: string;                              // max 600. The plain sense.
-  here?: string;                                // optional. The same sense, said for this sentence. Max 600.
+  meaning: string;                              // max 600. One self-contained plain sense.
   pos?: "phrasal verb" | "idiom" | "phrase";    // any other value is an error
   forms?: string[];                             // extra full forms, e.g. ["packed up"]
   example?: string;                             // a short sentence from the book, max 400
@@ -335,6 +336,7 @@ bare word: `Coral’s` is one occurrence of `coral` (and one of `s`). A straight
 3. If the contents list is missing, empty, or has fewer than 2 entries, or it produces fewer than 2 chapters, each spine file is its own chapter, split at `<h1>` (else `<h2>`) headings. Do not collapse that book into one chapter. That fallback has no extras, and its chapter text stays byte for byte the same.
 4. Drop chapters with fewer than 20 letters; merge chapters with fewer than 40 letters into the previous one.
 5. Scripts and navigation are removed, links are unwrapped.
+6. Optional `"segmentation": 3` (new books opt in without moving legacy books): includes `"segmentation": 2` blockquote unwrapping AND fixes multi-chapter-in-one-chapter EPUB layouts — sub-splitting coarse Part-level TOC slices that contain multiple chapter headings, keeping `Part <h1>` banners folded into child `<h2>` chapters instead of masking them, recognizing `<h3>` / `<p class="chapter">` / `<div class="chapter">` headings in spine fallbacks, promoting unlisted `_split_NNN` files that open a new explicit chapter instead of gluing them onto `_split_000`, keeping short `Chapter N` chapters (`>= 20` letters), and merging short `Part N` banners forward into the next chapter rather than backward onto the previous chapter.
 
 `"spine": { "merge": { "<dropped href or manifest id>": "<href of the contents chapter it continues>" } }` appends that dropped file after the chapter's existing paragraphs. Earlier paragraph indexes do not move. If several chapters were cut from the target file, the text is added to the last one. A key may name an empty contents file or a content file absorbed into that recovered extra. Either name, or both, appends that extra once. A name that matches no spine item is ignored when the book is opened. The glossary check warns, naming the key: the command-line check, and the app when the book and the list are imported together. A key that matches a spine item but merges nothing into or from that file warns too, with the text `spine.merge key "<key>" matches a spine item but nothing is merged into or from it.` An empty contents file, or a file absorbed into that extra, does not warn when that extra is appended. A bad entry is a warning, and the word list still loads. Omit `spine` when no file needs this. The appended file's title is shown as a heading in front of those paragraphs when the file does not already have that heading (its first paragraph, or an `h1`–`h4`). The heading is not a paragraph and its words are not counted. Examples that need it: Magic Tree House 33 `Magic_Tree_H-at_Candlelight_split_009` continuing `split_008`; Wings of Fire 3 `part0006_split_001` and `part0005_split_001`; Wings of Fire 4 `split_013`; Wings of Fire 5 `split_014`.
 
