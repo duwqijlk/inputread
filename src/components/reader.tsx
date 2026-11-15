@@ -68,6 +68,14 @@ import {
 import { useVocab } from "@/lib/vocab-store";
 import { flowCutOffsets, flowPoint, flowText, flowTextBefore } from "@/lib/flow-text";
 import { warmDictionaryMappings } from "@/lib/dictionary-positions";
+import {
+  mergeSignedGlossary,
+  mergeSignedPhrases,
+  peekSignedMeanings,
+  readSignedMeanings,
+  shareBookSignedMeanings,
+  type SignedMeaningsOverlay,
+} from "@/lib/signed-meanings";
 import { warmStandardDictionary } from "@/lib/standard-dictionary";
 import { MissingBook } from "@/components/missing-book";
 import { READER_GUTTER, SIDE_PANEL } from "@/components/side-panel";
@@ -217,9 +225,28 @@ export function ReaderScreen({
   // the per-book credits find the book without matching titles. Only the list in use counts: a
   // list the reader added ("custom") names no catalog book, even on a book that came from one.
   const [catalogId, setCatalogId] = useState("");
+  const [signedOverlay, setSignedOverlay] = useState<SignedMeaningsOverlay | null>(null);
   useEffect(() => {
-    if (catalogId) void warmDictionaryMappings(catalogId);
-  }, [catalogId]);
+    let alive = true;
+    if (!catalogId) {
+      setSignedOverlay(null);
+      shareBookSignedMeanings(bookId, null);
+      return;
+    }
+    void warmDictionaryMappings(catalogId);
+    const cached = peekSignedMeanings(catalogId);
+    setSignedOverlay(cached);
+    shareBookSignedMeanings(bookId, cached);
+    void readSignedMeanings(catalogId).then((next) => {
+      if (!alive) return;
+      setSignedOverlay(next);
+      shareBookSignedMeanings(bookId, next);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [bookId, catalogId]);
+  useEffect(() => () => shareBookSignedMeanings(bookId, null), [bookId]);
   // The book whose phrase list has answered. The chapter is linked only after that: linking it
   // first without phrases and again with them built and laid out the whole chapter twice.
   const [phrasesFor, setPhrasesFor] = useState("");
@@ -428,6 +455,35 @@ export function ReaderScreen({
     () => (book?.extras && book.extras.length > 0 ? readingSlots(book) : null),
     [book],
   );
+  const effectiveGlossary = useMemo(
+    () => (book ? mergeSignedGlossary(book.glossary, signedOverlay) : {}),
+    [book, signedOverlay],
+  );
+  const bookWithSigned = useMemo(
+    () =>
+      book
+        ? effectiveGlossary === book.glossary
+          ? book
+          : { ...book, glossary: effectiveGlossary }
+        : null,
+    [book, effectiveGlossary],
+  );
+  const effectivePhraseList = useMemo(
+    () => mergeSignedPhrases(phraseList, signedOverlay),
+    [phraseList, signedOverlay],
+  );
+  const hasSignedNotes = Boolean(
+    signedOverlay && (signedOverlay.sentences.length > 0 || signedOverlay.paragraphs.length > 0),
+  );
+  const notesVersion = useMemo(
+    () => (hasSignedNotes ? { glossary: book?.glossary, signed: signedOverlay } : book?.glossary),
+    [book?.glossary, hasSignedNotes, signedOverlay],
+  );
+  useEffect(() => {
+    if (book && signedOverlay && signedOverlay.words.length > 0) {
+      fillPrepared(bookId, effectiveGlossary);
+    }
+  }, [book, bookId, effectiveGlossary, fillPrepared, signedOverlay]);
 
   const marked = useMemo(() => {
     const ready = new Set<string>();
@@ -440,7 +496,7 @@ export function ReaderScreen({
     // Stored key for each straightened spelling, so a curly apostrophe still finds the entry.
     const keys = new Map<string, string>();
     if (book) {
-      for (const [key, gloss] of Object.entries(book.glossary)) {
+      for (const [key, gloss] of Object.entries(effectiveGlossary)) {
         ready.add(key);
         if (!keys.has(key)) keys.set(key, key);
         const straight = plainSurface(key);
@@ -457,7 +513,7 @@ export function ReaderScreen({
       }
     }
     return { ready, forms, sparse, tricky, keys };
-  }, [book]);
+  }, [book, effectiveGlossary]);
   const resolveKey = useCallback(
     (surface: string) => resolveGlossKey(surface, marked.keys, marked.forms),
     [marked],
@@ -466,8 +522,8 @@ export function ReaderScreen({
   const phrasesReady = phrasesFor === bookId;
   // A chapter the reader just left is already linked. Coming back does not build it again.
   const linkedHtml = useMemo(() => {
-    if (!book || !chapterHtml || !phrasesReady) return "";
-    const cached = peekChapterHtml(book, phraseList, chapterKey);
+    if (!bookWithSigned || !chapterHtml || !phrasesReady) return "";
+    const cached = peekChapterHtml(bookWithSigned, effectivePhraseList, chapterKey);
     if (cached !== undefined) return cached;
     try {
       const html = linkChapterHtml(
@@ -477,15 +533,15 @@ export function ReaderScreen({
         viewChapter,
         marked.sparse,
         marked.tricky,
-        phraseList,
+        effectivePhraseList,
       );
-      rememberChapterHtml(book, phraseList, chapterKey, html);
+      rememberChapterHtml(bookWithSigned, effectivePhraseList, chapterKey, html);
       return html;
     } catch (error) {
       console.error("Failed to link chapter HTML", error);
       return chapterHtml;
     }
-  }, [book, chapterHtml, chapterKey, phraseList, marked, resolveKey, viewChapter, phrasesReady]);
+  }, [bookWithSigned, chapterHtml, chapterKey, effectivePhraseList, marked, resolveKey, viewChapter, phrasesReady]);
 
   const positionChapter = useRef<{
     root: HTMLElement;
@@ -536,7 +592,7 @@ export function ReaderScreen({
     }
     // A saved phrase marks its own words, not the single easy word that was tapped.
     const savedPhrases = Object.fromEntries(
-      Object.entries(phraseList).filter(([key]) => savedKeys.has(key.toLowerCase())),
+      Object.entries(effectivePhraseList).filter(([key]) => savedKeys.has(key.toLowerCase())),
     );
     if (Object.keys(savedPhrases).length > 0) {
       const sel = "p, h1, h2, h3, h4, li, blockquote, div[data-para]";
@@ -559,7 +615,7 @@ export function ReaderScreen({
         }
       }
     }
-  }, [linkedHtml, savedKeys, resolveKey, marked, phraseList]);
+  }, [linkedHtml, savedKeys, resolveKey, marked, effectivePhraseList]);
 
   const selectedButton = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
@@ -1246,7 +1302,7 @@ export function ReaderScreen({
         if (current !== button || !button.isConnected || pagingHandlers.current.cardOpen) return;
         const surface = button.getAttribute("data-word") ?? "";
         const key = resolveKey(surface) || surface;
-        let gloss: Gloss | undefined = book.glossary[key];
+        let gloss: Gloss | undefined = effectiveGlossary[key];
         const blocks = readerParagraphBlocks(root);
         const block = button.closest("p, li, blockquote, h1, h2, h3, h4, div[data-para]") ?? blocks.find((item) => item.contains(button));
         const paragraph = block ? flowText(block) : surface;
@@ -1278,7 +1334,7 @@ export function ReaderScreen({
       window.removeEventListener("pointerdown", clear, true);
       window.clearTimeout(timer);
     };
-  }, [book, phrasesReady, linkedHtml, prefs.quietMarks, viewChapter, resolveKey]);
+  }, [book, effectiveGlossary, phrasesReady, linkedHtml, prefs.quietMarks, viewChapter, resolveKey]);
 
   // The top bar follows the scroll direction (lib/reader-bar.ts), on every screen (design system ScrollChrome).
   useEffect(() => {
@@ -1475,9 +1531,9 @@ export function ReaderScreen({
     // The phrase list is already in memory, so a tapped word that belongs to a phrase can say the
     // phrase straight away: hearing the word first and the phrase on top of it was the bug.
     const phraseNow =
-      activeExtra || !phraseList
+      activeExtra || !effectivePhraseList
         ? null
-        : pickPhrase(phraseList, sentence, surface, offset >= 0 ? offset : undefined);
+        : pickPhrase(effectivePhraseList, sentence, surface, offset >= 0 ? offset : undefined);
     // Opening a word card is local only. Collection requires an explicit meaning choice.
     closeHelp();
     setPhraseHit(null);
@@ -1550,7 +1606,7 @@ export function ReaderScreen({
       paragraph,
       before: tap.before,
     };
-    let gloss: Gloss | undefined = book?.glossary[key];
+    let gloss: Gloss | undefined = effectiveGlossary[key];
     // A senseOnly entry says nothing about the places its senses do not name.
     if (gloss && !entryAppliesAt(key, gloss, tapAt)) gloss = undefined;
     if (gloss) {
@@ -1627,7 +1683,7 @@ export function ReaderScreen({
     ? savedKeys.has(saveAs.lemma.toLowerCase()) &&
       (activePhrase != null || !(marked.sparse.has(pickedKey) && card?.status !== "ready"))
     : false;
-  const noList = Object.keys(book.glossary).length === 0;
+  const noList = Object.keys(effectiveGlossary).length === 0;
   const fraction = overallProgress({
     chapter: safeIndex,
     chapters: book.chapters.length,
@@ -1901,7 +1957,7 @@ export function ReaderScreen({
           version={linkedHtml}
           bookId={bookId}
           chapter={activeExtra ? activeExtra.id : safeIndex}
-          notesVersion={book?.glossary}
+          notesVersion={notesVersion}
           activeIndex={help ? help.index : null}
           onOpen={openHelp}
         />
@@ -1953,12 +2009,23 @@ export function ReaderScreen({
               return;
             }
             const listId = book?.bundled || listSource;
-            const gloss =
+            const rawBaseGloss =
               book?.glossary[targetLemma] ?? book?.glossary[targetLemma.toLowerCase()];
+            const rawEffectiveGloss =
+              effectiveGlossary[targetLemma] ?? effectiveGlossary[targetLemma.toLowerCase()];
+            const baseGloss =
+              rawBaseGloss && rawBaseGloss === rawEffectiveGloss ? rawBaseGloss : undefined;
+            const basePhrase = activePhrase
+              ? (phraseList[activePhrase.key] ?? phraseList[activePhrase.key.toLowerCase()])
+              : undefined;
+            const effectivePhrase = activePhrase
+              ? (effectivePhraseList[activePhrase.key] ??
+                effectivePhraseList[activePhrase.key.toLowerCase()])
+              : undefined;
             const ref = activePhrase
-              ? phrasePoint(listId)
-              : gloss
-                ? pointFromEntry(listId, targetLemma, gloss, {
+              ? (basePhrase && basePhrase === effectivePhrase ? phrasePoint(listId) : undefined)
+              : baseGloss
+                ? pointFromEntry(listId, targetLemma, baseGloss, {
                     chapter: viewChapter,
                     surface: picked.surface,
                     occurrence: picked.nth,

@@ -26,6 +26,8 @@ export const PERSONAL_KEYS = [
   "cibian-removed-packs-v1",
   "cibian-cover-tried-v1",
   "cibian-library-v1",
+  "cibian-signed-meanings-v1",
+  "cibian-dict-choices-v1",
 ] as const;
 
 /** Which account the data on this device belongs to (its email, lower case). */

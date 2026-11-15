@@ -26,13 +26,20 @@ export async function handleDictionaryChoices(request: Request, env: Env, option
     const input = parseChoiceRequest(await readChoiceRequest(request));
     if (input.target.position && await sha256Hex(input.target.paragraphText!) !== input.target.position.paragraphSha256) throw new HttpError(400, "bad-position-evidence");
     const position = await choicePosition(input.target);
-    const row = await existingChoice(env.DB, user.id, position.hash);
     if (input.action === "get") {
+      const row = await existingChoice(env.DB, user.id, position.hash);
       // Return stored provenance even after a release change; no source fetch, creation or counts.
       return json(choiceResult(row ? { id: row.choice_id, lemma: row.choice_lemma, release: row.choice_release } : null));
     }
-    await assertChoiceUnfixed(env, input.target);
-    if (input.choice) await checkChoiceMembership(env, input.choice);
+    const [rowRes, unfixedRes, memberRes] = await Promise.allSettled([
+      existingChoice(env.DB, user.id, position.hash),
+      assertChoiceUnfixed(env, input.target),
+      input.choice ? checkChoiceMembership(env, input.choice) : Promise.resolve(),
+    ]);
+    if (rowRes.status === "rejected") throw rowRes.reason;
+    if (unfixedRes.status === "rejected") throw unfixedRes.reason;
+    if (memberRes.status === "rejected") throw memberRes.reason;
+    const row = rowRes.value;
     if (!sameChoice(row, input.choice)) await saveChoice(env.DB, user.id, position, input.choice, now);
     // Membership was checked, but the frontend-nominated lemma is NOT proved to match the surface,
     // and the docs-v4 exact source coordinate validator is absent. This remains raw review evidence.

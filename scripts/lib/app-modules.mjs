@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(join(ROOT, "package.json"));
 
-const FILES = ["books-base", "catalog-id", "dictionary-positions", "reader-blocks", "book-genres", "discover-route", "cancel-work", "shelf-identity", "cover-plan", "cover-request", "covers", "cloud-cover", "router", "flow-text", "errors", "epub", "lexile", "book-meta", "glossary-format", "pack-check", "text", "easy-words", "help-match", "paragraph-note", "edition-match", "basic-words-data", "basic-words", "word-list-plan", "can-add", "account-store", "file-offer", "hyphenate", "gloss-point", "gloss-ref", "list-updated", "chapter-link"];
+const FILES = ["books-base", "catalog-id", "dictionary-positions", "signed-meanings", "reader-blocks", "book-genres", "discover-route", "cancel-work", "shelf-identity", "cover-plan", "cover-request", "covers", "cloud-cover", "router", "flow-text", "errors", "epub", "lexile", "book-meta", "glossary-format", "pack-check", "text", "easy-words", "help-match", "paragraph-note", "edition-match", "basic-words-data", "basic-words", "word-list-plan", "can-add", "account-store", "file-offer", "hyphenate", "gloss-point", "gloss-ref", "list-updated", "chapter-link"];
 
 function installDom() {
   let JSDOM;
@@ -114,8 +114,9 @@ async function initialize() {
     const [epub, format, text, help, paragraphNote, edition, basicData, basic, packCheck, meta, flow, identity, coverPlan, covers, router, wordListPlan, canAdd, accountStore, fileOffer, hyphenate, glossRef, listUpdated, chapterLink, cloudCover] = loaded.map((result) => result.value);
     const readerBlocks = await import(appModuleUrl("reader-blocks"));
     const dictionaryPositions = await import(appModuleUrl("dictionary-positions"));
+    const signedMeanings = await import(appModuleUrl("signed-meanings"));
     const catalogId = await import(appModuleUrl("catalog-id"));
-    return { readerBlocks, dictionaryPositions, catalogId, cloudCover, epub, format, text, help, paragraphNote, edition, basic: { ...basicData, ...basic }, packCheck, meta, flow, identity, coverPlan, covers, router, wordListPlan, canAdd, accountStore, fileOffer, hyphenate, glossRef, listUpdated, chapterLink };
+    return { readerBlocks, dictionaryPositions, signedMeanings, catalogId, cloudCover, epub, format, text, help, paragraphNote, edition, basic: { ...basicData, ...basic }, packCheck, meta, flow, identity, coverPlan, covers, router, wordListPlan, canAdd, accountStore, fileOffer, hyphenate, glossRef, listUpdated, chapterLink };
   } catch (error) {
     cleanup();
     if (generatedDir === out) generatedDir = undefined;

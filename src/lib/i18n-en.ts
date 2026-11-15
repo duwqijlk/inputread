@@ -22,6 +22,7 @@ export const en = {
   "card.senses.writeCommunity": "Write a community explanation",
   "card.senses.standard": "Dictionary meaning",
   "card.senses.community": "Community explanation",
+  "card.senses.signed": "Signed explanation",
   "card.senses.communityNone": "Community explanation · None for this book yet",
   "card.senses.loading": "Looking up meanings…",
   "card.senses.error": "Meanings could not be loaded.",
