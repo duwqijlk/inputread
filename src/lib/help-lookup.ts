@@ -17,6 +17,12 @@ import { flowText } from "@/lib/flow-text";
 import type { ParagraphHelp, PhraseEntry, SentenceHelp } from "@/lib/glossary-extras";
 import { paragraphBlocks, pickPhrase, pickSentenceHelp, sentenceNotesIn } from "@/lib/help-match";
 import { resolveParagraphNotesInBook } from "@/lib/paragraph-note";
+import {
+  mergeSignedParagraphs,
+  mergeSignedPhrases,
+  mergeSignedSentences,
+  signedMeaningsForBook,
+} from "@/lib/signed-meanings";
 
 export type { ParagraphHelp, PhraseEntry, SentenceHelp };
 /** The paragraph numbering rule (position among the chapter's paragraph blocks). See docs/GLOSSARY_FORMAT.md section 3.4. */
@@ -128,7 +134,8 @@ async function noteOwnersOf(
   texts: readonly string[],
 ): Promise<(ParagraphHelp | null)[]> {
   const extras = await extrasOf(bookId);
-  if (!extras?.paragraphs.length) return texts.map(() => null);
+  const paragraphs = mergeSignedParagraphs(extras?.paragraphs ?? [], signedMeaningsForBook(bookId));
+  if (!paragraphs.length) return texts.map(() => null);
   const stored = await textsOf(bookId);
   const chapters: (readonly string[] | undefined)[] = stored ? [...stored.chapters] : [];
   const spine = stored ? stored.extras.map((extra) => ({ id: extra.id, paragraphs: [...extra.paragraphs] })) : [];
@@ -140,7 +147,7 @@ async function noteOwnersOf(
     chapters[chapter] = texts;
   }
   const placed = resolveParagraphNotesInBook(
-    extras.paragraphs,
+    paragraphs,
     chapters,
     spine,
     import.meta.env.DEV ? (entry, why, matches) => reportUnresolved(bookId, entry, why, matches) : undefined,
@@ -183,7 +190,7 @@ export async function getParagraphNoteFlags(
       extrasOf(bookId),
       textsOf(bookId),
     ]);
-    const sentences = extras?.sentences ?? [];
+    const sentences = mergeSignedSentences(extras?.sentences ?? [], signedMeaningsForBook(bookId));
     const bookChapters: (readonly string[] | undefined)[] = stored ? [...stored.chapters] : [];
     if (typeof chapter === "number" && chapter >= 0) bookChapters[chapter] = texts;
     return texts.map(
@@ -211,12 +218,13 @@ export async function getSentenceNotesIn(
 ): Promise<SentenceHelp[]> {
   try {
     const [extras, stored] = await Promise.all([extrasOf(bookId), textsOf(bookId)]);
-    if (!extras?.sentences.length) return [];
+    const sentences = mergeSignedSentences(extras?.sentences ?? [], signedMeaningsForBook(bookId));
+    if (!sentences.length) return [];
     const bookChapters: (readonly string[] | undefined)[] = stored ? [...stored.chapters] : [];
     if (typeof chapter === "number" && chapter >= 0 && texts) bookChapters[chapter] = texts;
     const resolvedTexts =
       texts ?? (typeof chapter === "number" && chapter >= 0 ? bookChapters[chapter] : undefined);
-    return sentenceNotesIn(extras.sentences, chapter, paragraphText, {
+    return sentenceNotesIn(sentences, chapter, paragraphText, {
       paragraph,
       chapterTexts: resolvedTexts,
       bookChapters: bookChapters.length > 0 ? bookChapters : undefined,
@@ -237,8 +245,9 @@ export function sentenceHelpNow(
 ): SentenceHelp | null | undefined {
   const extras = extrasNow(bookId);
   if (extras === undefined) return undefined;
-  if (!extras?.sentences.length) return null;
-  return pickSentenceHelp(extras.sentences, chapter, sentenceText);
+  const sentences = mergeSignedSentences(extras?.sentences ?? [], signedMeaningsForBook(bookId));
+  if (!sentences.length) return null;
+  return pickSentenceHelp(sentences, chapter, sentenceText);
 }
 
 /** Help for one sentence, or null. Matches by the `context` snippet inside the sentence. */
@@ -249,8 +258,9 @@ export async function getSentenceHelp(
 ): Promise<SentenceHelp | null> {
   try {
     const extras = await extrasOf(bookId);
-    if (!extras?.sentences.length) return null;
-    return pickSentenceHelp(extras.sentences, chapter, sentenceText);
+    const sentences = mergeSignedSentences(extras?.sentences ?? [], signedMeaningsForBook(bookId));
+    if (!sentences.length) return null;
+    return pickSentenceHelp(sentences, chapter, sentenceText);
   } catch {
     return null;
   }
@@ -272,8 +282,9 @@ export async function findPhrase(
 ): Promise<{ key: string; entry: PhraseEntry; matched: string } | null> {
   try {
     const extras = await extrasOf(bookId);
-    if (!extras || Object.keys(extras.phrases).length === 0) return null;
-    return pickPhrase(extras.phrases, sentenceText, tappedWord, tappedAt);
+    const phrases = mergeSignedPhrases(extras?.phrases ?? {}, signedMeaningsForBook(bookId));
+    if (Object.keys(phrases).length === 0) return null;
+    return pickPhrase(phrases, sentenceText, tappedWord, tappedAt);
   } catch {
     return null;
   }
@@ -282,8 +293,11 @@ export async function findPhrase(
 /** Does this book have any paragraph, sentence or phrase help at all? */
 export async function hasHelpData(bookId: string): Promise<boolean> {
   const extras = await extrasOf(bookId);
+  const overlay = signedMeaningsForBook(bookId);
   return Boolean(
-    extras &&
-    (extras.paragraphs.length || extras.sentences.length || Object.keys(extras.phrases).length),
+    (extras &&
+      (extras.paragraphs.length || extras.sentences.length || Object.keys(extras.phrases).length)) ||
+      (overlay &&
+        (overlay.paragraphs.length || overlay.sentences.length || overlay.phrases.length)),
   );
 }

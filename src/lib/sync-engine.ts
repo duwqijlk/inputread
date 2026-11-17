@@ -733,7 +733,12 @@ export function startAccountSync(): () => void {
   };
 }
 
-export async function signIn(email: string, password: string, turnstileToken?: string): Promise<void> {
+export async function signIn(
+  email: string,
+  password: string,
+  turnstileToken?: string,
+  onSignedIn?: () => void,
+): Promise<void> {
   await readyPromise();
   const epoch = ++sessionEpoch;
   const payload = await accountRequest("/api/auth/login", {
@@ -745,6 +750,7 @@ export async function signIn(email: string, password: string, turnstileToken?: s
   const fields = userFields(payload);
   useAccount.getState().patch({ emailVerified: fields.emailVerified, publicId: fields.publicId, avatar: fields.avatar });
   rememberEmail(fields.email ?? email, fields.nickname, fields.role);
+  onSignedIn?.();
   if (clearIfAnother(fields.email ?? email)) return;
   await flush();
 }
@@ -848,9 +854,14 @@ export async function removeAvatar(): Promise<void> {
   useAccount.getState().patch({ avatar: 0 });
 }
 
-/** Send the 6-digit code to the signed-in account's email again. */
-export async function sendEmailCode(): Promise<void> {
-  await accountRequest("/api/auth/email-code/send", {});
+/** Send the 6-digit code to the signed-in account's email again. Returns false when already verified. */
+export async function sendEmailCode(): Promise<boolean> {
+  const payload = await accountRequest("/api/auth/email-code/send", {});
+  if (payload.verified === true) {
+    useAccount.getState().patch({ emailVerified: true });
+    return false;
+  }
+  return true;
 }
 
 /** Check the emailed code. On success the account may open word lists. */

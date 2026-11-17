@@ -218,6 +218,9 @@ test("register, login, me, logout, and a wrong password", async () => {
   });
   assert.equal(again.status, 200);
   assert.match(again.headers.get("set-cookie") ?? "", /Secure/);
+  const againBody = await again.json();
+  assert.deepEqual(againBody.user, meBody.user);
+  assert.equal(againBody.user.emailVerified, true);
 
   const loggedOut = await call(handleLogout, env, { cookie });
   assert.equal(loggedOut.status, 200);
@@ -359,6 +362,7 @@ test("an existing nonallowlisted account can send and confirm its email verifica
   const userId = await seedExistingUser(db, "legacy@example.com", { verified: false });
   const login = await call(handleLogin, env, { body: { email: " Legacy@Example.COM ", password: "correct horse" } });
   assert.equal(login.status, 200);
+  assert.equal((await login.clone().json()).user.emailVerified, false);
   const cookie = cookieHeader(login);
   const sent = [];
   const request = () => new Request("http://localhost/api/auth/email-code/send", { method: "POST", headers: { cookie } });
@@ -385,6 +389,8 @@ test("an existing nonallowlisted account can send and confirm its email verifica
   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM email_codes").get().n, 0);
   assert.equal((await handleEmailCodeSend(request(), env, { now: NOW, sendCode })).status, 200);
   assert.equal(sent.length, 1, "already verified does not send another message");
+  const relogin = await call(handleLogin, env, { body: { email: "legacy@example.com", password: "correct horse" } });
+  assert.equal((await relogin.json()).user.emailVerified, true);
 });
 
 test("an IPv6 rate-limit key is the /64, and an IPv4 address stays whole", () => {
@@ -1650,9 +1656,14 @@ test("sign-up makes no account until the emailed code comes back", async () => {
   assert.ok(cookie, "the right code signs in");
   assert.equal((await handleGlossary(raw("/api/glossary/book-1", cookie), env, "book-1", { now: NOW })).status, 200, "word lists open at once");
 
-  // The password typed at sign-up is the one that signs in.
+  // The password typed at sign-up is the one that signs in, preserving emailVerified, publicId, and avatar.
+  db.raw.prepare("UPDATE users SET avatar_rev = 3 WHERE email = ?").run("new@gmail.com");
   const login = await call(handleLogin, env, { body: { email: "new@gmail.com", password: "correct horse" } });
   assert.equal(login.status, 200);
+  const loggedInUser = (await login.json()).user;
+  assert.equal(loggedInUser.emailVerified, true);
+  assert.equal(loggedInUser.publicId, user.publicId);
+  assert.equal(loggedInUser.avatar, 3);
   // The address is taken now.
   const again = await handleRegister(post("/api/auth/register", { email: "new@gmail.com", password: "correct horse" }), env, { now: NOW + 120_000, sendCode });
   if (again.status === 202) tickets["new@gmail.com"] = (await again.clone().json()).ticket;

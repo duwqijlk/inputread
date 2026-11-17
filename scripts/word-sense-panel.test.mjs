@@ -32,6 +32,7 @@ const messages = {
   "card.senses.writeCommunity": "Write a community explanation",
   "card.senses.standard": "Standard meanings",
   "card.senses.community": "Community explanation",
+  "card.senses.signed": "Signed explanation",
   "card.senses.loading": "Loading standard meanings...",
   "card.senses.error": "Standard meanings could not load.",
   "card.senses.missing": "No standard meaning found.",
@@ -274,7 +275,7 @@ test("actual React sense panel: resolution, controlled votes and attribution", a
       },
     );
     await suite.test(
-      "pending is busy, announced and guarded; failure leaves controlled rollback usable",
+      "pending is busy and announced while allowing optimistic switching; failure leaves controlled rollback usable",
       async () => {
         await render({ vote: { ...verified, selectedId: senses[0].id, pending: true } });
         assert.equal(container.querySelector("ul").getAttribute("aria-busy"), "true");
@@ -282,9 +283,10 @@ test("actual React sense panel: resolution, controlled votes and attribution", a
           container.querySelector('[aria-live="polite"]').textContent,
           messages["card.senses.pending"],
         );
-        assert.ok(buttons().every((button) => button.disabled));
+        assert.equal(buttons()[0].getAttribute("aria-pressed"), "true");
+        assert.ok(buttons().every((button) => !button.disabled), "optimistic thumb does not lock buttons during flight");
         await invokeHandler(buttons()[1]);
-        assert.deepEqual(calls.votes, []);
+        assert.deepEqual(calls.votes, [senses[1].id], "rapid switch delegates immediately for single-flight coalescing");
         await render({ vote: { ...verified, selectedId: senses[0].id, error: "failed" } });
         assert.equal(
           container.querySelector('[aria-live="polite"] p').textContent,
@@ -297,6 +299,11 @@ test("actual React sense panel: resolution, controlled votes and attribution", a
         assert.deepEqual(calls.votes, [senses[1].id]);
       },
     );
+    await suite.test("signed reader explanation renders signed header instead of community header", async () => {
+      await render({ community: { kind: "signed", meaning: "A river side.", author: "Reader" } });
+      assert.ok(container.querySelector("[data-community-explanation]").textContent.includes(messages["card.senses.signed"]));
+      assert.ok(!container.querySelector("[data-community-explanation]").textContent.includes(messages["card.senses.community"]));
+    });
     await suite.test(
       "mapped shows exactly its one standard sense and ignores stale vote state",
       async () => {

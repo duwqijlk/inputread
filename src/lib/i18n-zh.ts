@@ -25,6 +25,7 @@ export const zh: Record<Key, string> = {
   "card.senses.writeCommunity": "写一条社区释义",
   "card.senses.standard": "标准释义",
   "card.senses.community": "社区释义",
+  "card.senses.signed": "署名释义",
   "card.senses.communityNone": "社区释义 · 本书暂无",
   "card.senses.loading": "正在查询释义……",
   "card.senses.error": "暂时无法读取释义。",

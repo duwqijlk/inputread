@@ -508,9 +508,8 @@ function TargetSentenceButton({
 
 /**
  * Syntactic / grammatical breakdown for one sentence inside the paragraph (Grammar tab).
- * Always displays the complete resolved sentence (`note.sentence`) so every analyzed clause
- * literally belongs to the displayed sentence, and avoids repeating the paragraph's plain summary
- * when clause chunks are present.
+ * Always displays the complete resolved sentence (`note.sentence`), its concrete plain-English
+ * sentence meaning (`note.simple`), and the step-by-step clause breakdown (`note.chunks`).
  */
 function GrammarNote({
   note,
@@ -534,6 +533,15 @@ function GrammarNote({
         <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.original")}</span>
         <TargetSentenceButton sentence={note.sentence} chosen={chosen} onChoose={onChoose} />
       </div>
+
+      {note.simple ? (
+        <div className="grid gap-1">
+          <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.easier")}</span>
+          <p className="break-words font-display text-[1rem] leading-relaxed text-ink" lang="en" data-part="easier">
+            {note.simple}
+          </p>
+        </div>
+      ) : null}
 
       {hasChunks ? (
         <div className="grid gap-1.5">
@@ -561,11 +569,7 @@ function GrammarNote({
             })}
           </ul>
         </div>
-      ) : (
-        <p className="break-words font-display text-[1.02rem] leading-relaxed text-ink" lang="en" data-part="easier">
-          {note.simple}
-        </p>
-      )}
+      ) : null}
 
       {note.pattern ? (
         <p className="break-words text-xs leading-relaxed text-muted" lang="en" data-part="sentence-pattern">

@@ -11,7 +11,7 @@ export type SenseResolution =
   | { kind: "error" }
   | { kind: "missing" };
 export type CommunityExplanation = {
-  kind: "community";
+  kind: "community" | "signed";
   meaning: string;
   pos?: string;
   author?: string;
@@ -75,7 +75,7 @@ export function WordSensePanel({
   const recommended = Boolean(explanation) || hasCommunityContent || mapped;
   const tabs = (Boolean(explanation) || hasCommunityContent) && unresolved;
   const active = tabs ? selectedTab : recommended ? "recommended" : "dictionary";
-  const canVote = vote.eligibility === "verified" && !vote.pending && vote.error !== "fixed";
+  const canVote = vote.eligibility === "verified" && vote.error !== "fixed";
   const compactCandidates = unresolved && !explanation;
   const reason = !unresolved
     ? undefined
@@ -159,7 +159,7 @@ export function WordSensePanel({
           {explanation || communityContent ? (
             <section data-community-explanation aria-labelledby={`${id}-community`}>
               <div id={`${id}-community`} className={label}>
-                {t("card.senses.community")}
+                {t(community?.kind === "signed" ? "card.senses.signed" : "card.senses.community")}
               </div>
               {explanation ? communityContent ?? (
                 <>

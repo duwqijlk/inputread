@@ -58,9 +58,12 @@ test("real WordCard retains community identity and accepts a typed sense panel",
   const click = async (element) => act(async () => element.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
   try {
     await render();
-    assert.ok(container.textContent.includes("card.senses.community"));
+    assert.ok(container.textContent.includes("card.senses.signed"), "credited word renders signed layer header");
     assert.equal(received.community.credit, state.credit);
     assert.equal(received.community.meaning, state.meaning);
+    await render({ state: { ...state, credit: undefined } });
+    assert.ok(container.textContent.includes("card.senses.community"), "uncredited word renders community layer header");
+    await render();
     assert.equal(received.community.target.senseIndex, 2, "legacy index remains feedback evidence, not a standard ID");
     assert.equal(received.community.target.catalogId, base.catalogId);
     assert.equal(received.community.target.occurrence, 4);

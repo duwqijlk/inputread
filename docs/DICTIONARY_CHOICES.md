@@ -7,12 +7,13 @@ Passive word-opening collection is retired. The reader has no tap buffer/timer/f
 or write D1. Historical tap rows remain for historical administration; they are not votes.
 
 Only an explicit thumbs-up initiates `POST /api/dictionary/choices`. It requires a live session
-and verified email. A card opening makes no choice API request. The client keeps the last
-acknowledged choice in a bounded per-account, in-memory cache, cleared on account changes.
-On an explicit click it reads that account's authoritative selection, then saves or withdraws.
-After a full page restart a previous selection is not shown until the reader explicitly interacts;
-this avoids transmitting a book sentence just to restore an icon. Repeating the same choice
-withdraws it, choosing another switches it, and pending actions cannot duplicate requests.
+and verified email. A card opening makes no choice API request. The client highlights the chosen
+thumb immediately on click, sends a single `action: "set"` request, coalesces rapid switches into
+at most one in-flight request per target, and remembers acknowledged choices locally under a
+SHA-256 digest of the account and place (`cibian-dict-choices-v1`, wiped on device sign-out) so
+reopening a card restores the reader's thumb without storing plaintext book sentences or polling
+the server. Repeating the same choice withdraws it, choosing another switches it, and any server
+or network failure rolls the thumb back to the last acknowledged choice.
 There are no public counts, popularity sorting, or save/notebook dependencies.
 
 ## Review evidence, not canonical votes
@@ -52,7 +53,7 @@ verify the original text, edition, location and candidate binding before taking 
   account can still contribute. Rate-limit counter writes are not the same as payload mutations.
 - Exact source IDs are opaque; no parsing a lemma from an ID. R2 source entry cap 32 KiB.
 - One row per user + target evidence. Account deletion cascades; account export includes rows.
-- Server errors cannot appear as successful choices; selection waits for an acknowledged response.
+- Server errors roll back optimistic thumb highlights; saved confirmation waits for an acknowledged response.
 - Membership JSON/SHA/SQL are bounded, but production Free-plan CPU timing has NOT been measured.
   Do not claim the 10 ms budget is proven by a payload cap or local unit tests.
 

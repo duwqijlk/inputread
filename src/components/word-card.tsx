@@ -253,6 +253,11 @@ export function WordCard({
     glossaryRev: state.glossaryRev,
   };
   const missing = !activePhrase && state.status === "unknown";
+  const activeCredit = activePhrase
+    ? activePhrase.entry.credit
+    : state.status === "ready"
+      ? state.credit
+      : undefined;
   const legacyMeaning = !activePhrase && state.ready ? (
     <div data-community-explanation>
       <WordMeaning
@@ -283,7 +288,13 @@ export function WordCard({
     !activePhrase && standardLookup?.kind === "unmapped"
       ? {
           resolution: fixedSense ? { kind: "mapped", sense: fixedSense } : standardLookup,
-          community: legacyMeaning ? { kind: "community", meaning: targetMeaning, pos: targetPos } : undefined,
+          community: legacyMeaning
+            ? {
+                kind: state.status === "ready" && state.credit ? "signed" : "community",
+                meaning: targetMeaning,
+                pos: targetPos,
+              }
+            : undefined,
           communityContent: legacyMeaning,
           standardCredit: fixedSense && mapping?.matchedBy?.length ? (
             <div className="grid gap-1">{mapping.matchedBy.map(id => <CreditLine key={id} id={id} kind="match" />)}</div>
@@ -465,20 +476,14 @@ export function WordCard({
               <div data-community-explanation>
                 {!missing ? (
                   <p className="mb-2 font-sans text-sm leading-5 text-muted">
-                    {t("card.senses.community")}
+                    {t(activeCredit ? "card.senses.signed" : "card.senses.community")}
                   </p>
                 ) : null}
                 <WordMeaning
                   key={`${bookId}:${selectionId}:${targetMode}:${target}:${state.chapter ?? chapter}:${state.occurrence ?? 1}`}
                   meaning={targetMeaning}
                   pos={targetPos}
-                  credit={
-                    activePhrase
-                      ? activePhrase.entry.credit
-                      : state.status === "ready"
-                        ? state.credit
-                        : undefined
-                  }
+                  credit={activeCredit}
                   missing={missing}
                   noList={noList}
                   part={activePhrase ? "phrase-meaning" : "word-meaning"}

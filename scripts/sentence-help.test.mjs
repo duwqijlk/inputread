@@ -100,6 +100,12 @@ test("paragraph, grammar, and reader sentence help stay in separate tabs with fu
   assert.match(source, /data-help-source="reader"/);
   assert.match(source, /<CreditLine id=\{credit\} \/>/);
   assert.doesNotMatch(source, /useContributor|person\.|XCrun/, "source kind must not depend on loaded public profiles or a nickname");
+  const grammarNote = panel.slice(panel.indexOf("function GrammarNote"), panel.indexOf("function SentenceNote"));
+  assert.match(
+    grammarNote,
+    /<TargetSentenceButton sentence=\{note\.sentence\}[\s\S]*?data-part="easier"[\s\S]*?data-part="sentence-chunks"/,
+    "GrammarNote must show both concrete Plain English (note.simple) and clause breakdown (note.chunks)",
+  );
   const sentence = panel.slice(panel.indexOf("function SentenceNote"), panel.indexOf("type MarkBox"));
   assert.match(sentence, /<TargetSentenceButton sentence=\{note\.sentence\}[\s\S]*?data-part="easier"[\s\S]*?<HelpSource credit=\{note\.credit\} \/>/);
   assert.match(panel, /role="tablist"[\s\S]*?data-part="help-tabs"/);

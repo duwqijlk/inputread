@@ -7,7 +7,6 @@ import { useSheetDrag } from "@/components/floating-card";
 import { cleanNickname } from "@/lib/nickname";
 import { ReadingOverviewPanel } from "@/components/reading-overview";
 import {
-  accountRequest,
   confirmEmailCode,
   confirmPasswordReset,
   deleteAccount,
@@ -500,7 +499,7 @@ function EmailCodeBox({
     setNote("");
     try {
       if (signup) await signup.resend();
-      else await sendEmailCode();
+      else if (!(await sendEmailCode())) return;
       setCode("");
       setNote(t("account.codeResent"));
     } catch (error) {
@@ -721,8 +720,12 @@ export function AccountDialog() {
         setPendingSignup(started.email);
         setSignupExpired(false);
       } else {
-        await signIn(address, password);
-        closeDialog();
+        await signIn(address, password, undefined, () => {
+          setPendingSignup("");
+          setSignupTicket("");
+          setSignupExpired(false);
+          if (useAccount.getState().emailVerified) closeDialog();
+        });
       }
     } catch (error) {
       if (mode === "register") resetTurnstile.current();
