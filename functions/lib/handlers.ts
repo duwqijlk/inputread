@@ -47,11 +47,8 @@ function withCookie(body: unknown, status: number, cookie: string): Response {
 }
 
 function publicUser(
-  row: Pick<UserRow, "id" | "email" | "created_at" | "nickname" | "role"> & {
+  row: Pick<UserRow, "id" | "email" | "created_at" | "nickname" | "role" | "email_verified_at" | "public_id" | "avatar_rev"> & {
     trusted_until?: number | null;
-    email_verified_at?: number | null;
-    public_id?: string | null;
-    avatar_rev?: number | null;
   },
   now: number,
 ) {
@@ -243,7 +240,7 @@ export async function handleRegisterConfirm(request: Request, env: Env, options?
     await env.DB.prepare("DELETE FROM pending_signups WHERE email = ?").bind(email).run();
     const cookie = await createSession(env.DB, id, request, now);
     return withCookie(
-      { user: publicUser({ id, email, created_at: now, nickname: null, role: "user", email_verified_at: now, public_id: publicId }, now) },
+      { user: publicUser({ id, email, created_at: now, nickname: null, role: "user", email_verified_at: now, public_id: publicId, avatar_rev: 0 }, now) },
       201,
       cookie,
     );
@@ -266,7 +263,7 @@ export async function handleLogin(request: Request, env: Env, options?: HandlerO
     // by the per-IP and per-email limits below, plus recordFailedLogin.
     await assertRateLimit(env.DB, "login", clientIp(request), email, now, { countEmail: false });
     const user = await env.DB.prepare(
-      "SELECT id, email, nickname, role, trusted_until, password_hash, password_salt, password_iters, created_at FROM users WHERE email = ?",
+      "SELECT id, email, nickname, role, trusted_until, email_verified_at, public_id, avatar_rev, password_hash, password_salt, password_iters, created_at FROM users WHERE email = ?",
     )
       .bind(email)
       .first<UserRow>();
