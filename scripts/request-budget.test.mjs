@@ -50,3 +50,16 @@ test("an open book uploads its reading place at most once a minute, and at once 
   assert.match(engine, /if \(holds === 0 && timer\) schedulePush\(PUSH_DELAY_MS\);/);
   assert.match(read("src/components/reader.tsx"), /useEffect\(\(\) => holdSyncPushes\(\{ reading: true \}\), \[\]\);/);
 });
+
+test("boot index.html does not prefetch /admin and supports e-ink theme before first paint", () => {
+  const html = read("index.html");
+  assert.doesNotMatch(html, /fetch\("\/admin"/);
+  assert.match(html, /t==="eink"/);
+  assert.doesNotMatch(html, /t==="clear"/);
+});
+
+test("wordbook glossary hydration runs in Notebook and never fetches protected lists for non-shelf books", () => {
+  assert.doesNotMatch(read("src/components/margin-app.tsx"), /useLiveGlossMeanings/);
+  assert.match(read("src/components/notebook.tsx"), /useLiveGlossMeanings\(scoped, books\)/);
+  assert.match(read("src/lib/gloss-cache.ts"), /if \(!onShelf \|\| useAccount\.getState\(\)\.phase !== "in"\) return null;/);
+});

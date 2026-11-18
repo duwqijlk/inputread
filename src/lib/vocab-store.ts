@@ -148,6 +148,8 @@ type VocabState = {
   ) => void;
   /** Record one review answer and move the card along the Ebbinghaus ladder. */
   review: (id: string, correct: boolean, scheduled?: boolean) => void;
+  /** Revert the most recent review answer in the active session. */
+  undoReview: (previous: VocabEntry, day: string, correct: boolean) => void;
   markMastered: (id: string) => void;
   relearn: (id: string) => void;
   fillPrepared: (
@@ -437,6 +439,22 @@ export const useVocab = create<VocabState>()(
               ...state.log,
               [key]: { reviewed: day.reviewed + 1, correct: day.correct + (correct ? 1 : 0) },
             },
+          };
+        });
+      },
+      undoReview: (previous, day, correct) => {
+        set((state) => {
+          const currentDay = state.log[day];
+          const nextLog = { ...state.log };
+          if (currentDay) {
+            const reviewed = Math.max(0, currentDay.reviewed - 1);
+            const right = Math.max(0, currentDay.correct - (correct ? 1 : 0));
+            if (reviewed === 0 && right === 0) delete nextLog[day];
+            else nextLog[day] = { reviewed, correct: right };
+          }
+          return {
+            words: state.words.map((word) => (word.id === previous.id ? previous : word)),
+            log: nextLog,
           };
         });
       },

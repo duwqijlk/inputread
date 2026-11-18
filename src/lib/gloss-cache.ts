@@ -4,6 +4,7 @@
  * A custom list is never fetched: another device shows the word without a snippet
  * until that list exists locally.
  */
+import { useAccount } from "@/lib/account-store";
 import { booksUrl } from "@/lib/books-base";
 import { fetchProtectedGlossary, remoteGlossaryId } from "@/lib/glossary-fetch";
 import { listPackRecords, loadBookExtras, loadBookMeta, type BookMeta, type PackRecord } from "@/lib/book-db";
@@ -133,9 +134,12 @@ async function localFile(ref: GlossPoint, bookKey: string, books: readonly Book[
   return null;
 }
 
-async function fetchList(id: string): Promise<GlossFileView | null> {
+async function fetchList(id: string, onShelf: boolean): Promise<GlossFileView | null> {
   if (catalogListId(id) === "custom") return null;
   if (remoteGlossaryId(booksUrl(`word-lists/${id}/glossary.json`))) {
+    // Only fetch a protected remote list when signed in and the book is on this account's shelf,
+    // so guests never trigger 401s and removed books never spend a weekly word-list place.
+    if (!onShelf || useAccount.getState().phase !== "in") return null;
     try {
       const bytes = await fetchProtectedGlossary(id, "");
       return viewFromJson(JSON.parse(new TextDecoder().decode(bytes)));
@@ -160,7 +164,7 @@ async function resolveOne(ref: GlossPoint, bookKey: string, books: readonly Book
   const local = await localFile(ref, bookKey, books);
   if (local) return local;
   if (ref.list === "custom") return null;
-  return fetchList(ref.list);
+  return fetchList(ref.list, Boolean(bookForSource({ book: bookKey }, books)));
 }
 
 async function resolveBook(bookKey: string, books: readonly Book[]): Promise<{ list: string; file: GlossFileView } | null> {
@@ -173,7 +177,7 @@ async function resolveBook(bookKey: string, books: readonly Book[]): Promise<{ l
     return { list, file: viewFromLocal(meta, extras?.phrases, { title: shelf.title, author: shelf.author }) };
   }
   if (list === "custom") return null;
-  const fetched = await fetchList(list);
+  const fetched = await fetchList(list, true);
   return fetched ? { list, file: fetched } : null;
 }
 

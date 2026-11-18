@@ -736,6 +736,7 @@ export function Shelf({
   books,
   words,
   ready,
+  syncing = false,
   storedIds,
   onOpen,
   onNotebook,
@@ -744,6 +745,7 @@ export function Shelf({
   books: Book[];
   words: VocabEntry[];
   ready: boolean;
+  syncing?: boolean;
   /** ids whose book file is on this device; null until that list has been read */
   storedIds: Set<string> | null;
   onOpen: (bookId: string) => void;
@@ -916,7 +918,7 @@ export function Shelf({
 
   return (
     <div className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:gap-8 sm:px-6 sm:py-10">
-      {!ready || (books.length === 0 && installingClassics) ? (
+      {!ready || (books.length === 0 && (installingClassics || syncing)) ? (
         <ShelfSkeleton />
       ) : books.length === 0 ? (
         <EmptyShelf onDiscover={() => navigate({ kind: "discover" })} />

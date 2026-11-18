@@ -12,6 +12,7 @@ import { btn, cn, field, subTabs, TabInk } from "@/components/ui";
 import { listPackRecords, loadBookExtras, type PackRecord } from "@/lib/book-db";
 import { coverAddress } from "@/lib/covers";
 import { BUNDLED_CATALOG_URL, loadCatalog, resolveAgainst } from "@/lib/packs";
+import { useAccount } from "@/lib/account-store";
 import { askToSignIn, useCanAddBooks } from "@/lib/can-add";
 import { useDownloads } from "@/lib/downloads";
 import { errorText, useT } from "@/lib/i18n";
@@ -222,6 +223,7 @@ export function DiscoverScreen({
   const items = useDownloads((state) => state.items);
   const start = useDownloads((state) => state.start);
   const canAdd = useCanAddBooks();
+  const dialogOpen = useAccount((state) => state.dialogOpen);
   const quota = useGlossaryQuota((state) => state.quota);
   const updateFailures = useListUpdates((state) => state.failures);
   const updateHolds = useListUpdates((state) => state.holds);
@@ -318,18 +320,31 @@ export function DiscoverScreen({
     };
   }, [updatesFinished]);
 
-  // Back from the sign-in dialog: return to the book card that was tapped, so adding can go on.
+  // If the sign-in dialog was dismissed without signing in, forget the pending add target.
+  useEffect(() => {
+    if (!dialogOpen && !canAdd) signInFor.current = null;
+  }, [dialogOpen, canAdd]);
+
+  // Back from the sign-in dialog: scroll to the tapped book and continue adding it right away.
   useEffect(() => {
     if (!canAdd || !signInFor.current) return;
-    const id = signInFor.current;
+    const key = signInFor.current;
+    const row = rows.find((item) => item.key === key);
+    if (!row) return;
     signInFor.current = null;
     requestAnimationFrame(() => {
-      const card = document.querySelector(`[data-pack="${id}"], [data-word-list="${id}"]`);
+      const card = document.querySelector(`[data-pack="${row.id}"], [data-word-list="${row.id}"]`);
       if (!card) return;
       card.scrollIntoView({ block: "center" });
       card.querySelector<HTMLButtonElement>("[data-shelf-add]")?.focus();
     });
-  }, [canAdd]);
+    const m = cardModel(row);
+    if (!m.held && !m.busy && !m.ambiguous) {
+      if (row.kind === "list") setDetailId("");
+      add(row, m.book, m.updateReady);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canAdd, rows]);
 
   // /book/<id>/: open that book once the catalogs are in (the public book first, as the cards are).
   const openedFor = useRef("");
@@ -495,7 +510,7 @@ export function DiscoverScreen({
     }
     // Adding books needs an account. The sign-in dialog opens over this page, so the card stays.
     if (!canAdd) {
-      signInFor.current = row.id;
+      signInFor.current = row.key;
       askToSignIn();
       return;
     }

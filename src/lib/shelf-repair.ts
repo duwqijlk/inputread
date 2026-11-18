@@ -26,14 +26,11 @@ import {
 } from "@/lib/book-db";
 import { matchWordListPack } from "@/lib/book-meta";
 import { fetchCoverData } from "@/lib/covers";
-import { coverFromChapters } from "@/lib/epub";
-import { BUNDLED_CATALOG_URL, loadCatalog, resolveAgainst } from "@/lib/packs";
 import { coverPlan, type CoverTarget } from "@/lib/cover-plan";
 import { overallProgress, useProgress } from "@/lib/progress-store";
 import { sameAuthor, titleKeys, type ShelfEntry } from "@/lib/shelf-identity";
 import { planSafeShelfMerges } from "@/lib/catalog-shelf-identity";
 import { useVocab } from "@/lib/vocab-store";
-import { loadWordListCatalog, WORD_LIST_CATALOG_URL } from "@/lib/word-list-catalog";
 
 /* ------------------------------------------------------------------ 1. duplicate cards */
 
@@ -184,6 +181,10 @@ export async function refreshCovers(): Promise<number> {
     listBookSummaries().catch(() => []),
   ]);
   const stored = new Set(summaries.map((book) => book.id));
+  const [{ loadWordListCatalog, WORD_LIST_CATALOG_URL }, { BUNDLED_CATALOG_URL, loadCatalog, resolveAgainst }] = await Promise.all([
+    import("@/lib/word-list-catalog"),
+    import("@/lib/packs"),
+  ]);
   const [lists, classics] = await Promise.all([
     loadWordListCatalog().catch(() => null),
     loadCatalog(BUNDLED_CATALOG_URL).then((result) => (result.offline ? null : result.catalog.packs)).catch(() => null),
@@ -252,6 +253,7 @@ async function derive(bookId: string, tried: Set<string>): Promise<boolean> {
   tried.add(bookId);
   const book = await loadStoredBook(bookId).catch(() => null);
   if (!book) return false;
+  const { coverFromChapters } = await import("@/lib/epub");
   const cover = await coverFromChapters(book.chapters).catch(() => null);
   if (!cover) return false;
   if (await loadCover(bookId).catch(() => "")) return false;

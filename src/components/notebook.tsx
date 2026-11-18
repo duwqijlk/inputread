@@ -8,7 +8,7 @@ import { isDue, isMastered, type Book, type VocabEntry } from "@/lib/vocab-model
 import { useVocab } from "@/lib/vocab-store";
 import { focusSentence } from "@/lib/text";
 import { countsByBookKey, hasSourceFrom } from "@/lib/wordbook";
-import { useGlossFiles, usePresentedWord } from "@/components/presented-word";
+import { useGlossFiles, useLiveGlossMeanings, usePresentedWord } from "@/components/presented-word";
 import { presentWord } from "@/lib/gloss-ref";
 import { WordSources } from "@/components/word-sources";
 import { QuoteBook } from "@/components/quote-book";
@@ -303,6 +303,7 @@ export function Notebook({
   }, [books, words]);
   const stats = useMemo(() => summarize(scoped), [scoped]);
   const streak = useMemo(() => streakOf(log), [log]);
+  useLiveGlossMeanings(scoped, books);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();

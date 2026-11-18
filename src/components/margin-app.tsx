@@ -12,9 +12,7 @@ import {
   purgeLegacyHelpCache,
   requestPersistentStorage,
 } from "@/lib/book-db";
-import { readGlossaryFile } from "@/lib/glossary-import";
 import { canAddBooks, askToSignIn } from "@/lib/can-add";
-import { ensureClassics } from "@/lib/classics";
 import { useProgress } from "@/lib/progress-store";
 import { useQuotes } from "@/lib/quote-store";
 import { useFocusMode } from "@/lib/focus-mode";
@@ -22,7 +20,6 @@ import { tr, trn, useT } from "@/lib/i18n";
 import { applyTheme, usePrefs } from "@/lib/reader-prefs";
 import type { VocabEntry } from "@/lib/vocab-model";
 import { markVocabHydrated, normalizeWord, useVocab } from "@/lib/vocab-store";
-import { ShelfToastHost } from "@/components/shelf-actions";
 import { finishPendingRemoval, useShelfRemove } from "@/lib/shelf-remove";
 import { SpineWarningList } from "@/components/spine-warnings";
 import { btn, cn } from "@/components/ui";
@@ -48,10 +45,6 @@ import { SponsorTab } from "@/components/sponsor-tab";
 import { notifySyncReady, startAccountSync } from "@/lib/sync-engine";
 import { takeLoginAfterWipe } from "@/lib/device-wipe";
 import { Avatar } from "@/components/avatar";
-import { AccountDialog } from "@/components/account-dialog";
-import { autoUpdateWordLists, useListUpdates } from "@/lib/word-list-update";
-import { rememberListPack, resolveFileOffer } from "@/lib/file-gap";
-import { useLiveGlossMeanings } from "@/components/presented-word";
 import { applyPageMeta, pageMeta } from "@/lib/page-meta";
 
 type Screen = Route;
@@ -94,6 +87,8 @@ const WordListDialog = lazy(() => import("@/components/word-list").then((m) => (
 const TutorialDialog = lazy(() => import("@/components/tutorial-dialog"));
 const FeedbackTipDialog = lazy(() => import("@/components/feedback-tip-dialog"));
 const QuoteFlowDialog = lazy(() => import("@/components/quote-flow"));
+const AccountDialog = lazy(() => import("@/components/account-dialog").then((m) => ({ default: m.AccountDialog })));
+const ShelfToastHost = lazy(() => import("@/components/shelf-actions").then((m) => ({ default: m.ShelfToastHost })));
 
 function preloadNavChunk(id: string): void {
   if (id === "shelf") void import("@/components/shelf").catch(() => undefined);
@@ -108,7 +103,6 @@ export function MarginApp() {
   const { t, tn } = useT();
   const books = useVocab((state) => state.books);
   const words = useVocab((state) => state.words);
-  useLiveGlossMeanings(words, books);
   const restoreBooks = useVocab((state) => state.restoreBooks);
   const replaceWords = useVocab((state) => state.replaceWords);
   const theme = usePrefs((state) => state.theme);
@@ -119,6 +113,10 @@ export function MarginApp() {
   // A tutorial not seen yet: a dot on the account avatar (its "Tutorials" row says New).
   const tutorialNews = useTutorialNews();
   const signedIn = useAccount((state) => Boolean(state.email));
+  const syncingShelf = useAccount((state) => state.phase === "in" && state.sync === "saving");
+  const accountDialogOpen = useAccount((state) => state.dialogOpen);
+  const [accountMounted, setAccountMounted] = useState(accountDialogOpen);
+  if (accountDialogOpen && !accountMounted) setAccountMounted(true);
   const publicId = useAccount((state) => state.publicId);
   const nickname = useAccount((state) => state.nickname);
   const avatar = useAccount((state) => state.avatar);
@@ -131,8 +129,9 @@ export function MarginApp() {
   const [listFlow, setListFlow] = useState<ListFlow | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
   const [spineWarnings, setSpineWarnings] = useState<SpineNameWarning[]>([]);
-  const listsWaiting = useListUpdates((state) => state.waiting);
-  const dismissListsWaiting = useListUpdates((state) => state.dismiss);
+  const [listsWaiting, setListsWaiting] = useState(0);
+  const dismissListsRef = useRef<() => void>(() => setListsWaiting(0));
+  const dismissListsWaiting = () => dismissListsRef.current();
   const [storedIds, setStoredIds] = useState<Set<string> | null>(null);
   const opening = useRef(false);
   // The previous screen, so closing the reader can retry a word-list update that waited.
@@ -255,6 +254,24 @@ export function MarginApp() {
     })();
   }, [replaceWords, restoreBooks]);
 
+  useEffect(() => {
+    if (!ready) return;
+    let stop: (() => void) | undefined;
+    let alive = true;
+    void import("@/lib/word-list-update")
+      .then((m) => {
+        if (!alive) return;
+        dismissListsRef.current = () => m.useListUpdates.getState().dismiss();
+        setListsWaiting(m.useListUpdates.getState().waiting);
+        stop = m.useListUpdates.subscribe((state) => setListsWaiting(state.waiting));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+      stop?.();
+    };
+  }, [ready]);
+
   const catalogScreen =
     screen.kind === "shelf" ||
     screen.kind === "discover" ||
@@ -262,9 +279,9 @@ export function MarginApp() {
     screen.kind === "dashboard";
   useEffect(() => {
     if (!ready || !catalogScreen) return;
-    void ensureClassics();
+    void import("@/lib/classics").then((m) => m.ensureClassics()).catch(() => undefined);
     // Installed books whose catalog revision changed get an Update button. Nothing is replaced yet.
-    void autoUpdateWordLists();
+    void import("@/lib/word-list-update").then((m) => m.autoUpdateWordLists()).catch(() => undefined);
     // Every catalog screen transition retries: an empty shelf's first call has nothing to do.
   }, [ready, screen.kind, catalogScreen]);
 
@@ -276,6 +293,7 @@ export function MarginApp() {
       preloadNavChunk("dashboard");
       preloadNavChunk("words");
       preloadNavChunk("shelf");
+      void import("@/components/account-dialog").catch(() => undefined);
     };
     const win = window as Window & {
       requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
@@ -324,6 +342,7 @@ export function MarginApp() {
     if (!ready || !file) return;
     clearMessages();
     try {
+      const { readGlossaryFile } = await import("@/lib/glossary-import");
       const check = await readGlossaryFile(file);
       setListFlow({ fileName: file.name, check, bookId: listTarget.current });
     } catch {
@@ -348,8 +367,9 @@ export function MarginApp() {
         useVocab.getState().books.find((item) => item.id === bookId) ??
         books.find((item) => item.id === bookId);
       if (book) {
-        const { offer } = await resolveFileOffer(book).catch(() => ({ offer: { kind: "discover" as const } }));
-        if (offer.kind === "epub") await rememberListPack(bookId, offer.packId).catch(() => undefined);
+        const gap = await import("@/lib/file-gap").catch(() => null);
+        const { offer } = gap ? await gap.resolveFileOffer(book).catch(() => ({ offer: { kind: "discover" as const } })) : { offer: { kind: "discover" as const } };
+        if (offer.kind === "epub" && gap) await gap.rememberListPack(bookId, offer.packId).catch(() => undefined);
       }
     }
     setEpubFor(bookId);
@@ -376,9 +396,10 @@ export function MarginApp() {
         return;
       }
       // The card stays. A word-list book asks for the EPUB here. A classic downloads from the reader.
-      const { offer } = await resolveFileOffer(book).catch(() => ({ offer: { kind: "discover" as const } }));
+      const gap = await import("@/lib/file-gap").catch(() => null);
+      const { offer } = gap ? await gap.resolveFileOffer(book).catch(() => ({ offer: { kind: "discover" as const } })) : { offer: { kind: "discover" as const } };
       if (offer.kind === "epub") {
-        await rememberListPack(bookId, offer.packId).catch(() => undefined);
+        if (gap) await gap.rememberListPack(bookId, offer.packId).catch(() => undefined);
         if (!canAddBooks(useAccount.getState().phase)) {
           askToSignIn();
           return;
@@ -400,7 +421,7 @@ export function MarginApp() {
   useEffect(() => {
     const leftReader = wasReading.current && screen.kind !== "read";
     wasReading.current = screen.kind === "read";
-    if (leftReader) void autoUpdateWordLists();
+    if (leftReader) void import("@/lib/word-list-update").then((m) => m.autoUpdateWordLists()).catch(() => undefined);
   }, [screen.kind]);
   // Tab title, canonical address and index rule of the screen (src/lib/page-meta.ts).
   const readTitle = screen.kind === "read" ? (books.find((book) => book.id === screen.bookId)?.title ?? "") : "";
@@ -565,6 +586,8 @@ export function MarginApp() {
               type="button"
               className={cn(btn.icon, "size-11")}
               onClick={() => useAccount.getState().openDialog()}
+              onPointerEnter={() => void import("@/components/account-dialog").catch(() => undefined)}
+              onFocus={() => void import("@/components/account-dialog").catch(() => undefined)}
               aria-label={t("nav.account")}
               data-account-button
             >
@@ -707,6 +730,7 @@ export function MarginApp() {
               books={orderedBooks}
               words={words}
               ready={ready}
+              syncing={syncingShelf}
               onOpen={(bookId) => void openBook(bookId)}
               storedIds={storedIds}
               onNotebook={(bookId) => setScreen({ kind: "words", bookId })}
@@ -735,8 +759,10 @@ export function MarginApp() {
       {/* Coffee shortcut on public pages only; tutorials stay available in Settings. */}
       {ready && (menu === "shelf" || menu === "discover" || menu === "dashboard") && screen.kind !== "read" ? <SponsorTab /> : null}
       <TutorialList />
-      <AccountDialog />
-      <ShelfToastHost onViewShelf={() => setScreen({ kind: "shelf" })} aboveTabs={!reading} />
+      <Suspense fallback={null}>
+        {accountMounted ? <AccountDialog /> : null}
+        <ShelfToastHost onViewShelf={() => setScreen({ kind: "shelf" })} aboveTabs={!reading} />
+      </Suspense>
       <Suspense fallback={null}>
         {listFlow ? (
           <WordListDialog

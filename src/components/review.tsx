@@ -210,6 +210,7 @@ function Summary({
   mode,
   poolSize,
   onAgain,
+  onUndo,
   onBack,
   onOtherWay,
 }: {
@@ -217,6 +218,7 @@ function Summary({
   mode: Mode;
   poolSize: number;
   onAgain: (() => void) | null;
+  onUndo?: (() => void) | null;
   onBack: () => void;
   onOtherWay: (mode: Mode) => void;
 }) {
@@ -300,6 +302,17 @@ function Summary({
         <button type="button" className={cn(onAgain ? btn.quiet : btn.primary, "min-h-12")} onClick={onBack}>
           {t("rv.backNotebook")}
         </button>
+        {onUndo ? (
+          <button
+            type="button"
+            className={cn(btn.bare, "min-h-10 justify-self-center px-3 text-sm text-muted hover:text-ink")}
+            onClick={onUndo}
+            data-review-undo
+          >
+            <RotateCcw className="size-3.5" aria-hidden />
+            {t("rv.undo")}
+          </button>
+        ) : null}
       </div>
       {others.length > 0 ? (
         <p className="m-0 flex flex-wrap items-center justify-center gap-x-1 text-sm text-muted" data-summary-other>
@@ -367,6 +380,7 @@ function Session({
 }) {
   const { t, tn } = useT();
   const review = useVocab((state) => state.review);
+  const undoReview = useVocab((state) => state.undoReview);
   const allWords = useVocab((state) => state.words);
   const [queue, setQueue] = useState(initial);
   const [index, setIndex] = useState(0);
@@ -377,6 +391,13 @@ function Session({
   const [spell, setSpell] = useState<null | "yes" | "no">(null);
   const [stamp, setStamp] = useState(false);
   const [combo, setCombo] = useState(0);
+  const [lastTurn, setLastTurn] = useState<{
+    index: number;
+    word: VocabEntry;
+    day: string;
+    correct: boolean;
+    comboBefore: number;
+  } | null>(null);
   const spellRef = useRef<HTMLInputElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const comboRef = useRef<HTMLElement | null>(null);
@@ -425,14 +446,31 @@ function Session({
   const record = useCallback(
     (correct: boolean) => {
       if (!current) return;
+      const snapshot = useVocab.getState().words.find((w) => w.id === current.id) ?? current;
+      const day = dayKey(Date.now());
+      setLastTurn({ index, word: snapshot, day, correct, comboBefore: combo });
       review(current.id, correct, isDue(current));
       setAnswers((list) => [...list, { id: current.id, correct }]);
       setCombo((value) => (correct ? value + 1 : 0));
       if (correct) setStamp(true);
       else void shake(cardRef.current);
     },
-    [current, review],
+    [current, index, combo, review],
   );
+
+  const undoLast = useCallback(() => {
+    if (!lastTurn || busy.current) return;
+    undoReview(lastTurn.word, lastTurn.day, lastTurn.correct);
+    setAnswers((list) => list.slice(0, -1));
+    setCombo(lastTurn.comboBefore);
+    setIndex(lastTurn.index);
+    setRevealed(false);
+    setPicked(null);
+    setTyped("");
+    setSpell(null);
+    setStamp(false);
+    setLastTurn(null);
+  }, [lastTurn, undoReview]);
 
   const next = useCallback(() => {
     const following = queue[index + 1];
@@ -494,6 +532,20 @@ function Session({
     if (mode === "spell" && !finished) spellRef.current?.focus();
   }, [mode, index, finished]);
 
+  useEffect(() => {
+    if (!lastTurn) return;
+    const onUndoKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
+      if (event.key.toLowerCase() !== "z") return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      event.preventDefault();
+      undoLast();
+    };
+    window.addEventListener("keydown", onUndoKey);
+    return () => window.removeEventListener("keydown", onUndoKey);
+  }, [lastTurn, undoLast]);
+
   if (finished) {
     const missed = [...new Set(answers.filter((a) => !a.correct).map((a) => a.id))].filter((id) => byId.has(id));
     return (
@@ -502,6 +554,7 @@ function Session({
         answers={answers}
         mode={mode}
         poolSize={pool.length}
+        onUndo={lastTurn ? undoLast : null}
         onAgain={
           missed.length > 0
             ? () => {
@@ -514,6 +567,7 @@ function Session({
                 setIndex(0);
                 setAnswers([]);
                 setCombo(0);
+                setLastTurn(null);
                 setRevealed(false);
                 setPicked(null);
                 setTyped("");
@@ -569,9 +623,22 @@ function Session({
             <X className="size-4" aria-hidden />
             {t("rv.end")}
           </button>
-          <p className="m-0 text-sm text-muted [font-variant-numeric:tabular-nums]" data-review-count>
-            {index + 1} / {queue.length}
-          </p>
+          <div className="flex items-center gap-2">
+            {lastTurn ? (
+              <button
+                type="button"
+                className={cn(btn.bare, "min-h-10 px-2.5 text-sm text-muted hover:text-ink")}
+                onClick={undoLast}
+                data-review-undo
+              >
+                <RotateCcw className="size-3.5" aria-hidden />
+                {t("rv.undo")}
+              </button>
+            ) : null}
+            <p className="m-0 text-sm text-muted [font-variant-numeric:tabular-nums]" data-review-count>
+              {index + 1} / {queue.length}
+            </p>
+          </div>
         </div>
         <ProgressBar className="review-progress" value={index / queue.length} label={t("rv.roundProgress")} />
       </div>

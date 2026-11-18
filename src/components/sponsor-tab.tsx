@@ -1,12 +1,17 @@
 import { Coffee } from "lucide-react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useT } from "@/lib/i18n";
-import { SponsorDialog } from "@/components/sponsor-dialog";
+
+const SponsorDialog = lazy(() =>
+  import("@/components/sponsor-dialog").then((m) => ({ default: m.SponsorDialog })),
+);
 
 /** A desktop-only sponsor shortcut in the margin; never over the reading page. */
 export function SponsorTab() {
   const { t } = useT();
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  if (open && !mounted) setMounted(true);
   return (
     <>
       <button
@@ -17,11 +22,17 @@ export function SponsorTab() {
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(true)}
+        onPointerEnter={() => void import("@/components/sponsor-dialog").catch(() => undefined)}
+        onFocus={() => void import("@/components/sponsor-dialog").catch(() => undefined)}
         data-sponsor-tab
       >
         <Coffee className="size-6" strokeWidth={1.5} aria-hidden />
       </button>
-      <SponsorDialog open={open} onOpenChange={setOpen} onSubmitted={() => undefined} />
+      {mounted ? (
+        <Suspense fallback={null}>
+          <SponsorDialog open={open} onOpenChange={setOpen} onSubmitted={() => undefined} />
+        </Suspense>
+      ) : null}
     </>
   );
 }

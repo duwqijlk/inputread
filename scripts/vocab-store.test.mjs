@@ -106,3 +106,32 @@ test("unchanged placeholder and another book's sources do not trigger writes", (
   assert.equal(writes.length, 0);
   assert.equal(globalThis.__noteWrites.length, 0);
 });
+
+test("undoReview restores a card's prior SRS stage, schedule and daily review log", async () => {
+  const { dayKey } = await import("../src/lib/srs.ts");
+  const prior = {
+    ...word("A portable light."),
+    surface: "lantern",
+    recommend: true,
+    sentence: "A lantern glowed.",
+    stage: 5,
+    dueAt: 1000,
+    createdAt: 500,
+    reps: 5,
+    lapses: 0,
+  };
+  useVocab.setState({ books: [home], words: [prior], log: {} });
+  const today = dayKey(Date.now());
+  useVocab.getState().review(prior.id, false, true);
+  const afterMiss = useVocab.getState().words[0];
+  assert.equal(afterMiss.stage, 0);
+  assert.equal(afterMiss.lapses, 1);
+  assert.deepEqual(useVocab.getState().log[today], { reviewed: 1, correct: 0 });
+
+  useVocab.getState().undoReview(prior, today, false);
+  const restored = useVocab.getState().words[0];
+  assert.equal(restored.stage, 5);
+  assert.equal(restored.lapses, 0);
+  assert.equal(restored.dueAt, 1000);
+  assert.equal(useVocab.getState().log[today], undefined);
+});

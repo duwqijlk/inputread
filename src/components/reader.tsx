@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Focus,
   List,
+  RotateCcw,
   X,
 } from "lucide-react";
 import {
@@ -193,6 +194,17 @@ export function ReaderScreen({
   // Selecting the current contents entry is still a navigation, without remounting its text.
   const [navigationRevision, setNavigationRevision] = useState(0);
   const [scrolled, setScrolled] = useState(0);
+  const [returnPlace, setReturnPlace] = useState<{
+    chapter: number;
+    extraId: string;
+    scroll: number;
+    anchor?: TextAnchor;
+  } | null>(null);
+  useEffect(() => {
+    if (!returnPlace) return;
+    const timer = window.setTimeout(() => setReturnPlace(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [returnPlace]);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const selectionSequence = useRef(0);
   const [picked, setPicked] = useState<{
@@ -542,6 +554,47 @@ export function ReaderScreen({
       return chapterHtml;
     }
   }, [bookWithSigned, chapterHtml, chapterKey, effectivePhraseList, marked, resolveKey, viewChapter, phrasesReady]);
+
+  // Pre-link adjacent chapters during idle time so Next / Previous chapter turns without delay.
+  useEffect(() => {
+    if (!bookWithSigned || !phrasesReady || activeExtra) return;
+    const neighbors = [viewChapter + 1, viewChapter - 1].filter(
+      (idx) => idx >= 0 && idx < bookWithSigned.chapters.length,
+    );
+    if (neighbors.length === 0) return;
+    const warm = () => {
+      for (const idx of neighbors) {
+        const key = `${bookId}|${idx}|`;
+        if (peekChapterHtml(bookWithSigned, effectivePhraseList, key) !== undefined) continue;
+        const raw = bookWithSigned.chapters[idx]?.html;
+        if (!raw) continue;
+        try {
+          const html = linkChapterHtml(
+            raw,
+            marked.ready,
+            resolveKey,
+            idx,
+            marked.sparse,
+            marked.tricky,
+            effectivePhraseList,
+          );
+          rememberChapterHtml(bookWithSigned, effectivePhraseList, key, html);
+        } catch {
+          // Live chapter render handles any malformed HTML on its own.
+        }
+      }
+    };
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof win.requestIdleCallback === "function") {
+      const id = win.requestIdleCallback(warm, { timeout: 1500 });
+      return () => win.cancelIdleCallback?.(id);
+    }
+    const timer = window.setTimeout(warm, 300);
+    return () => window.clearTimeout(timer);
+  }, [bookId, bookWithSigned, effectivePhraseList, marked, phrasesReady, resolveKey, viewChapter, activeExtra]);
 
   const positionChapter = useRef<{
     root: HTMLElement;
@@ -1711,15 +1764,70 @@ export function ReaderScreen({
                     };
                   })
                 : undefined;
+  const rememberBeforeJump = () => {
+    pendingSave.current?.();
+    const saved = useProgress.getState().items[bookId];
+    setReturnPlace({
+      chapter: safeIndex,
+      extraId,
+      scroll: saved && saved.chapter === safeIndex && (saved.extraId ?? "") === extraId ? saved.scroll : scrolled,
+      anchor: saved && saved.chapter === safeIndex && (saved.extraId ?? "") === extraId ? saved.anchor : undefined,
+    });
+  };
+  const pickContentsChapter = (index: number) => {
+    const next = Math.min(Math.max(0, index), book.chapters.length - 1);
+    if (extraId || next !== safeIndex) rememberBeforeJump();
+    goChapter(index);
+  };
   const pickContentsRow = (key: string) => {
-              if (!slots) return;
-              const at = slots.findIndex((slot) =>
-                slot.kind === "chapter"
-                  ? key === `c${slot.index}`
-                  : key === `x${book.extras?.[slot.index]?.id ?? slot.index}`,
-              );
-              if (at >= 0) goSlot(at);
-            };
+    if (!slots) return;
+    const at = slots.findIndex((slot) =>
+      slot.kind === "chapter"
+        ? key === `c${slot.index}`
+        : key === `x${book.extras?.[slot.index]?.id ?? slot.index}`,
+    );
+    if (at < 0) return;
+    const slot = slots[at];
+    const targetExtra = slot?.kind === "extra" ? (book.extras?.[slot.index]?.id ?? "") : "";
+    const targetChapter = slot?.kind === "chapter" ? slot.index : safeIndex;
+    if (targetExtra !== extraId || targetChapter !== safeIndex) rememberBeforeJump();
+    goSlot(at);
+  };
+  const restoreReturnPlace = () => {
+    if (!returnPlace) return;
+    const target = {
+      chapter: returnPlace.chapter,
+      chapters: book.chapters.length,
+      scroll: returnPlace.scroll,
+      extraId: returnPlace.extraId,
+      anchor: returnPlace.anchor,
+      updatedAt: Date.now(),
+    };
+    const place = restoreReadingPlace(target, {
+      chapters: book.chapters.map((item) => item.paragraphs),
+      extras: book.extras,
+    });
+    positionGeneration.current += 1;
+    pendingSave.current = null;
+    placed.current = null;
+    restore.current = place.paragraph === null ? returnPlace.scroll : null;
+    restoreAt.current =
+      place.paragraph === null ? null : { paragraph: place.paragraph, offset: place.offset, flash: false };
+    setPicked(null);
+    setHelp(null);
+    setExtraId(place.extraId);
+    setChapterIndex(place.extraId || place.paragraph === null ? returnPlace.chapter : place.chapter);
+    setScrolled(returnPlace.scroll);
+    setNavigationRevision((revision) => revision + 1);
+    saveProgress(bookId, {
+      chapter: returnPlace.chapter,
+      chapters: book.chapters.length,
+      scroll: returnPlace.scroll,
+      extraId: returnPlace.extraId,
+      anchor: returnPlace.anchor,
+    });
+    setReturnPlace(null);
+  };
   const style = readerVars(prefs) as React.CSSProperties;
   const focus = prefs.focus;
 
@@ -1774,7 +1882,7 @@ export function ReaderScreen({
           <ReaderContents
             chapters={book.chapters}
             current={safeIndex}
-            onPick={goChapter}
+            onPick={pickContentsChapter}
             rows={contentsRows}
             onPickRow={pickContentsRow}
           />
@@ -1816,6 +1924,33 @@ export function ReaderScreen({
           <Focus className="size-3.5" aria-hidden />
           {t("reader.exitFocus")}
         </button>
+      ) : null}
+
+      {returnPlace && !picked && !help ? (
+        <div
+          className="fixed bottom-5 left-1/2 z-30 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-1 rounded-2xl border border-float-edge bg-float py-1 pr-1.5 pl-3 text-sm shadow-lift"
+          data-reader-return
+        >
+          <button
+            type="button"
+            onClick={restoreReturnPlace}
+            className="inline-flex min-h-9 items-center gap-1.5 pr-1 font-bold whitespace-nowrap text-ink hover:text-accent"
+            data-reader-return-go
+          >
+            <RotateCcw className="size-3.5 shrink-0 text-accent" aria-hidden />
+            {returnPlace.extraId
+              ? t("reader.returnExtra")
+              : t("reader.returnChapter", { n: returnPlace.chapter + 1 })}
+          </button>
+          <button
+            type="button"
+            onClick={() => setReturnPlace(null)}
+            className={cn(btn.icon, "size-8 min-h-8 text-faint hover:text-ink")}
+            aria-label={t("common.close")}
+          >
+            <X className="size-4" aria-hidden />
+          </button>
+        </div>
       ) : null}
 
       {hover ? (
