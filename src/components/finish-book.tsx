@@ -17,7 +17,7 @@ export function FinishBook({ bookId }: { bookId: string }) {
   const finishedAt = asFinishedAt(book.finishedAt);
   return (
     <section
-      className="grid gap-3 rounded-2xl border border-line bg-card/70 p-4 text-center"
+      className="grid gap-3 rounded-2xl border border-line bg-sheet p-5 text-center"
       aria-label={t("finished.endTitle")}
       data-finish-book={finishedAt ? "done" : "open"}
     >

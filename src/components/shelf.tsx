@@ -367,8 +367,8 @@ function ShelfSkeleton() {
       <div className={bookCardGrid}>
         {Array.from({ length: 6 }, (_, index) => (
           <div key={index} className="grid gap-2">
-            <div className="aspect-cover animate-pulse rounded-md bg-line" />
-            <div className="h-4 w-3/4 animate-pulse rounded bg-line" />
+            <div className="aspect-cover animate-pulse rounded-cover bg-sheet" />
+            <div className="h-4 w-3/4 animate-pulse rounded bg-sheet" />
           </div>
         ))}
       </div>

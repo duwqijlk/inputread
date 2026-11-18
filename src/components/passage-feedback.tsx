@@ -290,7 +290,7 @@ export function PassageFeedback({
         "inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
         reason === value
           ? "border-accent bg-accent text-accent-ink"
-          : "border-line/60 bg-card text-ink/80 hover:border-line hover:text-ink",
+          : "border-edge bg-sheet text-ink/85 hover:border-ink/40 hover:text-ink",
       )}
       data-passage-reason={value}
     >
@@ -327,7 +327,7 @@ export function PassageFeedback({
         {pick?.selected}
       </blockquote>
       {state === "done" ? (
-        <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400" role="status" data-passage-thanks>
+        <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-accent" role="status" data-passage-thanks>
           <Check className="size-3.5" aria-hidden />
           {t("passage.thanks")}
         </p>
@@ -340,7 +340,7 @@ export function PassageFeedback({
           </div>
           <textarea
             // 16px on phones: iOS Safari zooms the whole page into a smaller field and stays zoomed.
-            className="mt-3 min-h-16 w-full resize-none rounded-lg border border-line/80 bg-card px-2.5 py-2 text-base text-ink sm:text-sm placeholder:text-muted/60 focus:border-accent focus:outline-none"
+            className="mt-3 min-h-16 w-full resize-none rounded border border-edge bg-paper px-2.5 py-2 text-base text-ink sm:text-sm placeholder:text-faint transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[inset_0_0_0_1px_rgb(var(--accent-rgb))] focus:outline-none"
             value={text}
             maxLength={noteMax}
             rows={pick?.span === "sentence" ? 4 : 2}

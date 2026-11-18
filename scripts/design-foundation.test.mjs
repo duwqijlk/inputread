@@ -119,6 +119,9 @@ test("the interface font and the self-hosted Chinese serif are wired in", () => 
   for (const src of zh.matchAll(/url\("\/fonts\/zh-serif\/([0-9]+\.woff2)"\)/g)) {
     assert.ok(existsSync(new URL(`../public/fonts/zh-serif/${src[1]}`, import.meta.url)), src[1]);
   }
+  const haveZh = new Set([...zh.matchAll(/U\+([0-9A-F]+)/gi)].map((m) => parseInt(m[1], 16)));
+  const missingZh = [...new Set([...read("src/lib/i18n-zh.ts")].filter((c) => c.codePointAt(0) >= 0x2e80 && !haveZh.has(c.codePointAt(0))))];
+  assert.ok(missingZh.length <= 15, `run scripts/subset-zh-serif.py (${missingZh.length} missing glyphs: ${missingZh.join("")})`);
 });
 
 test("non-reader pages and portals share the display face without changing reader defaults", () => {

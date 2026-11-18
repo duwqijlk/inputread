@@ -5,7 +5,7 @@ import { getParagraphNoteFlags, paragraphBlocks } from "@/lib/help-lookup";
 import { useT } from "@/lib/i18n";
 import type { ParagraphHelpView, SentenceInParagraph } from "@/lib/help-flow";
 import { FloatingAside } from "@/components/floating-card";
-import { btn, cn } from "@/components/ui";
+import { btn, cn, subTabs, TabInk } from "@/components/ui";
 import { CreditLine } from "@/components/credit-line";
 import { flowText } from "@/lib/flow-text";
 import { parseGrammarMirror, splitPatternSlots } from "@/lib/grammar-mirror";
@@ -314,10 +314,7 @@ export function ParagraphPanel({
               <div
                 role="tablist"
                 aria-label={t("hp.panelAria")}
-                className={cn(
-                  "grid gap-1 rounded-xl bg-paper/70 p-1",
-                  availableTabs.length === 3 ? "grid-cols-3" : "grid-cols-2",
-                )}
+                className="no-scrollbar relative flex gap-4 overflow-x-auto border-b border-line sm:gap-6"
                 data-part="help-tabs"
               >
                 {availableTabs.map((item) => (
@@ -334,13 +331,15 @@ export function ParagraphPanel({
                       event.currentTarget.closest("aside")?.scrollTo?.(0, 0);
                     }}
                     className={cn(
-                      "min-h-10 rounded-lg px-2.5 text-sm font-medium transition-colors",
-                      activeTab === item.id ? "bg-card text-ink shadow-xs" : "text-muted hover:text-ink",
+                      subTabs.tab,
+                      "whitespace-nowrap text-sm",
+                      activeTab === item.id ? subTabs.on : subTabs.off,
                     )}
                   >
                     {item.label}
                   </button>
                 ))}
+                <TabInk selected={activeTab} />
               </div>
             ) : null}
 
@@ -523,7 +522,7 @@ function renderPatternSlots(pattern: string) {
       return (
         <span
           key={idx}
-          className="mx-0.5 inline-block rounded border border-accent/25 bg-card px-1.5 py-0.5 font-sans text-[0.73rem] font-semibold leading-tight text-accent"
+          className="mx-0.5 inline-block rounded border border-accent/25 bg-float px-1.5 py-0.5 font-sans text-[0.73rem] font-semibold leading-tight text-accent"
         >
           {part.text}
         </span>

@@ -22,6 +22,8 @@ export function NewBooksCarousel({ rows, detailOpen, onOpen }: {
   const previous = useRef("");
   const direction = useRef(1);
   const pointerFocus = useRef(false);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const swiped = useRef(false);
   const index = Math.max(0, rows.findIndex((row) => row.key === selected));
   const active = rows[index];
   const key = active?.key ?? "";
@@ -88,10 +90,33 @@ export function NewBooksCarousel({ rows, detailOpen, onOpen }: {
     <section
       aria-label={t("browse.carousel.label")}
       aria-roledescription={t("browse.carousel.role")}
-      className="relative [overflow-anchor:none]"
+      className="group/carousel relative [overflow-anchor:none]"
       data-new-books-carousel=""
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onTouchStart={(event) => {
+        swiped.current = false;
+        const touch = event.touches[0];
+        swipeStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+      }}
+      onTouchEnd={(event) => {
+        const start = swipeStart.current;
+        swipeStart.current = null;
+        const touch = event.changedTouches[0];
+        if (!start || !touch || rows.length < 2) return;
+        const dx = touch.clientX - start.x;
+        const dy = touch.clientY - start.y;
+        if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+          swiped.current = true;
+          go(index + (dx < 0 ? 1 : -1), dx < 0 ? 1 : -1);
+        }
+      }}
+      onClickCapture={(event) => {
+        if (!swiped.current) return;
+        swiped.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       onPointerDownCapture={() => { pointerFocus.current = true; }}
       onMouseDownCapture={() => { pointerFocus.current = true; }}
       onMouseUpCapture={() => { pointerFocus.current = false; }}
@@ -108,10 +133,10 @@ export function NewBooksCarousel({ rows, detailOpen, onOpen }: {
       </div>
       {rows.length > 1 ? (
         <>
-          <button type="button" className="absolute left-1 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center text-muted hover:text-ink" aria-label={t("browse.carousel.previous")} onClick={() => go(index - 1, -1)}>
+          <button type="button" className="absolute left-1.5 top-1/2 hidden size-9 -translate-y-1/2 items-center justify-center rounded text-faint opacity-70 transition-[color,background-color,opacity] hover:bg-black/[0.05] hover:text-ink group-hover/carousel:opacity-100 focus-visible:opacity-100 sm:flex" aria-label={t("browse.carousel.previous")} onClick={() => go(index - 1, -1)}>
             <ChevronLeft className="size-4" aria-hidden />
           </button>
-          <button type="button" className="absolute right-1 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center text-muted hover:text-ink" aria-label={t("browse.carousel.next")} onClick={() => go(index + 1, 1)}>
+          <button type="button" className="absolute right-1.5 top-1/2 hidden size-9 -translate-y-1/2 items-center justify-center rounded text-faint opacity-70 transition-[color,background-color,opacity] hover:bg-black/[0.05] hover:text-ink group-hover/carousel:opacity-100 focus-visible:opacity-100 sm:flex" aria-label={t("browse.carousel.next")} onClick={() => go(index + 1, 1)}>
             <ChevronRight className="size-4" aria-hidden />
           </button>
           <div className="absolute bottom-0 left-1/2 flex h-10 -translate-x-1/2 items-center" data-carousel-controls="" data-carousel-footer>

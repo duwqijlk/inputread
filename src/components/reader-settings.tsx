@@ -241,10 +241,10 @@ export function ReaderSettings() {
           sideOffset={8}
           collisionPadding={8}
           aria-label={t("rs.aria")}
-          className="anim-pop z-50 max-h-[calc(100dvh-5rem)] w-[min(22rem,calc(100vw-1rem))] overflow-y-auto rounded-2xl border border-line bg-card p-4 text-ink shadow-[0_2px_6px_rgb(0_0_0/0.06),0_24px_48px_-16px_rgb(0_0_0/0.25)]"
+          className="anim-pop z-50 max-h-[calc(100dvh-5rem)] w-[min(22rem,calc(100vw-1rem))] overflow-y-auto rounded-2xl border border-float-edge bg-float p-4 text-ink shadow-lift"
         >
           <SettingsBody />
-          <Popover.Arrow width={14} height={7} className="fill-card stroke-line" />
+          <Popover.Arrow width={14} height={7} className="fill-float stroke-float-edge" />
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

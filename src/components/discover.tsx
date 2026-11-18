@@ -87,10 +87,10 @@ async function loadDiscoverRecords(): Promise<{ records: DiscoverRecord[]; custo
 function CardSkeleton() {
   return (
     <li className={bookCardShell} aria-hidden>
-      <span className="block aspect-cover w-full animate-pulse rounded-md bg-line" />
-      <span className="mt-1 h-4 w-3/4 animate-pulse rounded bg-line" />
-      <span className="h-3 w-1/2 animate-pulse rounded bg-line" />
-      <span className="mt-auto h-3 w-2/3 animate-pulse rounded bg-line" />
+      <span className="block aspect-cover w-full animate-pulse rounded-cover bg-sheet" />
+      <span className="mt-1 h-4 w-3/4 animate-pulse rounded bg-sheet" />
+      <span className="h-3 w-1/2 animate-pulse rounded bg-sheet/80" />
+      <span className="mt-auto h-3 w-2/3 animate-pulse rounded bg-sheet/80" />
     </li>
   );
 }

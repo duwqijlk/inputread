@@ -282,13 +282,13 @@ export function BookCover({
     <span
       ref={frame}
       className={cn(
-        "cover-frame relative block aspect-cover w-full shrink-0 overflow-hidden rounded-cover bg-line shadow-cover transition-[transform,box-shadow] duration-[280ms] [container-type:inline-size]",
+        "cover-frame relative block aspect-cover w-full shrink-0 overflow-hidden rounded-cover bg-sheet shadow-cover transition-[transform,box-shadow] duration-[280ms] [container-type:inline-size]",
         className,
       )}
       {...(showGenerated ? { "data-generated-cover": "" } : {})}
     >
       {!remembered && (pending || (showImage && !imageReady)) ? (
-        <span className="absolute inset-0 bg-line" data-cover-pending="" aria-hidden />
+        <span className="absolute inset-0 bg-sheet" data-cover-pending="" aria-hidden />
       ) : null}
       {showImage ? (
         <img

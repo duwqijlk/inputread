@@ -554,6 +554,14 @@ html[data-ui-font="display"] [class~="[font-variant-numeric:tabular-nums]"] {
     font-style: italic;
   }
 
+  .book-body hr {
+    width: 4.5rem;
+    height: 1px;
+    margin: 2.2em auto;
+    border: 0;
+    background: var(--line);
+  }
+
   .book-body img {
     display: block;
     max-width: 100%;
@@ -1677,6 +1685,9 @@ html[data-ui-font="display"] [class~="[font-variant-numeric:tabular-nums]"] {
 /* Night: every book cover is dimmed a little, so a bright cover does not glare. */
 [data-theme="dark"] .cover-frame > img {
   filter: brightness(0.82);
+}
+[data-theme="dark"] .cover-frame > [data-generated-inner] {
+  filter: brightness(0.88);
 }
 
 /* E-ink hints need a gray ground rather than a colour difference. State rules stay shared. */

@@ -1919,7 +1919,7 @@ export function ReaderScreen({
         <button
           type="button"
           onClick={() => prefs.set({ focus: false })}
-          className="fixed top-3 right-3 z-30 inline-flex min-h-10 items-center gap-1.5 rounded border border-line bg-card/90 px-3 text-xs font-semibold text-muted opacity-60 shadow-sm transition-opacity hover:opacity-100 focus-visible:opacity-100"
+          className="fixed top-3 right-3 z-30 inline-flex min-h-10 items-center gap-1.5 rounded border border-float-edge bg-float/90 px-3 text-xs font-semibold text-muted opacity-70 shadow-lift transition-opacity hover:opacity-100 focus-visible:opacity-100"
         >
           <Focus className="size-3.5" aria-hidden />
           {t("reader.exitFocus")}
@@ -2050,7 +2050,7 @@ export function ReaderScreen({
           <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
-              className={cn(btn.quiet, "min-w-0 flex-1 break-words")}
+              className={cn(btn.quiet, "min-w-0 flex-1")}
               disabled={slots ? slotIndex <= 0 : safeIndex <= 0}
               onClick={() => (slots ? goSlot(slotIndex - 1) : goChapter(safeIndex - 1))}
             >
@@ -2059,7 +2059,7 @@ export function ReaderScreen({
             </button>
             <button
               type="button"
-              className={cn(btn.primary, "min-w-0 flex-1 break-words")}
+              className={cn(btn.primary, "min-w-0 flex-1")}
               disabled={
                 slots ? slotIndex >= slots.length - 1 : safeIndex >= book.chapters.length - 1
               }
