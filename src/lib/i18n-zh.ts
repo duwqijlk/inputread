@@ -996,8 +996,12 @@ export const zh: Record<Key, string> = {
   "hp.easier": "句子释义",
   "hp.core": "句子主干",
   "hp.chunks": "句法拆解",
-  "hp.pattern": "句型",
+  "hp.pattern": "句型模具",
   "hp.grammar": "语法要点",
+  "hp.dailyMirror": "生活场景镜像",
+  "hp.sentenceItem": "第 {n} 句",
+  "hp.showFullSentence": "展开原句",
+  "hp.hideFullSentence": "收起",
   "hp.sentences": "句子帮助",
 
   /* ---- notebook */
