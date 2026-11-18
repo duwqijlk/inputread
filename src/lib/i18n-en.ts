@@ -1016,6 +1016,10 @@ export const en = {
   "hp.chunks": "Clause breakdown",
   "hp.pattern": "Pattern",
   "hp.grammar": "Grammar note",
+  "hp.dailyMirror": "Daily-life mirror",
+  "hp.sentenceItem": "Sentence {n}",
+  "hp.showFullSentence": "Full sentence",
+  "hp.hideFullSentence": "Fold",
   "hp.sentences": "Sentence help",
 
   /* ---- notebook */

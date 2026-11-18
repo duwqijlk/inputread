@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { parseGrammarMirror, splitPatternSlots } from "../src/lib/grammar-mirror.ts";
 import { findNoteSentence } from "../src/lib/note-sentence.ts";
 import { loadAppModules } from "./lib/app-modules.mjs";
 
@@ -107,12 +108,51 @@ test("WordCard and HelpPanels enforce strict separation and full-sentence gramma
   assert.doesNotMatch(panels, /data-part="sentence-core"/);
   assert.doesNotMatch(panels, /data-hard-word/);
   assert.match(panels, /data-part="grammar-help"/);
+  assert.match(panels, /data-part="grammar-switcher"/);
   assert.match(panels, /data-part="sentence-chunks"/);
   assert.match(panels, /data-part="sentence-pattern"/);
+  assert.match(panels, /t\("hp\.dailyMirror"\)/);
 
   const p1 =
     'Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do: once or twice she had peeped into the book her sister was reading, but it had no pictures or conversations in it, \u201cand what is the use of a book,\u201d thought Alice \u201cwithout pictures or conversations?\u201d';
   const span = findNoteSentence(p1, "Alice was beginning to get very tired of sitting by her sister on the bank");
   assert.ok(span);
   assert.equal(p1.slice(span.start, span.end), p1);
+});
+
+test("parseGrammarMirror and splitPatternSlots structure daily-life mirrors and pattern slots", () => {
+  const dashMirror = parseGrammarMirror(
+    "Same shape in daily life: 'The new coach found it advisable to cancel practice.' \u2014 Notice 'it' is a placeholder for the real action.",
+  );
+  assert.deepEqual(dashMirror, {
+    isMirror: true,
+    scene: "The new coach found it advisable to cancel practice.",
+    tip: "Notice 'it' is a placeholder for the real action.",
+  });
+
+  const parenMirror = parseGrammarMirror(
+    "Everyday mirror: 'Never before had she seen such a mess.' (Negative adverb at the front flips 'had she'.)",
+  );
+  assert.deepEqual(parenMirror, {
+    isMirror: true,
+    scene: "Never before had she seen such a mess.",
+    tip: "Negative adverb at the front flips 'had she'.",
+  });
+
+  const plainGrammar = parseGrammarMirror("Present participial clause modifying the subject.");
+  assert.deepEqual(plainGrammar, {
+    isMirror: false,
+    scene: "Present participial clause modifying the subject.",
+    tip: "",
+  });
+
+  assert.deepEqual(
+    splitPatternSlots("[Leader] + found it advisable + to [action] = formal dummy-object frame."),
+    [
+      { slot: true, text: "Leader" },
+      { slot: false, text: " + found it advisable + to " },
+      { slot: true, text: "action" },
+      { slot: false, text: " = formal dummy-object frame." },
+    ],
+  );
 });

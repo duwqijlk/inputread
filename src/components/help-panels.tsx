@@ -8,6 +8,7 @@ import { FloatingAside } from "@/components/floating-card";
 import { btn, cn } from "@/components/ui";
 import { CreditLine } from "@/components/credit-line";
 import { flowText } from "@/lib/flow-text";
+import { parseGrammarMirror, splitPatternSlots } from "@/lib/grammar-mirror";
 import { noteSentenceRange } from "@/lib/note-sentence";
 import { SIDE_PANEL } from "@/components/side-panel";
 
@@ -207,6 +208,8 @@ export function ParagraphPanel({
   const grammar = state.status === "ready" ? state.view.grammar : [];
   const sentences = state.status === "ready" ? state.view.sentences : [];
   const [chosen, setChosen] = useState<number | null>(null);
+  const [grammarAt, setGrammarAt] = useState(0);
+  const safeGrammarAt = grammarAt < grammar.length ? grammarAt : 0;
 
   const availableTabs: Array<{ id: HelpTabId; label: string }> = [];
   if (paragraph) availableTabs.push({ id: "paragraph", label: t("hp.tabParagraph") });
@@ -266,11 +269,14 @@ export function ParagraphPanel({
           paragraphEl={paragraphEl}
           contexts={activeMarkContexts}
           chosen={chosen}
-          onChoose={setChosen}
+          onChoose={(index) => {
+            setChosen(index);
+            if (showGrammar) setGrammarAt(index);
+          }}
           onReveal={onRevealSentence}
         />
       ) : null}
-      <div className="grid gap-4">
+      <div className="grid min-w-0 gap-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="flex min-w-0 items-center gap-2 font-bold tracking-[-0.02em] text-lg leading-tight">
             <span className="text-accent" aria-hidden>
@@ -391,19 +397,54 @@ export function ParagraphPanel({
 
             {showGrammar ? (
               <section
-                className="grid min-w-0"
+                className="grid min-w-0 gap-3"
                 aria-label={t("hp.grammarSection")}
                 data-part="grammar-help"
               >
                 {hasTabs ? null : <h3 className="sr-only">{t("hp.grammarSection")}</h3>}
-                {grammar.map((note, at) => (
+                {grammar.length > 1 ? (
+                  <div
+                    className="flex flex-wrap items-center gap-1.5"
+                    role="tablist"
+                    aria-label={t("hp.grammarSection")}
+                    data-part="grammar-switcher"
+                  >
+                    {grammar.map((item, at) => {
+                      const active = safeGrammarAt === at;
+                      return (
+                        <button
+                          key={`${at}:${item.context}`}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          onClick={(event) => {
+                            setGrammarAt(at);
+                            setChosen(at);
+                            event.currentTarget.closest("aside")?.scrollTo?.(0, 0);
+                          }}
+                          className={cn(
+                            "min-h-8 rounded-lg px-3 text-xs font-semibold transition-colors",
+                            active
+                              ? "bg-accent text-accent-ink shadow-xs"
+                              : "bg-sheet text-muted hover:text-ink",
+                          )}
+                        >
+                          {t("hp.sentenceItem", { n: at + 1 })}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {grammar[safeGrammarAt] ? (
                   <GrammarNote
-                    key={`${at}:${note.context}`}
-                    note={note}
-                    chosen={chosen === at}
-                    onChoose={() => setChosen((now) => (now === at ? null : at))}
+                    key={`${safeGrammarAt}:${grammar[safeGrammarAt].context}`}
+                    note={grammar[safeGrammarAt]}
+                    chosen={chosen === safeGrammarAt}
+                    onChoose={() =>
+                      setChosen((now) => (now === safeGrammarAt ? null : safeGrammarAt))
+                    }
                   />
-                ))}
+                ) : null}
               </section>
             ) : null}
 
@@ -476,14 +517,32 @@ function splitChunk(raw: string): { quote: string; note: string } {
   return quote && note ? { quote, note } : { quote: "", note: raw.trim() };
 }
 
+function renderPatternSlots(pattern: string) {
+  return splitPatternSlots(pattern).map((part, idx) => {
+    if (part.slot) {
+      return (
+        <span
+          key={idx}
+          className="mx-0.5 inline-block rounded border border-accent/25 bg-card px-1.5 py-0.5 font-sans text-[0.73rem] font-semibold leading-tight text-accent"
+        >
+          {part.text}
+        </span>
+      );
+    }
+    return <span key={idx}>{part.text}</span>;
+  });
+}
+
 function TargetSentenceButton({
   sentence,
   chosen,
   onChoose,
+  folded = false,
 }: {
   sentence: string;
   chosen: boolean;
   onChoose: () => void;
+  folded?: boolean;
 }) {
   const { t } = useT();
   return (
@@ -493,15 +552,15 @@ function TargetSentenceButton({
       aria-pressed={chosen}
       aria-label={`${t("hp.original")}: ${sentence}`}
       className={cn(
-        "min-h-11 break-words rounded-r-md py-1 pr-1 pl-3 text-left font-display text-[0.95rem] leading-relaxed italic transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+        "min-h-9 min-w-0 max-w-full w-full overflow-hidden break-words rounded-r-lg py-1.5 pr-2.5 pl-3 text-left font-display text-[0.88rem] leading-snug italic transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         chosen
           ? "border-l-[3px] border-accent bg-mark text-ink"
-          : "border-l-[3px] border-line text-muted hover:text-ink",
+          : "border-l-[3px] border-line bg-sheet/75 text-muted hover:text-ink",
       )}
       lang="en"
       data-part="sentence-context"
     >
-      {sentence}
+      <span className={cn("block min-w-0 max-w-full", folded && "truncate")}>{sentence}</span>
     </button>
   );
 }
@@ -521,48 +580,112 @@ function GrammarNote({
   onChoose: () => void;
 }) {
   const { t } = useT();
+  const [fullOriginal, setFullOriginal] = useState(false);
+  const canFoldOriginal = note.sentence.length > 68;
   const hasChunks = Boolean(note.chunks && note.chunks.length > 0);
+  const mirror = note.grammar ? parseGrammarMirror(note.grammar) : null;
+
   return (
     <div
-      className="grid min-w-0 gap-3 border-t border-line/70 py-3.5 first:border-t-0 first:pt-0 last:pb-0"
+      className="grid min-w-0 gap-3"
       data-grammar-note
       data-sentence-note
       data-chosen={chosen ? "" : undefined}
     >
-      <div className="grid gap-1">
-        <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.original")}</span>
-        <TargetSentenceButton sentence={note.sentence} chosen={chosen} onChoose={onChoose} />
+      <div className="grid min-w-0 gap-1">
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.original")}</span>
+          {canFoldOriginal ? (
+            <button
+              type="button"
+              onClick={() => setFullOriginal((value) => !value)}
+              className="inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-xs text-muted hover:bg-sheet hover:text-ink"
+            >
+              <span>{fullOriginal ? t("hp.hideFullSentence") : t("hp.showFullSentence")}</span>
+              <ChevronDown
+                className={cn("size-3.5 transition-transform", fullOriginal && "rotate-180")}
+                aria-hidden
+              />
+            </button>
+          ) : null}
+        </div>
+        <TargetSentenceButton sentence={note.sentence} chosen={chosen} onChoose={onChoose} folded={canFoldOriginal && !fullOriginal} />
       </div>
 
+      {mirror ? (
+        mirror.isMirror ? (
+          <div
+            className="grid min-w-0 gap-1.5 rounded-xl border border-accent/25 bg-accent-soft/60 px-3.5 py-2.5"
+            data-part="grammar"
+          >
+            <div className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-accent">
+              <span aria-hidden>✦</span>
+              <span>{t("hp.dailyMirror")}</span>
+            </div>
+            <p className="break-words font-display text-[0.94rem] leading-relaxed text-ink" lang="en">
+              {mirror.scene}
+            </p>
+            {mirror.tip ? (
+              <p
+                className="break-words border-t border-accent/15 pt-1.5 text-xs leading-relaxed text-muted"
+                lang="en"
+              >
+                {mirror.tip}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <div className="grid min-w-0 gap-1 rounded-xl bg-sheet px-3 py-2.5" data-part="grammar">
+            <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.grammar")}</span>
+            <p className="break-words text-sm leading-relaxed text-muted" lang="en">
+              {mirror.scene}
+            </p>
+          </div>
+        )
+      ) : null}
+
       {note.simple ? (
-        <div className="grid gap-1">
+        <div className="grid min-w-0 gap-1">
           <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.easier")}</span>
-          <p className="break-words font-display text-[1rem] leading-relaxed text-ink" lang="en" data-part="easier">
+          <p className="break-words font-display text-[0.95rem] leading-relaxed text-ink" lang="en" data-part="easier">
             {note.simple}
           </p>
         </div>
       ) : null}
 
       {hasChunks ? (
-        <div className="grid gap-1.5">
+        <div className="grid min-w-0 gap-2">
           <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.chunks")}</span>
           <ul
-            className="grid gap-2 border-l-2 border-line py-0.5 pl-3 text-[0.92rem] leading-relaxed"
+            className="grid gap-2"
             aria-label={t("hp.chunks")}
             data-part="sentence-chunks"
           >
             {note.chunks?.map((chunk, index) => {
               const parsed = splitChunk(chunk);
               return (
-                <li key={`${index}:${chunk.slice(0, 24)}`} className="break-words" lang="en">
+                <li
+                  key={`${index}:${chunk.slice(0, 24)}`}
+                  className="grid grid-cols-[1.35rem_minmax(0,1fr)] items-start gap-2.5 rounded-xl bg-sheet/80 px-3 py-2.5"
+                  lang="en"
+                >
+                  <span
+                    className="mt-0.5 flex size-5 items-center justify-center rounded-full bg-accent-soft text-[0.7rem] font-bold text-accent"
+                    aria-hidden
+                  >
+                    {index + 1}
+                  </span>
                   {parsed.quote ? (
-                    <>
-                      <span className="font-display font-bold text-ink">{parsed.quote}</span>
-                      <span className="mx-1.5 text-faint" aria-hidden>—</span>
-                      <span className="text-muted">{parsed.note}</span>
-                    </>
+                    <div className="grid min-w-0 gap-0.5">
+                      <span className="break-words font-display text-[0.9rem] font-semibold leading-snug text-ink">
+                        {parsed.quote}
+                      </span>
+                      <span className="break-words text-[0.84rem] leading-relaxed text-muted">
+                        {parsed.note}
+                      </span>
+                    </div>
                   ) : (
-                    <span className="text-muted">{parsed.note}</span>
+                    <span className="break-words text-[0.85rem] leading-relaxed text-muted">{parsed.note}</span>
                   )}
                 </li>
               );
@@ -572,17 +695,15 @@ function GrammarNote({
       ) : null}
 
       {note.pattern ? (
-        <p className="break-words text-xs leading-relaxed text-muted" lang="en" data-part="sentence-pattern">
-          <span className="mr-1.5 font-semibold text-accent">{t("hp.pattern")}</span>
-          {note.pattern}
-        </p>
-      ) : null}
-
-      {note.grammar ? (
-        <p className="break-words text-sm leading-relaxed text-muted" lang="en" data-part="grammar">
-          <span className="mr-1.5 text-xs font-semibold text-accent">{t("hp.grammar")}</span>
-          {note.grammar}
-        </p>
+        <div
+          className="grid min-w-0 gap-1 rounded-xl border border-line/80 bg-sheet/65 px-3 py-2.5"
+          data-part="sentence-pattern"
+        >
+          <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.pattern")}</span>
+          <p className="break-words text-[0.83rem] leading-relaxed text-muted" lang="en">
+            {renderPatternSlots(note.pattern)}
+          </p>
+        </div>
       ) : null}
     </div>
   );
