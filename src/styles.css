@@ -1792,7 +1792,8 @@ html[data-ui-font="display"] [class~="[font-variant-numeric:tabular-nums]"] {
   }
 }
 /* The sliding line under the selected sub-tab (TabInk in ui.tsx). */
-[data-tab-ink] [role="tab"] {
+[data-tab-ink] [role="tab"],
+[data-tab-ink] [aria-pressed="true"] {
   border-bottom-color: transparent;
 }
 .tab-ink {

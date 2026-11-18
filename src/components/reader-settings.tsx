@@ -1,7 +1,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
 import { Type, X } from "lucide-react";
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useSheetDrag } from "@/components/floating-card";
 import { useT, type Key } from "@/lib/i18n";
 import {
   COLUMN_MAX,
@@ -207,15 +208,18 @@ const trigger = cn(btn.icon, "data-[state=open]:bg-sheet data-[state=open]:text-
 export function ReaderSettings() {
   const { t } = useT();
   const phone = useSyncExternalStore(subscribePhone, phoneNow, () => false);
+  const [open, setOpen] = useState(false);
+  const sheet = useRef<HTMLDivElement | null>(null);
+  useSheetDrag(sheet, () => setOpen(false), PHONE, phone && open);
   if (phone) {
     return (
-      <Dialog.Root>
+      <Dialog.Root open={open} onOpenChange={setOpen}>
         <Dialog.Trigger className={trigger} aria-label={t("rs.aria")}>
           <Type className="size-5" aria-hidden />
         </Dialog.Trigger>
         <Dialog.Portal>
           <Dialog.Overlay className={panel.overlay} />
-          <Dialog.Content className={cn(panel.content, "max-sm:gap-3")} aria-describedby={undefined}>
+          <Dialog.Content ref={sheet} className={cn(panel.content, "max-sm:gap-3")} aria-describedby={undefined}>
             <PanelHandle />
             <div className={panel.head}>
               <Dialog.Title className="m-0 text-lg font-bold tracking-[-0.02em]">{t("rs.title")}</Dialog.Title>

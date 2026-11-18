@@ -1915,6 +1915,14 @@ export function ReaderScreen({
         <ProgressBar value={fraction} className="h-0.5 rounded-none" label={t("reader.progress")} />
       </header>
 
+      {barHidden && !focus ? (
+        <div
+          aria-hidden
+          className="fixed inset-x-0 top-0 z-20 hidden h-3 [@media(hover:hover)_and_(pointer:fine)]:block"
+          onMouseEnter={() => setBarHidden(false)}
+        />
+      ) : null}
+
       {focus ? (
         <button
           type="button"

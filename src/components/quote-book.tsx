@@ -35,6 +35,7 @@ export function QuoteBook({
   const [order, setOrder] = useState<Order>("recent");
   const [only, setOnly] = useState(() => (quotes.some((quote) => quote.book === bookKey) ? bookKey : ""));
   const [undo, setUndo] = useState<{ id: number; quote: QuoteRecord } | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!undo) return;
@@ -176,9 +177,14 @@ export function QuoteBook({
                       ) : null}
                       <blockquote
                         lang="en"
+                        onClick={() => {
+                          if (window.getSelection()?.toString()) return;
+                          setExpanded((prev) => ({ ...prev, [quote.id]: !prev[quote.id] }));
+                        }}
                         className={cn(
                           "m-0 overflow-hidden font-display text-[17px] leading-[1.6] text-ink wrap-any sm:text-lg",
-                          quote.whole ? "line-clamp-4" : "line-clamp-6",
+                          quote.text.length > 140 && "cursor-pointer",
+                          !expanded[quote.id] && (quote.whole ? "line-clamp-4" : "line-clamp-6"),
                         )}
                       >
                         {quote.text}

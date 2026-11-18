@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { Download, Share2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSheetDrag } from "@/components/floating-card";
 import { useT } from "@/lib/i18n";
 import { finishedDate, readingOverview } from "@/lib/reading-stats";
 import {
@@ -75,6 +76,8 @@ export type ShareWhat = { kind: "book"; bookId: string } | { kind: "overview" };
  */
 export default function ShareDialog({ what, open, onOpenChange }: { what: ShareWhat; open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t, tn, locale } = useT();
+  const sheet = useRef<HTMLDivElement | null>(null);
+  useSheetDrag(sheet, () => onOpenChange(false), "(max-width: 639px)", open);
   const books = useVocab((state) => state.books);
   const words = useVocab((state) => state.words);
   const readDays = useVocab((state) => state.readDays);
@@ -205,7 +208,7 @@ export default function ShareDialog({ what, open, onOpenChange }: { what: ShareW
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className={panel.overlay} />
-        <Dialog.Content className={cn(panel.content, "sm:w-[min(26rem,calc(100vw-2rem))]")} data-share-dialog={what.kind}>
+        <Dialog.Content ref={sheet} className={cn(panel.content, "sm:w-[min(26rem,calc(100vw-2rem))]")} data-share-dialog={what.kind}>
           <PanelHandle />
           <div className={panel.head}>
             <Dialog.Title className={panel.title}>{t("share.title")}</Dialog.Title>

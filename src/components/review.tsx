@@ -648,9 +648,14 @@ function Session({
           <div className={cn("review-flip", revealed && "is-flipped")}>
             <article className="review-flip-inner grid" data-review-card>
               <div
-                className="review-face grid content-start gap-4 rounded-2xl bg-sheet px-4 pt-5 pb-6 text-center sm:min-h-[22rem] sm:gap-5 sm:px-8 sm:pt-7 sm:pb-8"
+                className="review-face grid cursor-pointer content-start gap-4 rounded-2xl bg-sheet px-4 pt-5 pb-6 text-center sm:min-h-[22rem] sm:gap-5 sm:px-8 sm:pt-7 sm:pb-8"
                 aria-hidden={revealed || undefined}
                 inert={revealed || undefined}
+                onClick={(event) => {
+                  if (revealed || (event.target as Element | null)?.closest('button, a, [role="button"]')) return;
+                  if (window.getSelection()?.toString()) return;
+                  setRevealed(true);
+                }}
               >
                 {top}
                 <CardHead word={current} heading />

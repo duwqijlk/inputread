@@ -367,7 +367,7 @@ export function WordCard({
             <button
               type="button"
               className={cn(
-                "inline-flex size-11 shrink-0 items-center justify-center rounded transition-colors duration-100 hover:bg-sheet disabled:cursor-not-allowed disabled:opacity-40",
+                "inline-flex size-11 shrink-0 items-center justify-center rounded transition-[background-color,color,transform] duration-100 hover:bg-sheet active:scale-[0.92] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
                 saved ? "text-accent" : "text-ink/80 hover:text-ink",
               )}
               disabled={!saved && !effectiveCanSave}
@@ -392,7 +392,7 @@ export function WordCard({
             </button>
             <button
               type="button"
-              className="inline-flex size-11 shrink-0 items-center justify-center rounded text-faint transition-colors duration-100 hover:bg-sheet hover:text-ink"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded text-faint transition-[background-color,color,transform] duration-100 hover:bg-sheet hover:text-ink active:scale-[0.92]"
               onClick={() => onClose(true)}
               aria-label={t("card.close")}
               data-panel-close

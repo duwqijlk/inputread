@@ -517,8 +517,8 @@ function BookCard({
             <Menu.Trigger
               ref={menuTrigger}
               className={cn(
-                "relative inline-flex min-h-10 min-w-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded text-faint select-none hover:bg-sheet hover:text-ink -mr-1 sm:w-8 sm:-mr-2 [-webkit-touch-callout:none]",
-                armed && "bg-sheet text-ink",
+                "relative inline-flex min-h-10 min-w-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded text-faint select-none transition-colors hover:bg-sheet hover:text-ink -mr-1 sm:w-8 sm:-mr-2 [-webkit-touch-callout:none]",
+                armed && "bg-accent-soft text-accent ring-1 ring-accent/40",
               )}
               aria-label={t("shelf.moreAria", { title: book.title })}
               aria-describedby={armed ? hintId : undefined}
@@ -587,7 +587,10 @@ function BookCard({
             >
               <MoreVertical className="size-4" aria-hidden />
               {armed ? (
-                <span id={hintId} className="sr-only">
+                <span
+                  id={hintId}
+                  className="pointer-events-none absolute top-1/2 right-full z-20 mr-1 -translate-y-1/2 whitespace-nowrap rounded border border-float-edge bg-float px-2 py-1 text-[11px] leading-none font-bold text-accent shadow-lift"
+                >
                   {t("shelf.moreAgain")}
                 </span>
               ) : null}

@@ -1,11 +1,19 @@
 import { FocusScope } from "@radix-ui/react-focus-scope";
 import { hideOthers } from "aria-hidden";
 import { List, Search, X } from "lucide-react";
-import { useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { RemoveScroll } from "react-remove-scroll";
 import { useT } from "@/lib/i18n";
 import { btn, cn, field } from "@/components/ui";
+
+const DRAWER_SPRING = "transform var(--dur-spring, 600ms) var(--ease-spring-soft, ease-out)";
+function drawerSpringBack(): string {
+  const still =
+    (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) ||
+    document.documentElement.getAttribute("data-theme") === "eink";
+  return still ? "none" : DRAWER_SPRING;
+}
 
 /** Keep the reader's scrollbar and inherited styles unchanged, even for a very long chapter. */
 function ContentsModal({
@@ -61,6 +69,113 @@ function ContentsModal({
     const listBox = scroller.getBoundingClientRect();
     scroller.scrollTop += rowBox.top - listBox.top - (scroller.clientHeight - rowBox.height) / 2;
   }, [current, list]);
+
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const el = panel.current;
+    if (!el) return;
+    let startX = 0;
+    let startY = 0;
+    let lastX = 0;
+    let lastT = 0;
+    let speed = 0;
+    let mode: "idle" | "undecided" | "dismiss" | "scroll" = "idle";
+    let timer = 0;
+    let suppressClick = false;
+    const clearTimer = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = 0;
+    };
+    const onTouchStart = (event: TouchEvent) => {
+      clearTimer();
+      suppressClick = false;
+      const touch = event.touches[0];
+      const origin = event.target instanceof Element ? event.target : null;
+      if (event.touches.length !== 1 || !touch || origin?.closest("input, textarea, select")) {
+        mode = "idle";
+        return;
+      }
+      startX = touch.clientX;
+      startY = touch.clientY;
+      lastX = touch.clientX;
+      lastT = Date.now();
+      speed = 0;
+      mode = "undecided";
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (mode === "idle" || mode === "scroll") return;
+      const touch = event.touches[0];
+      if (!touch || event.touches.length !== 1) return;
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      const now = Date.now();
+      if (now > lastT) speed = speed * 0.4 + ((touch.clientX - lastX) / (now - lastT)) * 0.6;
+      lastT = now;
+      lastX = touch.clientX;
+      if (mode === "undecided") {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        if (dx < 0 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+          mode = "dismiss";
+          el.style.animation = "none";
+          el.style.transition = "none";
+        } else {
+          mode = "scroll";
+          return;
+        }
+      }
+      if (!event.cancelable) {
+        mode = "scroll";
+        el.style.transform = "";
+        return;
+      }
+      event.preventDefault();
+      el.style.transform = `translateX(${Math.min(0, dx)}px)`;
+    };
+    const onTouchEnd = () => {
+      if (mode !== "dismiss") {
+        mode = "idle";
+        return;
+      }
+      const dx = lastX - startX;
+      mode = "idle";
+      suppressClick = true;
+      const w = Math.max(1, el.offsetWidth);
+      if (-dx > w * 0.28 || (-dx > 16 && speed < -0.5)) {
+        el.style.transition = `transform ${Math.round(Math.max(120, Math.min(240, (w + dx) / Math.max(-speed, 1))))}ms ease-out`;
+        el.style.transform = "translateX(-105%)";
+        timer = window.setTimeout(() => closeRef.current(), 160);
+      } else {
+        el.style.transition = drawerSpringBack();
+        el.style.transform = "";
+      }
+    };
+    const onTouchCancel = () => {
+      clearTimer();
+      mode = "idle";
+      el.style.transition = drawerSpringBack();
+      el.style.transform = "";
+    };
+    const onClick = (event: MouseEvent) => {
+      if (!suppressClick) return;
+      suppressClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", onTouchCancel);
+    el.addEventListener("click", onClick, true);
+    return () => {
+      clearTimer();
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchCancel);
+      el.removeEventListener("click", onClick, true);
+    };
+  }, []);
 
   return createPortal(
     <RemoveScroll forwardProps removeScrollBar={false} inert={false} allowPinchZoom>

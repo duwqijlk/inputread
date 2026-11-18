@@ -362,24 +362,29 @@ export function Notebook({
             )}
           </p>
         </div>
-        <div className="inline-flex rounded-full bg-sheet p-1" role="group" aria-label={t("nb.title")} data-notebook-kind>
-          {(["words", "quotes"] as const).map((kind) => (
-            <button
-              key={kind}
-              type="button"
-              aria-pressed={tab === kind}
-              onClick={() => pickTab(kind)}
-              data-kind={kind}
-              className={cn(
-                "inline-flex min-h-9 items-center gap-1.5 rounded-full px-4 text-sm font-bold transition-colors",
-                tab === kind ? "bg-paper text-ink shadow-[0_1px_3px_rgb(0_0_0/0.12)]" : "text-muted hover:text-ink",
-              )}
-            >
-              {kind === "words" ? t("nb.kindWords") : t("nb.kindQuotes")}
-              {/* Only quotes carry a count: the words' total is on the All tab below (design system NotebookScreen). */}
-              {kind === "quotes" ? <small className="num text-xs font-normal text-faint">{quoteCount.toLocaleString()}</small> : null}
-            </button>
-          ))}
+        <div className={cn(subTabs.row, "relative gap-5 self-end")} role="group" aria-label={t("nb.title")} data-notebook-kind>
+          <TabInk selected={tab} />
+          {(["words", "quotes"] as const).map((kind) => {
+            const on = tab === kind;
+            return (
+              <button
+                key={kind}
+                type="button"
+                aria-pressed={on}
+                onClick={() => pickTab(kind)}
+                data-kind={kind}
+                className={cn(
+                  subTabs.tab,
+                  "gap-1.5",
+                  on ? subTabs.on : subTabs.off,
+                )}
+              >
+                {kind === "words" ? t("nb.kindWords") : t("nb.kindQuotes")}
+                {/* Only quotes carry a count: the words' total is on the All tab below (design system NotebookScreen). */}
+                {kind === "quotes" ? <small className="num text-xs font-normal text-faint">{quoteCount.toLocaleString()}</small> : null}
+              </button>
+            );
+          })}
         </div>
       </header>
 

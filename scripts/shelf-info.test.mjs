@@ -25,7 +25,7 @@ const dialog = {
   Content: ({ onCloseAutoFocus: _focus, ...props }) => React.createElement("section", props),
   Title: element("h2"), Description: element("p"), Close: element("button"),
 };
-const ui = { btn: { quiet: "quiet" }, cn: (...values) => values.filter(Boolean).join(" "), ProgressBar: () => null };
+const ui = { btn: { quiet: "quiet", icon: "icon" }, cn: (...values) => values.filter(Boolean).join(" "), ProgressBar: () => null, PanelHandle: () => null };
 function loadComponent(text, stubs) {
   const js = ts.transpileModule(text, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2019, jsx: ts.JsxEmit.ReactJSX },
@@ -44,7 +44,9 @@ const shared = {
   "@/components/ui": ui,
 };
 const { ShelfBookInfo } = loadComponent(infoSource, {
-  ...shared, "@/lib/book-meta": { isbnDigits, readSeries },
+  ...shared,
+  "@/components/floating-card": { useSheetDrag: () => {} },
+  "@/lib/book-meta": { isbnDigits, readSeries },
 });
 const book = (extra = {}) => ({
   id: "test-book", title: "A Local Book", author: "A Writer", cloth: "cloth",

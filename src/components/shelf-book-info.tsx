@@ -1,8 +1,11 @@
 import * as Dialog from "@radix-ui/react-dialog";
+import { X } from "lucide-react";
+import { useRef } from "react";
+import { useSheetDrag } from "@/components/floating-card";
 import { isbnDigits, readSeries } from "@/lib/book-meta";
 import { useT } from "@/lib/i18n";
 import type { Book } from "@/lib/vocab-model";
-import { btn } from "@/components/ui";
+import { btn, cn, PanelHandle } from "@/components/ui";
 
 /** Shelf facts only: opening this dialog never loads a catalog, blurb, or book body. */
 export function ShelfBookInfo({
@@ -24,106 +27,133 @@ export function ShelfBookInfo({
   onReturnFocus: () => void;
 }) {
   const { t } = useT();
+  const sheet = useRef<HTMLDivElement | null>(null);
+  useSheetDrag(sheet, () => onOpenChange(false), "(max-width: 639px)", open);
   const isbn = isbnDigits(book.isbn);
   const series = readSeries(book.series, book.seriesNumber);
+  const lexile = book.lexile?.trim() ?? "";
   const match = typeof book.matchRate === "number" && Number.isFinite(book.matchRate)
     && book.matchRate >= 0 && book.matchRate <= 100 ? book.matchRate : null;
+  const hasDue = Number.isFinite(due) && due >= 0;
   const reason = book.oldFashionedReason?.trim();
   const fileStatus = book.needsEpub ? t("shelf.needsEpub")
     : book.source === "epub" && fileHere !== null ? t(fileHere ? "shelf.infoFileHere" : "shelf.fileMissing")
     : book.source === "notes" ? t("shelf.infoNotesOnly") : "";
+  const tileCount = Number(Boolean(lexile)) + Number(hasDue);
+  const hasRows = Boolean(
+    book.author.trim() ||
+    series.series ||
+    match !== null ||
+    fileStatus ||
+    classic ||
+    isbn ||
+    book.oldFashioned ||
+    reason,
+  );
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/[0.32]" />
         <Dialog.Content
-          className="anim-pop fixed top-1/2 left-1/2 z-50 w-[calc(100vw-2rem)] max-w-md max-h-[calc(100vh-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-float-edge bg-float p-5 text-ink shadow-lift "
+          ref={sheet}
+          className="panel-in fixed z-50 grid content-start gap-4 border-float-edge bg-float text-ink shadow-lift max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[88vh] max-sm:rounded-t-sheet max-sm:border-t max-sm:px-5 max-sm:pt-2 max-sm:pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:top-1/2 sm:left-1/2 sm:w-[calc(100vw-2rem)] sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border sm:p-5 max-h-[calc(100vh-2rem)] overflow-y-auto overscroll-contain"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             onReturnFocus();
           }}
           data-shelf-book-info=""
         >
-          <div className="flex items-start justify-between gap-3">
-            <Dialog.Title className="font-bold tracking-[-0.02em] text-xl">{t("shelf.info")}</Dialog.Title>
-            <Dialog.Close type="button" className={btn.quiet}>{t("common.close")}</Dialog.Close>
+          <PanelHandle />
+          <div className="grid gap-1">
+            <div className="flex items-start justify-between gap-3">
+              <Dialog.Title className="m-0 font-bold tracking-[-0.02em] text-xl">{t("shelf.info")}</Dialog.Title>
+              <Dialog.Close type="button" className={cn(btn.icon, "-mt-1.5 -mr-2.5")} aria-label={t("common.close")}>
+                <X className="size-5" aria-hidden />
+              </Dialog.Close>
+            </div>
+            <Dialog.Description className="m-0 text-xs leading-relaxed text-muted">
+              {t("shelf.infoLocal")}
+            </Dialog.Description>
           </div>
-          <Dialog.Description className="mt-1 text-xs leading-relaxed text-muted">
-            {t("shelf.infoLocal")}
-          </Dialog.Description>
           {book.title.trim() ? (
-            <h3 className="mt-5 break-words font-display text-lg leading-snug font-semibold" lang="en">
+            <h3 className="m-0 break-words font-display text-lg leading-snug font-semibold" lang="en">
               {book.title}
             </h3>
           ) : null}
-          <dl className="mt-4 grid gap-4 text-sm leading-relaxed [&_dt]:text-xs [&_dt]:font-medium [&_dt]:text-muted [&_dd]:mt-0.5 [&_dd]:break-words">
-            {book.author.trim() ? (
-              <div data-info-author="">
-                <dt>{t("shelf.authorLabel")}</dt>
-                <dd lang="en">{book.author}</dd>
-              </div>
-            ) : null}
-            {series.series ? (
-              <div data-info-series="">
-                <dt>{t("shelf.seriesLabel")}</dt>
-                <dd>
-                  <span lang="en">{series.series}</span>
-                  {series.seriesNumber > 0 ? ` · ${t("shelf.infoSeriesNumber", { n: series.seriesNumber })}` : ""}
-                </dd>
-              </div>
-            ) : null}
-            {book.lexile?.trim() ? (
-              <div data-info-lexile="">
-                <dt>{t("lexile.name")}</dt>
-                <dd lang="en">{book.lexile}</dd>
-              </div>
-            ) : null}
-            {isbn ? (
-              <div data-info-isbn="">
-                <dt>{t("isbn.name")}</dt>
-                <dd className="tabular-nums" lang="en">{isbn}</dd>
-              </div>
-            ) : null}
-            {match !== null ? (
-              <div data-info-match={match}>
-                <dt>{t("shelf.infoMatch")}</dt>
-                <dd>
-                  <p className={match < 80 ? "font-medium text-warn" : "font-medium"}>
-                    {t("match.short", { n: Math.round(match) })}
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted">{t("shelf.infoMatchNote")}</p>
-                </dd>
-              </div>
-            ) : null}
-            {Number.isFinite(due) && due >= 0 ? (
-              <div data-info-due={due}>
-                <dt>{t("shelf.infoDue")}</dt>
-                <dd className="tabular-nums">{t("shelf.due", { n: due })}</dd>
-              </div>
-            ) : null}
-            {fileStatus ? (
-              <div data-info-file="">
-                <dt>{t("shelf.infoFile")}</dt>
-                <dd>{fileStatus}</dd>
-              </div>
-            ) : null}
-            {classic ? (
-              <div data-info-public-domain="">
-                <dt>{t("shelf.infoAvailability")}</dt>
-                <dd>{t("shelf.classic")}</dd>
-              </div>
-            ) : null}
-            {book.oldFashioned || reason ? (
-              <div data-info-old-fashioned="">
-                <dt>{t("shelf.infoLanguage")}</dt>
-                <dd>
-                  <p>{t("shelf.oldFashioned")} · {t("shelf.oldFashionedNote")}</p>
-                  {reason ? <p className="mt-1 text-muted" lang="en">{reason}</p> : null}
-                </dd>
-              </div>
-            ) : null}
-          </dl>
+          {tileCount > 0 ? (
+            <dl className={cn("m-0 grid gap-2", tileCount > 1 ? "grid-cols-2" : "grid-cols-1")}>
+              {lexile ? (
+                <div className="grid content-start gap-1 rounded-2xl bg-sheet px-3.5 pt-2.5 pb-3" data-info-lexile="">
+                  <dt className="text-xs text-faint">{t("lexile.name")}</dt>
+                  <dd className="m-0 font-display text-xl leading-none font-bold tabular-nums" lang="en">{lexile}</dd>
+                </div>
+              ) : null}
+              {hasDue ? (
+                <div className="grid content-start gap-1 rounded-2xl bg-sheet px-3.5 pt-2.5 pb-3" data-info-due={due}>
+                  <dt className="text-xs text-faint">{t("shelf.infoDue")}</dt>
+                  <dd className="m-0 font-display text-xl leading-none font-bold tabular-nums">{t("shelf.due", { n: due })}</dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
+          {hasRows ? (
+            <dl className="m-0 grid divide-y divide-line rounded-2xl bg-sheet px-4 py-1 text-sm leading-relaxed [&_dt]:text-xs [&_dt]:font-medium [&_dt]:text-faint [&_dd]:m-0 [&_dd]:mt-0.5 [&_dd]:break-words">
+              {book.author.trim() ? (
+                <div className="py-2.5" data-info-author="">
+                  <dt>{t("shelf.authorLabel")}</dt>
+                  <dd lang="en">{book.author}</dd>
+                </div>
+              ) : null}
+              {series.series ? (
+                <div className="py-2.5" data-info-series="">
+                  <dt>{t("shelf.seriesLabel")}</dt>
+                  <dd>
+                    <span lang="en">{series.series}</span>
+                    {series.seriesNumber > 0 ? ` · ${t("shelf.infoSeriesNumber", { n: series.seriesNumber })}` : ""}
+                  </dd>
+                </div>
+              ) : null}
+              {match !== null ? (
+                <div className="py-2.5" data-info-match={match}>
+                  <dt>{t("shelf.infoMatch")}</dt>
+                  <dd>
+                    <p className={match < 80 ? "font-medium text-warn" : "font-medium"}>
+                      {t("match.short", { n: Math.round(match) })}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted">{t("shelf.infoMatchNote")}</p>
+                  </dd>
+                </div>
+              ) : null}
+              {fileStatus ? (
+                <div className="py-2.5" data-info-file="">
+                  <dt>{t("shelf.infoFile")}</dt>
+                  <dd>{fileStatus}</dd>
+                </div>
+              ) : null}
+              {classic ? (
+                <div className="py-2.5" data-info-public-domain="">
+                  <dt>{t("shelf.infoAvailability")}</dt>
+                  <dd>{t("shelf.classic")}</dd>
+                </div>
+              ) : null}
+              {isbn ? (
+                <div className="py-2.5" data-info-isbn="">
+                  <dt>{t("isbn.name")}</dt>
+                  <dd className="tabular-nums" lang="en">{isbn}</dd>
+                </div>
+              ) : null}
+              {book.oldFashioned || reason ? (
+                <div className="py-2.5" data-info-old-fashioned="">
+                  <dt>{t("shelf.infoLanguage")}</dt>
+                  <dd>
+                    <p>{t("shelf.oldFashioned")} · {t("shelf.oldFashionedNote")}</p>
+                    {reason ? <p className="mt-1 text-muted" lang="en">{reason}</p> : null}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

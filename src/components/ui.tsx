@@ -63,10 +63,11 @@ export function TabInk({ selected }: { selected: string }) {
     if (!ink || !row) return;
     row.setAttribute("data-tab-ink", "");
     const measure = () => {
-      const tab = row.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+      const tab = row.querySelector<HTMLElement>('[role="tab"][aria-selected="true"], [aria-pressed="true"]');
       if (tab) setBox({ left: tab.offsetLeft, width: tab.offsetWidth });
     };
     measure();
+    void document.fonts?.ready?.then(measure).catch(() => undefined);
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
     observer?.observe(row);
     return () => {

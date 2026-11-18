@@ -53,8 +53,11 @@ test("book detail: four numbers at 24px (20px on a phone), labels 13px", () => {
   assert.match(discover, /text-\[20px\] leading-none sm:text-2xl font-display/);
 });
 
-test("sheets follow the finger on a phone: the book detail and the tutorial list", () => {
+test("sheets follow the finger on a phone: the book detail, settings, share, shelf info, and tutorial list", () => {
   assert.match(read("src/components/floating-card.tsx"), /export function useSheetDrag\(/);
   assert.match(read("src/components/discover-browse.tsx"), /useSheetDrag\(sheet, onClose, "\(max-width: 639px\)", open\)/);
+  assert.match(read("src/components/reader-settings.tsx"), /useSheetDrag\(sheet, \(\) => setOpen\(false\), PHONE, phone && open\)/);
+  assert.match(read("src/components/share-dialog.tsx"), /useSheetDrag\(sheet, \(\) => onOpenChange\(false\), "\(max-width: 639px\)", open\)/);
+  assert.match(read("src/components/shelf-book-info.tsx"), /useSheetDrag\(sheet, \(\) => onOpenChange\(false\), "\(max-width: 639px\)", open\)/);
   assert.match(read("src/components/tutorial-tab.tsx"), /useSheetDrag\(box, hide, PHONE, from === "center" && phone\)/);
 });

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { btn, cn, subTabs } from "@/components/ui";
+import { btn, cn, subTabs, TabInk } from "@/components/ui";
 import { BOOK_GENRES, type BookGenre } from "@/lib/book-genres";
 import { useT } from "@/lib/i18n";
+import { motionOff } from "@/lib/motion";
 
 /** A third navigation level: always available above both home and filtered results. */
 export function DiscoverGenres({ genre, onSelect }: {
@@ -52,8 +53,20 @@ export function DiscoverGenres({ genre, onSelect }: {
 
   function move(direction: number) {
     const node = strip.current;
-    if (node) node.scrollLeft += direction * Math.max(120, node.clientWidth * 0.75);
+    if (!node) return;
+    const step = direction * Math.max(120, node.clientWidth * 0.75);
+    if (typeof node.scrollBy === "function" && !motionOff()) node.scrollBy({ left: step, behavior: "smooth" });
+    else node.scrollLeft += step;
   }
+
+  const fadeMask =
+    edges.left && edges.right
+      ? "linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent)"
+      : edges.left
+        ? "linear-gradient(to right, transparent, #000 20px)"
+        : edges.right
+          ? "linear-gradient(to right, #000 calc(100% - 20px), transparent)"
+          : undefined;
 
   return (
     <div className="flex min-w-0 items-center gap-2 border-b border-line" role="group" aria-label={t("browse.genres")} data-discover-genres>
@@ -62,7 +75,13 @@ export function DiscoverGenres({ genre, onSelect }: {
           <ChevronLeft className="size-3.5" aria-hidden />
         </button>
       ) : null}
-      <div ref={strip} className="no-scrollbar flex min-w-0 flex-1 gap-5 overflow-x-auto overflow-y-hidden" data-genre-strip>
+      <div
+        ref={strip}
+        className="no-scrollbar relative flex min-w-0 flex-1 gap-5 overflow-x-auto overflow-y-hidden"
+        style={fadeMask ? { WebkitMaskImage: fadeMask, maskImage: fadeMask } : undefined}
+        data-genre-strip
+      >
+        <TabInk selected={genre ?? "all"} />
         {[undefined, ...BOOK_GENRES].map((value) => {
           const selected = genre === value;
           return (
