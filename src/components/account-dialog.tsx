@@ -1,5 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { Camera, ChevronRight, Download, Eye, EyeOff, Pencil, X } from "lucide-react";
+import { Camera, ChevronLeft, ChevronRight, Download, Eye, EyeOff, Pencil, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAccount, type AccountMode, type SyncStatus } from "@/lib/account-store";
 import { Avatar } from "@/components/avatar";
@@ -570,7 +570,8 @@ function EmailCodeBox({
   );
 }
 
-function GlossaryAllowance() {
+/** `bare`: on its own page, whose title already says "Word lists". */
+function GlossaryAllowance({ bare = false }: { bare?: boolean }) {
   const { t } = useT();
   const quota = useGlossaryQuota((state) => state.quota);
   useEffect(() => {
@@ -579,7 +580,7 @@ function GlossaryAllowance() {
   if (!quota) return null;
   return (
     <section className={panel.group} aria-label={t("account.glossaryTitle")} data-account-glossary>
-      <h3 className={panel.groupTitle}>{t("account.glossaryTitle")}</h3>
+      {bare ? null : <h3 className={panel.groupTitle}>{t("account.glossaryTitle")}</h3>}
       <div className={panel.box}>
         {quota.unlimited ? (
           <div className={panel.row}>
@@ -601,6 +602,27 @@ function GlossaryAllowance() {
 }
 
 /** Sign in, create an account, or manage the one already in use. */
+/** The short value beside the "Word lists" row on the account home: this week's book count. */
+function QuotaSummary() {
+  const { t } = useT();
+  const quota = useGlossaryQuota((state) => state.quota);
+  useEffect(() => {
+    void useGlossaryQuota.getState().refresh();
+  }, []);
+  if (!quota) return null;
+  return (
+    <span className="text-[15px] text-muted [font-variant-numeric:tabular-nums]" data-account-quota-summary>
+      {quota.unlimited ? t("account.glossaryUnlimited") : t("account.glossaryCount", { used: quota.novel.used, limit: quota.novel.limit })}
+    </span>
+  );
+}
+
+/**
+ * The signed-in account is a short home list (iOS Settings): profile, reading, two rows that push a
+ * page (word-list quota, general), help, and account management. Delete account is a page of its own.
+ */
+type AccountPage = "home" | "quota" | "general" | "delete";
+
 export function AccountDialog() {
   const { t } = useT();
   const open = useAccount((state) => state.dialogOpen);
@@ -649,7 +671,12 @@ export function AccountDialog() {
       setForgotEmail(email);
     }
   }, [mode, email]);
-  const [deleting, setDeleting] = useState(false);
+  const [page, setPage] = useState<AccountPage>("home");
+  /** Which way the page moved last: in from the right (push), back from the left (pop), or not at all. */
+  const [pageMove, setPageMove] = useState<"push" | "pop" | "">("");
+  const opener = useRef<AccountPage>("home");
+  /** The home list's height when a page opened: a page keeps it, so the sheet does not jump. */
+  const [pageMinHeight, setPageMinHeight] = useState(0);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [nickname, setNickname] = useState("");
   const resetTurnstile = useRef<() => void>(() => {});
@@ -665,7 +692,8 @@ export function AccountDialog() {
     setForgotBusy(false);
     setForgotNote("");
     setForgotTurnstileToken("");
-    setDeleting(false);
+    setPage("home");
+    setPageMove("");
     setBusy(false);
     setTurnstileToken("");
     setNickname(useAccount.getState().nickname ?? "");
@@ -677,6 +705,29 @@ export function AccountDialog() {
     setNote("");
     setTurnstileToken("");
     openDialog(next, resetToken);
+  }
+
+  function openPage(next: AccountPage) {
+    opener.current = next;
+    setPageMinHeight(sheet.current?.offsetHeight ?? 0);
+    setProblem("");
+    setNote("");
+    setPageMove("push");
+    setPage(next);
+    sheet.current?.scrollTo({ top: 0 });
+    requestAnimationFrame(() => sheet.current?.querySelector<HTMLButtonElement>("[data-account-back]")?.focus());
+  }
+
+  function backHome() {
+    const from = opener.current;
+    setProblem("");
+    setPassword("");
+    setShow(false);
+    setPageMove("pop");
+    setPage("home");
+    sheet.current?.scrollTo({ top: 0 });
+    // Focus returns to the row that opened the page, as a navigation stack does.
+    requestAnimationFrame(() => sheet.current?.querySelector<HTMLButtonElement>(`[data-account-row="${from}"]`)?.focus());
   }
 
   async function onSubmit(event: FormEvent) {
@@ -824,12 +875,15 @@ export function AccountDialog() {
   // A new account types its emailed code first; the nickname question comes after.
   const checking = Boolean(signedIn && !emailVerified);
   const prompting = signedIn && nicknamePrompt && !checking;
+  const subpage = signedIn && !checking && !prompting && page !== "home" ? page : null;
+  const pageClass = pageMove === "push" ? "account-page-push" : pageMove === "pop" ? "account-page-pop" : "";
 
   return (
     <Dialog.Root open={open} onOpenChange={(next) => (next ? openDialog(mode, resetToken) : closeDialog())}>
       <Dialog.Portal>
         <Dialog.Overlay className={panel.overlay} />
         <Dialog.Content ref={sheet} className={panel.content} data-account-dialog
+            style={subpage && pageMinHeight ? { minHeight: pageMinHeight } : undefined}
             onOpenAutoFocus={() => { restoreFocus.current = true; }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
@@ -837,8 +891,26 @@ export function AccountDialog() {
             }}>
           <PanelHandle />
           <div className={panel.head}>
-            <Dialog.Title className={panel.title}>
-              {mode === "reset"
+            <div className="flex min-w-0 items-center gap-1">
+            {subpage ? (
+              <button
+                type="button"
+                className="relative -ml-2 inline-flex size-9 shrink-0 items-center justify-center rounded-full text-accent transition-colors duration-150 after:absolute after:-inset-1 after:content-[''] hover:bg-ink/[0.06] active:bg-ink/[0.1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                onClick={backHome}
+                aria-label={t("account.back")}
+                data-account-back
+              >
+                <ChevronLeft className="size-6" strokeWidth={2.25} aria-hidden />
+              </button>
+            ) : null}
+            <Dialog.Title className={cn(panel.title, "truncate")}>
+              {subpage === "quota"
+                ? t("account.glossaryTitle")
+                : subpage === "general"
+                  ? t("settings.general")
+                  : subpage === "delete"
+                    ? t("account.delete")
+                    : mode === "reset"
                 ? t("account.resetTitle")
                 : mode === "forgot"
                   ? t("account.forgotTitle")
@@ -848,6 +920,7 @@ export function AccountDialog() {
                       ? t("account.nicknamePromptTitle")
                       : t("account.title")}
             </Dialog.Title>
+            </div>
             <Dialog.Close className={panel.close} aria-label={t("common.close")}>
               <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
             </Dialog.Close>
@@ -931,62 +1004,87 @@ export function AccountDialog() {
             </form>
           ) : signedIn ? (
             <div className="grid gap-5">
-              <Profile email={emailSaved} nickname={nickname} onNickname={setNickname} onSave={onSaveNickname} busy={busy} />
-              <ReadingOverviewPanel />
-              <GlossaryAllowance />
-              <AccountPreferences onDismiss={dismissForNavigation} />
-              <section className={panel.group} aria-label={t("account.title")} data-account-more>
-                <div className={panel.box}>
-                  {role === "admin" || isSponsorAdmin(emailSaved) ? (
-                    <button type="button" className={panel.row} data-account-admin onClick={() => {
-                      dismissForNavigation();
-                      navigate({ kind: "admin" });
-                    }}>
-                      <span className={panel.rowLabel}>{t("admin.title")}</span>
-                      <ChevronRight className={panel.rowIcon} aria-hidden />
-                    </button>
-                  ) : null}
-                  <button type="button" className={panel.row} onClick={() => void onExport()} disabled={busy} data-account-export>
-                    <span className={panel.rowLabel}>{t("account.export")}</span>
-                    <Download className={panel.rowIcon} aria-hidden />
-                  </button>
-                  <button type="button" className={panel.row} onClick={() => setAskSignOut(true)} disabled={busy} data-account-logout>
-                    <span className={panel.rowLabel}>{busy ? t("account.working") : t("account.logout")}</span>
-                    <ChevronRight className={panel.rowIcon} aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className={cn(panel.row, "text-warn")}
-                    onClick={() => setDeleting((value) => !value)}
-                    aria-expanded={deleting}
-                    data-account-delete
-                  >
-                    <span>{t("account.delete")}</span>
-                    <ChevronRight className={cn(panel.rowIcon, "text-warn transition-transform", deleting && "rotate-90")} aria-hidden />
-                  </button>
-                  {deleting ? (
-                    <form className="grid gap-3 py-3" onSubmit={(event) => void onDelete(event)}>
-                      <p className="m-0 text-sm text-warn">{t("account.deleteWarn")}</p>
-                      <PasswordField
-                        id="account-delete-password"
-                        label={t("account.password")}
-                        value={password}
-                        onChange={setPassword}
-                        autoComplete="current-password"
-                        show={show}
-                        onToggle={() => setShow((value) => !value)}
-                      />
-                      <button type="submit" className={btn.danger} disabled={busy}>
-                        {busy ? t("account.working") : t("account.deleteConfirm")}
-                      </button>
-                    </form>
-                  ) : null}
+              {subpage === "quota" ? (
+                <div key="quota" className={cn("grid gap-5", pageClass)} data-account-page="quota">
+                  <GlossaryAllowance bare />
                 </div>
-                <p className={panel.note} data-account-sync>
-                  {t("account.syncNote")}
-                  {syncLabel(sync, t) ? <> {syncLabel(sync, t)}</> : null}
-                </p>
-              </section>
+              ) : subpage === "general" ? (
+                <div key="general" className={cn("grid gap-5", pageClass)} data-account-page="general">
+                  <AccountPreferences onDismiss={dismissForNavigation} only="general" />
+                </div>
+              ) : subpage === "delete" ? (
+                <form key="delete" className={cn("grid gap-4", pageClass)} onSubmit={(event) => void onDelete(event)} data-account-page="delete">
+                  <p className="m-0 rounded-xl bg-warn-soft px-4 py-3 text-sm leading-relaxed text-warn">{t("account.deleteWarn")}</p>
+                  <PasswordField
+                    id="account-delete-password"
+                    label={t("account.password")}
+                    value={password}
+                    onChange={setPassword}
+                    autoComplete="current-password"
+                    show={show}
+                    onToggle={() => setShow((value) => !value)}
+                  />
+                  <button type="submit" className={btn.danger} disabled={busy} data-account-delete-confirm>
+                    {busy ? t("account.working") : t("account.deleteConfirm")}
+                  </button>
+                </form>
+              ) : (
+                <div key="home" className={cn("grid gap-5", pageClass)} data-account-page="home">
+                  <Profile email={emailSaved} nickname={nickname} onNickname={setNickname} onSave={onSaveNickname} busy={busy} />
+                  <ReadingOverviewPanel />
+                  <section className={panel.group} aria-label={t("account.title")} data-account-nav>
+                    <div className={panel.box}>
+                      <button type="button" className={panel.row} onClick={() => openPage("quota")} data-account-row="quota">
+                        <span className={panel.rowLabel}>{t("account.glossaryTitle")}</span>
+                        <span className="flex items-center gap-1.5">
+                          <QuotaSummary />
+                          <ChevronRight className={panel.rowIcon} aria-hidden />
+                        </span>
+                      </button>
+                      <button type="button" className={panel.row} onClick={() => openPage("general")} data-account-row="general">
+                        <span className={panel.rowLabel}>{t("settings.general")}</span>
+                        <ChevronRight className={panel.rowIcon} aria-hidden />
+                      </button>
+                    </div>
+                  </section>
+                  <AccountPreferences onDismiss={dismissForNavigation} only="help" />
+                  <section className={panel.group} aria-label={t("account.title")} data-account-more>
+                    <div className={panel.box}>
+                      {role === "admin" || isSponsorAdmin(emailSaved) ? (
+                        <button type="button" className={panel.row} data-account-admin onClick={() => {
+                          dismissForNavigation();
+                          navigate({ kind: "admin" });
+                        }}>
+                          <span className={panel.rowLabel}>{t("admin.title")}</span>
+                          <ChevronRight className={panel.rowIcon} aria-hidden />
+                        </button>
+                      ) : null}
+                      <button type="button" className={panel.row} onClick={() => void onExport()} disabled={busy} data-account-export>
+                        <span className={panel.rowLabel}>{t("account.export")}</span>
+                        <Download className={panel.rowIcon} aria-hidden />
+                      </button>
+                      <button type="button" className={panel.row} onClick={() => setAskSignOut(true)} disabled={busy} data-account-logout>
+                        <span className={panel.rowLabel}>{busy ? t("account.working") : t("account.logout")}</span>
+                        <ChevronRight className={panel.rowIcon} aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(panel.row, "text-warn")}
+                        onClick={() => openPage("delete")}
+                        data-account-delete
+                        data-account-row="delete"
+                      >
+                        <span>{t("account.delete")}</span>
+                        <ChevronRight className={cn(panel.rowIcon, "text-warn")} aria-hidden />
+                      </button>
+                    </div>
+                    <p className={panel.note} data-account-sync>
+                      {t("account.syncNote")}
+                      {syncLabel(sync, t) ? <> {syncLabel(sync, t)}</> : null}
+                    </p>
+                  </section>
+                </div>
+              )}
               <ConfirmDialog
                 open={askSignOut}
                 onOpenChange={setAskSignOut}

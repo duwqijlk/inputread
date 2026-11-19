@@ -38,6 +38,27 @@
 }
 /* The interface face: built for legibility (I / l / 1 and O / 0 are easy to tell apart), which suits
    readers who are still learning English. Chinese labels fall back to the system sans. */
+/* Interface digits from the platform's own sans (Segoe UI, Roboto): Atkinson's slashed zero read as
+   "Ø" in counts like "0 of 7" and "00:00". Digits only (unicode-range), so letters stay Atkinson;
+   Apple devices never reach this, -apple-system comes first. */
+@font-face {
+  font-family: "inputread Digits";
+  font-weight: 400;
+  src: local("Segoe UI"), local("SegoeUI"), local("Roboto"), local("Roboto-Regular"), local("Arial");
+  unicode-range: U+0030-0039;
+}
+@font-face {
+  font-family: "inputread Digits";
+  font-weight: 500 600;
+  src: local("Segoe UI Semibold"), local("SegoeUI-Semibold"), local("Roboto Medium"), local("Roboto-Medium"), local("Arial Bold");
+  unicode-range: U+0030-0039;
+}
+@font-face {
+  font-family: "inputread Digits";
+  font-weight: 700 900;
+  src: local("Segoe UI Bold"), local("SegoeUI-Bold"), local("Roboto Bold"), local("Roboto-Bold"), local("Arial Bold");
+  unicode-range: U+0030-0039;
+}
 @font-face {
   font-family: "Atkinson Hyperlegible";
   font-style: normal;
@@ -309,7 +330,7 @@
 :root {
   --font-display: "Literata", "inputread Serif SC", "Noto Serif SC", "Songti SC", "STSong", Georgia, serif;
   --font-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Atkinson Hyperlegible",
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "inputread Digits", "Atkinson Hyperlegible",
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC",
     system-ui, "Segoe UI", sans-serif;
 }
@@ -2440,4 +2461,110 @@ svg.lucide[stroke-width="2"] {
 }
 [data-word-card] svg.lucide[stroke-width="2"] {
   stroke-width: 2;
+}
+
+/* Loading placeholders: soft rounded bars with a slow shimmer (none with reduced motion or on e-ink),
+   and content that replaces them fades in instead of popping. */
+.skeleton-line {
+  display: block;
+  border-radius: 999px;
+  background: rgb(var(--ink-rgb) / 0.07);
+  background-image: linear-gradient(90deg, transparent 0%, rgb(var(--paper-rgb) / 0.55) 50%, transparent 100%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+.blurb-in {
+  animation: blurb-in 0.28s ease-out both;
+}
+@keyframes blurb-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line,
+  .blurb-in {
+    animation: none;
+  }
+}
+[data-theme="eink"] .skeleton-line {
+  animation: none;
+  background-image: none;
+}
+[data-theme="eink"] .blurb-in {
+  animation: none;
+}
+
+/* Progress with no number yet: a short bar sliding along the track (static on e-ink / reduced motion). */
+.progress-indeterminate {
+  animation: progress-slide 1.1s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-indeterminate {
+    animation: none;
+  }
+}
+[data-theme="eink"] .progress-indeterminate {
+  animation: none;
+}
+
+/* Account pages (account-dialog.tsx): a pushed page slides in from the right, going back slides the
+   home list in from the left, as a navigation stack does. Instant with reduced motion and on e-ink. */
+.account-page-push {
+  animation: account-page-push 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.account-page-pop {
+  animation: account-page-pop 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes account-page-push {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes account-page-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-page-push,
+  .account-page-pop {
+    animation: none;
+  }
+}
+[data-theme="eink"] .account-page-push,
+[data-theme="eink"] .account-page-pop {
+  animation: none;
 }

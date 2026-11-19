@@ -147,8 +147,15 @@ test("account owns settings, with one avatar entry and no outdated guest-reading
   assert.doesNotMatch(app, /data-settings-button|SettingsDialog|settingsOpen/);
   assert.match(app, /signedIn \? \([\s\S]*?<Avatar key=[^\n]*size=\{24\}[\s\S]*?: \(\s*<UserRound className="size-5"/, "only signed-in accounts show an avatar; guests keep the original account icon");
   assert.match(app, /className="\[&>svg\]:!size-5"/, "fallback person stays as visible as the notebook icon");
-  assert.doesNotMatch(account, /data-account-settings|data-account-back|data-settings-panel|setView\(/);
-  assert.match(account, /<AccountPreferences onDismiss=\{dismissForNavigation\}/);
+  // Signed in, the account is a short home list whose rows push pages (iOS Settings), with a back
+  // control; a guest keeps the flat preferences under the sign-in form. No separate Settings dialog.
+  assert.doesNotMatch(account, /data-account-settings|data-settings-panel|setView\(/);
+  assert.match(account, /type AccountPage = "home" \| "quota" \| "general" \| "delete";/);
+  for (const row of ["quota", "general", "delete"]) assert.match(account, new RegExp(`data-account-row="${row}"`), `${row} row`);
+  assert.match(account, /data-account-back/, "a pushed page has a back control");
+  assert.match(account, /<AccountPreferences onDismiss=\{dismissForNavigation\} only="general" \/>/);
+  assert.match(account, /<AccountPreferences onDismiss=\{dismissForNavigation\} only="help" \/>/);
+  assert.match(account, /<div className="mt-5"><AccountPreferences onDismiss=\{dismissForNavigation\} \/><\/div>/, "guests: both groups, flat");
   assert.match(account, /role === "admin" \|\| isSponsorAdmin\(emailSaved\)/);
   assert.match(account, /data-account-admin/);
   assert.doesNotMatch(account, /account\.forgotBody/);
@@ -158,7 +165,7 @@ test("account owns settings, with one avatar entry and no outdated guest-reading
 test("title hierarchy stays bold and book titles retain their display face", () => {
   // Dialog and page titles: the interface face, bold, -0.02em.
   // The account directly contains preferences; its title retains the shared panel style.
-  assert.match(read("src/components/account-dialog.tsx"), /<Dialog\.Title className=\{panel\.title\}>/);
+  assert.match(read("src/components/account-dialog.tsx"), /<Dialog\.Title className=\{cn\(panel\.title, "truncate"\)\}>/);
   assert.match(read("src/components/ui.tsx"), /title: "m-0 text-2xl leading-tight font-bold tracking-\[-0\.02em\]"/);
   for (const [file, text] of [["step-dialog", 'data("heading") : {})}>'], ["shelf-book-info", '{t("shelf.info")}']]) {
     const body = read(`src/components/${file}.tsx`);

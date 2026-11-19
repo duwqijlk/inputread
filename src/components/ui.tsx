@@ -942,16 +942,27 @@ export function ConfirmDialog({
   onConfirm: () => void;
 }) {
   const { t } = useT();
+  // About three lines at this width: a CJK character counts double, as it is about twice as wide.
+  const long = [...description].reduce((sum, ch) => sum + (ch.charCodeAt(0) > 0x2e80 ? 2 : 1), 0) > 120;
   return (
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/[0.32]" />
-        {/* iOS alert: a narrow centred card, centred title and message, two equal buttons side by side. */}
-        <AlertDialog.Content className="anim-pop fixed top-1/2 left-1/2 z-50 w-[min(20rem,calc(100vw-3rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-float-edge bg-float px-5 pt-6 pb-5 text-center text-ink shadow-lift" data-confirm-dialog>
-          <AlertDialog.Title className="text-[1.0625rem] leading-snug font-semibold tracking-[-0.015em]">
+        {/* iOS alert: a narrow centred card, centred title and message, two equal buttons side by side.
+            A long message (the sign-out explanation runs six lines) reads left-aligned in a slightly
+            wider card; the title stays centred. */}
+        <AlertDialog.Content
+          className={cn(
+            "anim-pop fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-float-edge bg-float px-5 pt-6 pb-5 text-ink shadow-lift",
+            long ? "w-[min(22rem,calc(100vw-3rem))]" : "w-[min(20rem,calc(100vw-3rem))]",
+          )}
+          data-confirm-dialog
+          data-confirm-long={long || undefined}
+        >
+          <AlertDialog.Title className="text-center text-[1.0625rem] leading-snug font-semibold tracking-[-0.015em]">
             {title}
           </AlertDialog.Title>
-          <AlertDialog.Description className="mt-1.5 text-[0.875rem] leading-relaxed text-muted">
+          <AlertDialog.Description className={cn("mt-1.5 text-[0.875rem] leading-relaxed text-muted", long ? "text-left" : "text-center")}>
             {description}
           </AlertDialog.Description>
           <div className="mt-5 grid grid-cols-2 gap-2">
