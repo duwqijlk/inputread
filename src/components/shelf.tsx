@@ -475,33 +475,6 @@ function BookCard({
         >
           <BookCover title={book.title} author={book.author} cover={cover} look={lookOf(speeches, book.id)} />
         </button>
-        {finished ? (
-          // The reader's own mark. The progress bar below is the reading place and does not change.
-          <span
-            className="pointer-events-none absolute bottom-1.5 right-1.5 z-[1] inline-flex items-center gap-0.5 rounded-sm bg-mark px-1.5 py-0.5 text-[0.62rem] leading-4 font-bold text-ink"
-            data-shelf-finished=""
-          >
-            <Check className="size-3 stroke-[3]" aria-hidden />
-            {t("finished.badge")}
-          </span>
-        ) : null}
-        {book.source === "epub" ? (
-          <div className="cover-progress pointer-events-none absolute inset-x-0 bottom-0 z-[1]">
-            <p className={cn("cover-progress-detail items-end justify-between gap-2 bg-gradient-to-t from-black/60 to-transparent px-2 pt-4 text-[0.68rem] leading-4 font-medium text-white", finished ? "pb-7" : "pb-0.5")}>
-              <span>{pct > 0 ? `${pct}%` : t("shelf.new")}</span>
-              {row.progress && row.progress.chapters > 0 ? (
-                <span className="truncate text-right">
-                  {t("shelf.chapterOf", { n: row.progress.chapter + 1, total: row.progress.chapters })}
-                </span>
-              ) : null}
-            </p>
-            <ProgressBar
-              value={row.fraction}
-              className="cover-progress-bar h-0.5 rounded-none bg-black/20"
-              label={t("shelf.progressFor", { title: book.title })}
-            />
-          </div>
-        ) : null}
       </div>
       <div className="grid flex-1 content-start gap-1">
         <div className="flex items-start gap-1">
@@ -517,7 +490,7 @@ function BookCard({
             <Menu.Trigger
               ref={menuTrigger}
               className={cn(
-                "relative inline-flex min-h-10 min-w-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded text-faint select-none transition-colors hover:bg-sheet hover:text-ink -mr-1 sm:w-8 sm:-mr-2 [-webkit-touch-callout:none]",
+                "relative inline-flex min-h-9 min-w-7 w-7 shrink-0 touch-manipulation items-center justify-center rounded-full text-faint select-none transition-colors hover:bg-sheet hover:text-ink -mr-1 sm:w-8 sm:-mr-1.5 [-webkit-touch-callout:none]",
                 armed && "bg-accent-soft text-accent ring-1 ring-accent/40",
               )}
               aria-label={t("shelf.moreAria", { title: book.title })}
@@ -689,6 +662,24 @@ function BookCard({
         <p className={cardAuthorClass} lang="en">
           {book.author}
         </p>
+        {finished ? (
+          <span
+            className="mt-0.5 inline-flex items-center gap-1 text-[0.75rem] leading-4 font-semibold text-accent"
+            data-shelf-finished=""
+          >
+            <Check className="size-3.5 stroke-[2.5]" aria-hidden />
+            {t("finished.badge")}
+          </span>
+        ) : book.source === "epub" && pct > 0 ? (
+          <div className="mt-1 flex items-center gap-2">
+            <ProgressBar
+              value={row.fraction}
+              className="h-[3px] flex-1 rounded-full bg-ink/[0.08]"
+              label={t("shelf.progressFor", { title: book.title })}
+            />
+            <span className="text-[11px] font-medium text-faint tabular-nums">{pct}%</span>
+          </div>
+        ) : null}
         <LazyShareDialog what={{ kind: "book", bookId: book.id }} open={sharing} onOpenChange={setSharing} />
         <ShelfBookInfo
           book={book}

@@ -133,20 +133,20 @@ export function NewBooksCarousel({ rows, detailOpen, onOpen }: {
       </div>
       {rows.length > 1 ? (
         <>
-          <button type="button" className="absolute left-1.5 top-1/2 hidden size-9 -translate-y-1/2 items-center justify-center rounded text-faint opacity-70 transition-[color,background-color,opacity] hover:bg-black/[0.05] hover:text-ink group-hover/carousel:opacity-100 focus-visible:opacity-100 sm:flex" aria-label={t("browse.carousel.previous")} onClick={() => go(index - 1, -1)}>
+          <button type="button" className="absolute left-2.5 top-1/2 hidden size-9 -translate-y-1/2 items-center justify-center rounded-full bg-paper/75 text-muted opacity-0 shadow-2xs backdrop-blur-md transition-[color,background-color,opacity,transform] duration-150 hover:bg-paper hover:text-ink active:scale-95 group-hover/carousel:opacity-100 focus-visible:opacity-100 sm:flex" aria-label={t("browse.carousel.previous")} onClick={() => go(index - 1, -1)}>
             <ChevronLeft className="size-4" aria-hidden />
           </button>
-          <button type="button" className="absolute right-1.5 top-1/2 hidden size-9 -translate-y-1/2 items-center justify-center rounded text-faint opacity-70 transition-[color,background-color,opacity] hover:bg-black/[0.05] hover:text-ink group-hover/carousel:opacity-100 focus-visible:opacity-100 sm:flex" aria-label={t("browse.carousel.next")} onClick={() => go(index + 1, 1)}>
+          <button type="button" className="absolute right-2.5 top-1/2 hidden size-9 -translate-y-1/2 items-center justify-center rounded-full bg-paper/75 text-muted opacity-0 shadow-2xs backdrop-blur-md transition-[color,background-color,opacity,transform] duration-150 hover:bg-paper hover:text-ink active:scale-95 group-hover/carousel:opacity-100 focus-visible:opacity-100 sm:flex" aria-label={t("browse.carousel.next")} onClick={() => go(index + 1, 1)}>
             <ChevronRight className="size-4" aria-hidden />
           </button>
           <div className="absolute bottom-0 left-1/2 flex h-10 -translate-x-1/2 items-center" data-carousel-controls="" data-carousel-footer>
             {rows.map((row, at) => (
-              <button key={row.key} type="button" className="flex h-10 w-6 items-center justify-center" aria-label={t("browse.carousel.position", { n: at + 1, total: rows.length })} aria-current={at === index ? "true" : undefined} onClick={() => go(at)} data-carousel-position={at}>
-                <span className={`size-1.5 rounded-full ${at === index ? "bg-accent" : "bg-muted/40"}`} aria-hidden />
+              <button key={row.key} type="button" className="flex h-10 w-5 items-center justify-center" aria-label={t("browse.carousel.position", { n: at + 1, total: rows.length })} aria-current={at === index ? "true" : undefined} onClick={() => go(at)} data-carousel-position={at}>
+                <span className={`size-1.5 rounded-full transition-all duration-200 ${at === index ? "!w-4 bg-accent" : "bg-ink/20 hover:bg-ink/35"}`} aria-hidden />
               </button>
             ))}
           </div>
-          <button type="button" className="absolute bottom-1 right-2 flex size-8 items-center justify-center text-muted hover:text-ink disabled:opacity-50" aria-label={t(paused ? "browse.carousel.play" : "browse.carousel.pause")} disabled={off} data-carousel-play="" onClick={() => setPaused((value) => !value)}>
+          <button type="button" className="absolute bottom-1 right-2.5 flex size-8 items-center justify-center rounded-full text-muted opacity-0 transition-opacity hover:text-ink group-hover/carousel:opacity-60 focus-visible:opacity-100 disabled:opacity-0" aria-label={t(paused ? "browse.carousel.play" : "browse.carousel.pause")} disabled={off} data-carousel-play="" onClick={() => setPaused((value) => !value)}>
             {paused ? <Play className="size-3" aria-hidden /> : <Pause className="size-3" aria-hidden />}
           </button>
         </>

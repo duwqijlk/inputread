@@ -103,7 +103,14 @@ function serveWordLists(dirOf) {
       const body = buildWordLists(packsDir).files.find((file) => file.name === "word-lists/catalog.json");
       res.setHeader("content-type", TYPES[".json"]);
       res.setHeader("cache-control", "no-cache");
-      res.end(body?.bytes ?? Buffer.from("{}"));
+      res.end(body?.bytes ?? Buffer.from('{"version":1,"packs":[]}'));
+      return;
+    }
+    if (rel === "discover-rails.json") {
+      const railsFile = join(packsDir, "discover-rails.json");
+      res.setHeader("content-type", TYPES[".json"]);
+      res.setHeader("cache-control", "no-cache");
+      res.end(existsSync(railsFile) ? readFileSync(railsFile) : Buffer.from('{"rails":[]}'));
       return;
     }
     const coverMatch = /^([a-z0-9][a-z0-9_-]{0,63})\/cover\.jpg$/.exec(rel);
@@ -159,6 +166,94 @@ export function publicBooks() {
         server.middlewares.use(serveFrom(join(overlayDir, "dictionary"), "/dictionary/"));
       }
       server.middlewares.use(serveFrom(dir, "/public-books/"));
+    },
+  };
+}
+
+/**
+ * Opt-in local preview API (`DEV_PREVIEW=1`) so `vite dev` can add/open books, show weekly quota,
+ * and render Overview & Reader interactively without Cloudflare Pages D1/Functions running locally.
+ * Inactive in normal builds and tests.
+ */
+export function localPreviewApi() {
+  let rootDir = "";
+  const sendJson = (res, data, status = 200) => {
+    res.statusCode = status;
+    res.setHeader("content-type", TYPES[".json"]);
+    res.setHeader("cache-control", "no-store");
+    res.end(JSON.stringify(data));
+  };
+  const middleware = (req, res, next) => {
+    if (process.env.DEV_PREVIEW !== "1") return next();
+    const url = (req.url ?? "").split("?", 1)[0] ?? "";
+    if (!url.startsWith("/api/")) return next();
+    if (url === "/api/auth/me") {
+      const resetAt = Date.now() + 5 * 86400000;
+      return sendJson(res, {
+        user: {
+          email: "preview@inputread.site",
+          nickname: "Preview",
+          publicId: "a1b2c3d4e5f6",
+          role: "user",
+          emailVerified: true,
+          avatar: 0,
+        },
+        glossary: {
+          used: 1,
+          limit: 7,
+          resetAt,
+          speech: { used: 0, limit: 7, resetAt },
+        },
+      });
+    }
+    if (url === "/api/sync") {
+      return sendJson(res, { items: [], cursor: 0 });
+    }
+    if (url === "/api/sponsorships") {
+      return sendJson(res, {
+        month: [{ name: "Lin", cents: 1500, publicId: "a1b2c3d4e5f6" }],
+        total: [
+          { name: "Lin", cents: 1500, publicId: "a1b2c3d4e5f6" },
+          { name: "Maren", cents: 1000 },
+        ],
+      });
+    }
+    if (url === "/api/qq-groups") {
+      return sendJson(res, { groups: [] });
+    }
+    const glossMatch = /^\/api\/glossary\/([a-z0-9][a-z0-9_-]{0,63})$/i.exec(url);
+    if (glossMatch) {
+      const id = glossMatch[1];
+      const catalog = new URLSearchParams(req.url.split("?", 2)[1] ?? "").get("catalog");
+      const pubFile = join(rootDir, catalog === "word-lists" ? "packs" : "public-books", id, "glossary.json");
+      const hit = existsSync(pubFile) ? pubFile : "";
+      if (!hit) return sendJson(res, { error: "not_found" }, 404);
+      res.statusCode = 200;
+      res.setHeader("content-type", TYPES[".json"]);
+      res.setHeader("cache-control", "no-store");
+      createReadStream(hit).pipe(res);
+      return;
+    }
+    const downloadMatch = /^\/api\/book\/([a-z0-9][a-z0-9_-]{0,63})$/i.exec(url);
+    if (downloadMatch) {
+      const id = downloadMatch[1];
+      const epub = join(rootDir, "public-books", id, "book.epub");
+      if (!existsSync(epub)) return sendJson(res, { error: "not_found" }, 404);
+      res.statusCode = 200;
+      res.setHeader("content-type", TYPES[".epub"]);
+      res.setHeader("cache-control", "no-store");
+      createReadStream(epub).pipe(res);
+      return;
+    }
+    return sendJson(res, { ok: true });
+  };
+  return {
+    name: "margin-words:local-preview-api",
+    configResolved(config) {
+      rootDir = config.root;
+    },
+    configureServer(server) {
+      server.middlewares.use(middleware);
     },
   };
 }

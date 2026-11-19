@@ -99,9 +99,9 @@ export function pickTone(pixels: ArrayLike<number>): string {
 
 /** Paper, ink, sheet and ink-2 of each theme (the same values as src/styles.css). */
 const THEME: Record<string, { paper: string; ink: string; sheet: string; muted: string }> = {
-  light: { paper: "#ffffff", ink: "#111513", sheet: "#f3f5f4", muted: "#4a524e" },
+  light: { paper: "#ffffff", ink: "#1d1d1f", sheet: "#f5f5f7", muted: "#6e6e73" },
   sepia: { paper: "#f4ecdc", ink: "#2c2318", sheet: "#ebe1cc", muted: "#5e5040" },
-  dark: { paper: "#0f1211", ink: "#eef2f0", sheet: "#181c1a", muted: "#b2bab6" },
+  dark: { paper: "#0b0b0d", ink: "#f5f5f7", sheet: "#1c1c1e", muted: "#a1a1a6" },
   eink: { paper: "#ffffff", ink: "#000000", sheet: "#f2f2f2", muted: "#333333" },
 };
 
@@ -121,8 +121,8 @@ export function toneStyle(book: string, theme: string): CSSProperties {
   const [r, g, b] = hexToRgb(shadow) ?? [0, 0, 0];
   return {
     "--book": book,
-    "--book-wash": mixOklab(book, paper, 0.2),
-    "--book-tint": mixOklab(book, paper, dark ? 0.36 : 0.44),
+    "--book-wash": mixOklab(book, paper, dark ? 0.16 : 0.12),
+    "--book-tint": mixOklab(book, paper, dark ? 0.32 : 0.38),
     "--book-deep": mixOklab(book, ink, dark ? 0.45 : 0.6),
     "--book-shadow": shadow,
     "--book-shadow-rgb": `${r} ${g} ${b}`,

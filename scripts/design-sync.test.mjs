@@ -7,11 +7,12 @@ import { test } from "node:test";
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const css = read("src/styles.css");
 
-test("the phone tab bar: 60px, faint tabs, a 2px accent line on top of the current one", () => {
+test("the phone tab bar: 60px iOS 4-column bar, semibold active state, no top border indicator", () => {
   const app = read("src/components/margin-app.tsx");
+  assert.match(app, /grid-cols-4/);
   assert.match(app, /h-\[3\.75rem\] flex-col/);
-  assert.match(app, /"font-bold text-accent" : "text-faint/);
-  assert.match(app, /absolute -top-px right-\[30%\] left-\[30%\] h-0\.5 bg-accent/);
+  assert.match(app, /"font-semibold text-accent" : "font-medium text-faint/);
+  assert.doesNotMatch(app, /absolute -top-px right-\[30%\] left-\[30%\]/);
   assert.match(app, /pb-\[calc\(3\.75rem\+env\(safe-area-inset-bottom\)\)\]/);
   for (const file of ["src/components/review.tsx", "src/components/site-notice.tsx"]) {
     assert.doesNotMatch(read(file), /4\.25rem/, `${file} sits on the 3.75rem tab bar`);

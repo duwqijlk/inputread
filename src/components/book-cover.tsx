@@ -394,13 +394,13 @@ export function BookCover({
           </span>
         </span>
       ) : null}
-      {/* spine shading */}
+      {/* Apple Books realistic spine groove & fine inner hairline */}
       <span
-        className="pointer-events-none absolute inset-y-0 left-0 w-[6%] bg-gradient-to-r from-black/30 via-black/10 to-transparent"
+        className="cover-spine pointer-events-none absolute inset-0 rounded-cover"
         aria-hidden
       />
       <span
-        className="pointer-events-none absolute inset-0 rounded-cover ring-1 ring-inset ring-black/10"
+        className="pointer-events-none absolute inset-0 rounded-cover ring-1 ring-inset ring-black/[0.08]"
         aria-hidden
       />
     </span>

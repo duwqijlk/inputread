@@ -22,14 +22,14 @@ test("the shades are mixed in OKLab per theme, and e-ink falls back to sheet and
   assert.equal(mixOklab("#3f6b4a", "#ffffff", 1), "#3f6b4a");
   assert.equal(mixOklab("#3f6b4a", "#ffffff", 0), "#ffffff");
   const light = toneStyle("#3f6b4a", "light");
-  assert.equal(light["--book-wash"], mixOklab("#3f6b4a", "#ffffff", 0.2));
-  assert.equal(light["--book-tint"], mixOklab("#3f6b4a", "#ffffff", 0.44));
+  assert.equal(light["--book-wash"], mixOklab("#3f6b4a", "#ffffff", 0.12));
+  assert.equal(light["--book-tint"], mixOklab("#3f6b4a", "#ffffff", 0.38));
   const dark = toneStyle("#3f6b4a", "dark");
   assert.equal(dark["--book-shadow"], "#000000");
   const eink = toneStyle("#3f6b4a", "eink");
   assert.equal(eink["--book-wash"], "#f2f2f2");
   assert.equal(eink["--book-deep"], "#000000");
-  assert.equal(toneStyle("", "light")["--book-wash"], "#f3f5f4", "no colour: sheet");
+  assert.equal(toneStyle("", "light")["--book-wash"], "#f5f5f7", "no colour: sheet");
   // No color-mix() anywhere: the e-ink readers (Chrome 69) cannot parse it.
   assert.doesNotMatch(read("src/styles.css"), /color-mix\(/);
 });

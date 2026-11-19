@@ -8,44 +8,41 @@ export function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
-// Buttons (design system "Keep reading"): 44px high, 4px corners, 15px bold labels. One primary per
-// screen; secondary is a 1px edge outline; disabled is 40% opacity.
+// Buttons: 44px high, 12px concentric corners, 15px semibold Apple typography.
 const btnBase =
-  "inline-flex min-h-11 select-none items-center justify-center gap-2 whitespace-nowrap rounded px-4 text-[0.9375rem] leading-tight font-bold transition-[background-color,border-color,color,transform] duration-100 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100";
+  "inline-flex min-h-11 select-none items-center justify-center gap-2 whitespace-nowrap rounded px-4 text-[0.9375rem] leading-tight font-semibold tracking-[-0.01em] transition-[background-color,border-color,color,transform,opacity] duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100";
 
 export const btn = {
   primary: cn(btnBase, "bg-accent text-accent-ink hover:bg-accent/90"),
-  /** Secondary: transparent with a 1px edge border; the sheet ground on hover. */
-  quiet: cn(btnBase, "border border-edge text-ink hover:bg-sheet"),
+  /** Secondary: soft Apple tinted fill with no harsh outline; border restored automatically on e-ink. */
+  quiet: cn(btnBase, "apple-quiet-btn border border-transparent bg-sheet text-ink hover:bg-ink/[0.08]"),
   ghost: cn(btnBase, "text-ink hover:bg-sheet"),
   /** A ghost button that takes its colour from the caller (text-accent, text-muted, text-faint). */
   bare: cn(btnBase, "hover:bg-sheet"),
   danger: cn(btnBase, "bg-warn text-accent-ink hover:bg-warn/90"),
   /** 44×44, ink-2; the current one turns brand (aria-current / text-accent), never filled. */
-  icon: "inline-flex size-11 shrink-0 items-center justify-center rounded text-muted transition-colors duration-100 hover:bg-sheet hover:text-ink disabled:opacity-40",
+  icon: "inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors duration-150 hover:bg-sheet hover:text-ink disabled:opacity-40",
 } as const;
 
-// Inputs, selects and search fields look the same: paper ground, 1px edge border, 4px corners.
-// Focused, the border and an inner ring turn brand (2px of brand in all).
+// Spotlight-style borderless tinted inputs & custom-chevron selects; soft focus halo on active.
 export const field =
-  "min-h-11 w-full rounded border border-edge bg-paper px-3 text-base text-ink placeholder:text-faint transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[inset_0_0_0_1px_rgb(var(--accent-rgb))] focus:outline-none";
+  "apple-field min-h-11 w-full rounded border border-transparent bg-sheet px-3.5 text-[0.9375rem] text-ink placeholder:text-faint transition-[background-color,border-color,box-shadow] duration-150 focus:border-accent/50 focus:bg-paper focus:shadow-[0_0_0_3px_rgb(var(--accent-rgb)/0.14)] focus:outline-none";
 
 export const selectCls =
-  "min-h-11 rounded border border-edge bg-paper px-3 text-base text-ink transition-[border-color,box-shadow] duration-100 focus:border-accent focus:shadow-[inset_0_0_0_1px_rgb(var(--accent-rgb))] focus:outline-none";
+  "apple-select min-h-11 rounded border border-transparent bg-sheet pl-3.5 text-[0.9rem] font-medium text-ink transition-[background-color,border-color,box-shadow] duration-150 hover:bg-ink/[0.07] focus:border-accent/50 focus:bg-paper focus:shadow-[0_0_0_3px_rgb(var(--accent-rgb)/0.14)] focus:outline-none";
 
 export const chip =
-  "inline-flex items-center rounded px-2 py-0.5 text-xs font-bold leading-5";
+  "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold leading-5";
 
 /**
  * Second-level tabs as plain text (Discover's Novels / Speeches, Overview's sections): the row has a
  * hairline under it, the current tab is ink with a short line under it. One look for both pages.
  */
 export const subTabs = {
-  // No scrolling: two or three short words always fit, and a scroll box showed a scrollbar for the 1px overlap.
   row: "flex gap-6 border-b border-line",
-  tab: "-mb-px inline-flex min-h-11 shrink-0 items-center border-b-2 text-[0.9375rem] transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-  on: "border-accent font-bold text-ink",
-  off: "border-transparent text-muted hover:text-ink",
+  tab: "-mb-px inline-flex min-h-11 shrink-0 items-center border-b-2 text-[0.9375rem] tracking-[-0.01em] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+  on: "border-accent font-semibold text-ink",
+  off: "border-transparent font-medium text-muted hover:text-ink",
 } as const;
 
 /**
@@ -774,9 +771,9 @@ export function PanelHandle() {
 
 /** Each theme's own paper, ink and brand green, for the theme tiles. */
 export const THEME_SAMPLES = [
-  { value: "light", bg: "#ffffff", fg: "#111513", brand: "#17804f" },
+  { value: "light", bg: "#ffffff", fg: "#1d1d1f", brand: "#167a4b" },
   { value: "sepia", bg: "#f4ecdc", fg: "#2c2318", brand: "#146f45" },
-  { value: "dark", bg: "#0f1211", fg: "#eef2f0", brand: "#4cc98b" },
+  { value: "dark", bg: "#0b0b0d", fg: "#f5f5f7", brand: "#4cc98b" },
   { value: "eink", bg: "#ffffff", fg: "#000000", brand: "#000000" },
 ] as const;
 
@@ -834,7 +831,7 @@ export function ThemeTiles<T extends string>({
   );
 }
 
-/** An on / off switch (design system Toggle): 40×24, brand when on. */
+/** An on / off switch (Apple iOS Toggle): 42×25, brand when on, crisp elevated white thumb. */
 export function Switch({
   checked,
   onChange,
@@ -853,16 +850,16 @@ export function Switch({
       aria-label={label}
       onClick={() => onChange(!checked)}
       className={cn(
-        "switch relative h-6 w-10 shrink-0 rounded-full border p-0",
-        checked ? "border-accent bg-accent" : "border-edge bg-paper",
+        "switch relative h-[25px] w-[42px] shrink-0 rounded-full border p-0 transition-colors duration-150",
+        checked ? "border-accent bg-accent" : "border-transparent bg-ink/[0.15]",
       )}
       {...rest}
     >
       <span
         aria-hidden
         className={cn(
-          "switch-knob absolute top-[3px] left-[3px] size-4 rounded-full",
-          checked ? "translate-x-4 bg-accent-ink" : "bg-muted",
+          "switch-knob absolute top-[2px] left-[2px] size-[19px] rounded-full bg-white shadow-2xs",
+          checked && "translate-x-[17px]",
         )}
       />
     </button>
@@ -881,7 +878,7 @@ export function Segmented<T extends string | number>({
   options: ReadonlyArray<{ value: T; label: ReactNode }>;
   onChange: (value: T) => void;
   label: string;
-  /** The smaller one that sits at the right end of a settings row, on paper. */
+  /** The smaller one that sits at the right end of a settings row. */
   compact?: boolean;
   /** `wrap` gives each option its own cell on a phone, so four labels are not squeezed onto one line. */
   layout?: "bar" | "wrap";
@@ -892,29 +889,33 @@ export function Segmented<T extends string | number>({
       role="group"
       aria-label={label}
       className={cn(
-        wrap
-          ? "grid grid-cols-2 gap-1.5 sm:flex sm:gap-0 sm:divide-x sm:divide-line sm:overflow-hidden sm:rounded sm:border sm:border-edge"
-          : "flex divide-x divide-line overflow-hidden rounded border border-edge",
-        compact && "shrink-0 bg-paper",
+        "rounded bg-ink/[0.06] p-1",
+        wrap ? "grid grid-cols-2 gap-1 sm:flex" : "flex gap-1",
+        compact && "shrink-0",
       )}
     >
-      {options.map((option) => (
-        <button
-          key={String(option.value)}
-          type="button"
-          aria-pressed={option.value === value}
-          onClick={() => onChange(option.value)}
-          className={cn(
-            compact ? "min-h-9 px-3.5 text-sm transition-colors duration-100" : "min-h-10 min-w-16 px-3 text-sm transition-colors duration-100",
-            wrap
-              ? "rounded border border-edge whitespace-normal sm:flex-1 sm:rounded-none sm:border-0 sm:whitespace-nowrap"
-              : "flex-1 whitespace-nowrap",
-            option.value === value ? "bg-accent-soft font-bold text-accent" : "text-muted hover:bg-sheet hover:text-ink",
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <button
+            key={String(option.value)}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              compact
+                ? "min-h-8 rounded-[9px] px-3 text-[13px] transition-[background-color,color,box-shadow] duration-150"
+                : "min-h-9 min-w-16 rounded-[9px] px-3 text-[13.5px] transition-[background-color,color,box-shadow] duration-150",
+              wrap ? "whitespace-normal sm:flex-1 sm:whitespace-nowrap" : "flex-1 whitespace-nowrap",
+              active
+                ? "bg-card font-semibold text-ink shadow-2xs"
+                : "font-medium text-muted hover:text-ink",
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -47,9 +47,9 @@ export function SiteNotice() {
       role="note"
       data-site-notice
     >
-      <div className="relative mx-auto max-w-md rounded bg-sheet px-3 py-2 pr-11 shadow-lift">
+      <div className="bg-float relative mx-auto max-w-md rounded-2xl border border-float-edge px-3.5 py-2.5 pr-11 shadow-lift">
         {/* One short line. */}
-        <p className="flex items-start gap-2 text-[0.8rem] leading-snug">
+        <p className="flex items-start gap-2 text-[0.8125rem] leading-snug text-muted">
           <Info className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
           <span className="min-w-0 flex-1">
             {t("notice.short")}
@@ -57,7 +57,7 @@ export function SiteNotice() {
         </p>
         <button
           type="button"
-          className="absolute top-1 right-1 inline-flex size-9 items-center justify-center rounded-lg text-muted hover:bg-black/5"
+          className="absolute top-1.5 right-1.5 inline-flex size-8 items-center justify-center rounded-full text-muted hover:bg-ink/[0.06] hover:text-ink"
           aria-label={t("notice.dismiss")}
           data-site-notice-close
           onClick={() => {

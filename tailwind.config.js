@@ -49,30 +49,26 @@ export default {
         display: "var(--font-display)",
         sans: "var(--font-sans)",
       },
-      // Radii (design system "Keep reading"): 2px marks on text, 10px controls, chips and notices,
-      // 16px cards, dialogs and popovers, 6px book covers. `card` and `sheet` are the word card's own
-      // (floating, phone sheet). No pills: rounded-full is for dots, switches and avatars only.
+      // Concentric Apple-grade radii: 4px inline text marks, 12px controls/fields, 20px cards/dialogs,
+      // asymmetric 2px-left / 7px-right physical book covers, 24px phone sheets.
       borderRadius: {
-        sm: "2px",
-        DEFAULT: "10px",
-        md: "10px",
-        lg: "10px",
-        xl: "10px",
-        "2xl": "16px",
-        "3xl": "16px",
-        cover: "6px",
+        sm: "4px",
+        DEFAULT: "12px",
+        md: "12px",
+        lg: "12px",
+        xl: "12px",
+        "2xl": "20px",
+        "3xl": "20px",
+        cover: "2px 7px 7px 2px",
         card: "1.25rem",
         sheet: "1.5rem",
       },
       // v4 renamed these (`shadow-xs` became its `sm`, and `2xs` is new). The class names are
       // used in 81 places, so the keys are defined here rather than renamed in the components.
       boxShadow: {
-        "2xs": "0 1px 2px rgb(0 0 0 / 0.05)",
-        xs: "0 1px 2px rgb(0 0 0 / 0.05)",
-        cover: "0 1px 2px rgb(0 0 0 / 0.14), 0 6px 14px -6px rgb(0 0 0 / 0.2)",
-        // Depth (design system v44), per theme in styles.css. lift and pop: the floating level (elev-3:
-        // dialogs, popovers, phone panels, the word card). hero: the raised level (elev-2: continue
-        // reading, the newest book, the review launcher). At night both are light edges; on e-ink, lines.
+        "2xs": "0 1px 2px rgb(0 0 0 / 0.04)",
+        xs: "0 1px 3px rgb(0 0 0 / 0.05)",
+        cover: "0 2px 5px rgb(0 0 0 / 0.10), 0 12px 24px -8px rgb(0 0 0 / 0.22)",
         lift: "var(--elev-3)",
         hero: "var(--elev-2)",
         pop: "var(--elev-3)",

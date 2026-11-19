@@ -27,8 +27,10 @@ test("four reading themes, each with every colour and a matching -rgb twin", () 
     }
   }
   assert.doesNotMatch(css, /data-theme="clear"/, "the Clear theme is gone");
-  // The only material is the bars' (design system ScrollChrome), with an opaque ground where it cannot blur.
-  for (const rule of css.match(/[^{}]*\{[^{}]*backdrop-filter[^{}]*\}/g) ?? []) assert.match(rule, /\.chrome-bar/, "frosted glass only on the bars");
+  // Frosted glass material lives on bars (.chrome-bar) and floating layers (.bg-float), with opaque fallbacks.
+  for (const rule of css.match(/[^{}]*\{[^{}]*backdrop-filter[^{}]*\}/g) ?? []) {
+    assert.match(rule, /\.(chrome-bar|bg-float)/, "frosted glass only on bars and floating layers");
+  }
   assert.match(css, /@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)/);
 });
 
@@ -86,16 +88,15 @@ test("a reader who had the Clear theme reads on paper, also from an older device
   assert.doesNotMatch(prefs, /t==="clear"/);
 });
 
-test("radii 2 / 10 / 16 and 6 for covers, and buttons, fields and chips are not pills", () => {
+test("concentric Apple radii and borderless tinted controls", () => {
   const config = read("tailwind.config.js");
-  for (const [key, value] of [["sm", "2px"], ["DEFAULT", "10px"], ["md", "10px"], ["lg", "10px"], ["xl", "10px"], ['"2xl"', "16px"], ['"3xl"', "16px"], ["cover", "6px"], ["card", "1.25rem"], ["sheet", "1.5rem"]]) {
+  for (const [key, value] of [["sm", "4px"], ["DEFAULT", "12px"], ["md", "12px"], ["lg", "12px"], ["xl", "12px"], ['"2xl"', "20px"], ['"3xl"', "20px"], ["cover", "2px 7px 7px 2px"], ["card", "1.25rem"], ["sheet", "1.5rem"]]) {
     assert.match(config, new RegExp(`${key}: "${value.replace(".", "\\.")}"`), `${key} is ${value}`);
   }
   const ui = read("src/components/ui.tsx");
   const presets = ui.slice(ui.indexOf("const btnBase"), ui.indexOf("export const subTabs"));
-  assert.doesNotMatch(presets, /rounded-full/);
-  assert.match(presets, /font-bold/, "button labels are bold");
-  assert.match(presets, /border border-edge/, "secondary buttons and fields have an edge border");
+  assert.match(presets, /font-semibold/, "button labels use crisp semibold weight");
+  assert.match(presets, /bg-sheet/, "secondary buttons and fields use soft tinted fill");
 });
 
 test("floating layers share one look: paper, 16px, the lift shadow, a 32% overlay", () => {
@@ -109,7 +110,7 @@ test("floating layers share one look: paper, 16px, the lift shadow, a 32% overla
 });
 
 test("the interface font and the self-hosted Chinese serif are wired in", () => {
-  assert.match(css, /--font-sans:\s*"Atkinson Hyperlegible"/);
+  assert.match(css, /--font-sans:[\s\S]*?-apple-system[\s\S]*?"Atkinson Hyperlegible"/);
   assert.match(css, /--font-display: "Literata", "inputread Serif SC"/);
   for (const file of ["atkinson-hyperlegible-normal-400", "atkinson-hyperlegible-normal-700", "atkinson-hyperlegible-italic-400"]) {
     assert.ok(existsSync(new URL(`../public/fonts/${file}.woff2`, import.meta.url)), file);
@@ -124,15 +125,10 @@ test("the interface font and the self-hosted Chinese serif are wired in", () => 
   assert.ok(missingZh.length <= 15, `run scripts/subset-zh-serif.py (${missingZh.length} missing glyphs: ${missingZh.join("")})`);
 });
 
-test("non-reader pages and portals share the display face without changing reader defaults", () => {
-  const scope = 'html[data-ui-font="display"]';
-  assert.match(block(scope), /--font-sans: var\(--font-display\);/);
-  assert.match(block(`${scope} body`), /font-variant-numeric: lining-nums;/);
-  assert.match(block(`${scope} kbd`), /font-family: var\(--font-display\);/);
-  assert.match(block(`${scope} [class~="[font-variant-numeric:tabular-nums]"]`), /font-variant-numeric: lining-nums tabular-nums;/);
+test("interface chrome stays sans-serif while literary book content uses display serif", () => {
+  assert.doesNotMatch(css, /html\[data-ui-font="display"\]/);
   const app = read("src/components/margin-app.tsx");
-  assert.match(app, /const reading = screen\.kind === "read";/);
-  assert.match(app, /useLayoutEffect\(\(\) => \{[\s\S]*?if \(reading\) root\.removeAttribute\("data-ui-font"\);\s*else root\.setAttribute\("data-ui-font", "display"\);\s*return \(\) => root\.removeAttribute\("data-ui-font"\);\s*\}, \[reading\]\);/);
+  assert.doesNotMatch(app, /setAttribute\("data-ui-font", "display"\)/);
   assert.match(block(".book-body"), /font-family: var\(--reader-font, var\(--font-display\)\);/);
   assert.match(block(".word-ipa"), /font-family: "Inter"/);
 });

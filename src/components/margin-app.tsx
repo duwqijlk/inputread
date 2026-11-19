@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, Compass, Library, NotebookPen, UserRound, X } from "lucide-react";
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import {
   bookFileExists,
@@ -41,7 +41,6 @@ import {
   useTutorialNews,
 } from "@/lib/tutorial";
 import { TutorialList } from "@/components/tutorial-tab";
-import { SponsorTab } from "@/components/sponsor-tab";
 import { notifySyncReady, startAccountSync } from "@/lib/sync-engine";
 import { takeLoginAfterWipe } from "@/lib/device-wipe";
 import { Avatar } from "@/components/avatar";
@@ -480,13 +479,6 @@ export function MarginApp() {
     };
   }, [screen.kind]);
   const reading = screen.kind === "read";
-  // Root scope also reaches dialogs and menus portalled outside the app container.
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    if (reading) root.removeAttribute("data-ui-font");
-    else root.setAttribute("data-ui-font", "display");
-    return () => root.removeAttribute("data-ui-font");
-  }, [reading]);
   const offline = useOffline();
   // A review round runs in focus mode (focus-mode.ts): none of the site chrome, as in the reader.
   const focus = useFocusMode((state) => state.on) && screen.kind === "review";
@@ -506,6 +498,13 @@ export function MarginApp() {
       Icon: Compass,
       active: menu === "discover",
       go: () => setScreen({ kind: "discover" }),
+    },
+    {
+      id: "words",
+      label: t("nav.notebook"),
+      Icon: NotebookPen,
+      active: menu === "words",
+      go: () => setScreen({ kind: "words", bookId: null }),
     },
     {
       id: "dashboard",
@@ -562,7 +561,7 @@ export function MarginApp() {
             >
               {t("common.brand")}
             </button>
-            <nav className="hidden min-w-0 flex-1 items-stretch gap-6 self-stretch pl-4 sm:flex" aria-label={t("nav.main")}>
+            <nav className="hidden min-w-0 flex-1 items-stretch gap-7 self-stretch pl-6 sm:flex" aria-label={t("nav.main")}>
               {tabs.map((tab) => (
                 <NavButton key={tab.id} id={tab.id} active={tab.active} onClick={tab.go}>
                   {tab.label}
@@ -570,18 +569,6 @@ export function MarginApp() {
               ))}
             </nav>
             <div className="min-w-0 flex-1 sm:hidden" />
-            <button
-              type="button"
-              className={cn(btn.icon, "size-11", menu === "words" && "text-accent")}
-              onClick={() => setScreen({ kind: "words", bookId: null })}
-              onPointerEnter={() => preloadNavChunk("words")}
-              onFocus={() => preloadNavChunk("words")}
-              aria-label={t("nav.notebook")}
-              aria-current={menu === "words" ? "page" : undefined}
-              data-notebook-button
-            >
-              <NotebookPen className="size-5" strokeWidth={1.75} aria-hidden />
-            </button>
             <button
               type="button"
               className={cn(btn.icon, "size-11")}
@@ -610,7 +597,7 @@ export function MarginApp() {
           aria-label={t("nav.main")}
           data-tab-bar
         >
-          <div className="mx-auto grid max-w-md grid-cols-3">
+          <div className="mx-auto grid max-w-md grid-cols-4">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -620,15 +607,13 @@ export function MarginApp() {
                 onTouchStart={() => preloadNavChunk(tab.id)}
                 aria-current={tab.active ? "page" : undefined}
                 data-nav={tab.id}
+                {...(tab.id === "words" ? { "data-notebook-button": "" } : {})}
                 className={cn(
-                  // Design system TopBar: icon over label, ink-3; the current tab brand and bold with a
-                  // 2px brand line over the bar's top rule, 40% of the tab wide (no pill).
-                  "relative flex h-[3.75rem] flex-col items-center justify-start gap-[3px] px-1 pt-2.5 pb-2 text-xs leading-4 transition-colors duration-100",
-                  tab.active ? "font-bold text-accent" : "text-faint active:text-ink",
+                  "relative flex h-[3.75rem] flex-col items-center justify-center gap-[3px] px-1 text-[11px] leading-none transition-colors duration-150",
+                  tab.active ? "font-semibold text-accent" : "font-medium text-faint active:text-ink",
                 )}
               >
-                {tab.active ? <span className="absolute -top-px right-[30%] left-[30%] h-0.5 bg-accent" aria-hidden /> : null}
-                <tab.Icon className="size-[22px] shrink-0" aria-hidden />
+                <tab.Icon className="size-[21px] shrink-0" strokeWidth={1.75} aria-hidden />
                 <span className="max-w-full truncate">{tab.label}</span>
               </button>
             ))}
@@ -756,8 +741,6 @@ export function MarginApp() {
         {feedbackTipOpen ? <FeedbackTipDialog /> : null}
         {quoteTipOpen ? <QuoteFlowDialog /> : null}
       </Suspense>
-      {/* Coffee shortcut on public pages only; tutorials stay available in Settings. */}
-      {ready && (menu === "shelf" || menu === "discover" || menu === "dashboard") && screen.kind !== "read" ? <SponsorTab /> : null}
       <TutorialList />
       <Suspense fallback={null}>
         {accountMounted ? <AccountDialog /> : null}
@@ -876,14 +859,14 @@ function NavButton({
       onFocus={() => preloadNavChunk(id)}
       aria-current={active ? "page" : undefined}
       data-nav={id}
+      {...(id === "words" ? { "data-notebook-button": "" } : {})}
       className={cn(
-        // Section names in bold; the current one in ink with a 2px brand line along the bottom of the
-        // bar, the others ink-3 (design system TopBar).
-        "inline-flex h-14 shrink-0 items-center border-y-2 border-t-transparent px-1 text-[0.95rem] font-bold transition-colors duration-100",
-        active ? "border-b-accent text-ink" : "border-b-transparent text-faint hover:text-ink",
+        "relative inline-flex h-14 shrink-0 items-center px-1 text-[0.9rem] tracking-[-0.01em] transition-colors duration-150",
+        active ? "font-semibold text-ink" : "font-medium text-muted hover:text-ink",
       )}
     >
       {children}
+      {active ? <span className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-accent" aria-hidden /> : null}
     </button>
   );
 }

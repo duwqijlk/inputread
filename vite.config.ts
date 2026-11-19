@@ -31,7 +31,17 @@ import {
  */
 export default defineConfig(({ mode }) => ({
   base: "/",
-  server: { host: "0.0.0.0", port: 8080, strictPort: true },
+  server: {
+    host: "0.0.0.0",
+    port: 8080,
+    strictPort: true,
+    // Local-only folders (verification snapshots with ~130k files, research exports, build output)
+    // are not part of the app. Watching them pegged the dev server's main thread on Windows.
+    watch: { ignored: ["**/.verification/**", "**/local-exports/**", "**/dist/**", "**/.wrangler/**"] },
+  },
+  // Scan only the real app entry. Without this Vite globs every *.html under the root, including
+  // the verification previews in .verification/, and dependency pre-bundling never finishes.
+  optimizeDeps: { entries: ["index.html"] },
   preview: { host: "127.0.0.1", port: 8081, strictPort: true },
   resolve: { tsconfigPaths: true },
   build: {
