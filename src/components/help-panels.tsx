@@ -5,7 +5,7 @@ import { getParagraphNoteFlags, paragraphBlocks } from "@/lib/help-lookup";
 import { useT } from "@/lib/i18n";
 import type { ParagraphHelpView, SentenceInParagraph } from "@/lib/help-flow";
 import { FloatingAside } from "@/components/floating-card";
-import { btn, cn, subTabs, TabInk } from "@/components/ui";
+import { cn, panel, subTabs, TabInk } from "@/components/ui";
 import { CreditLine } from "@/components/credit-line";
 import { flowText } from "@/lib/flow-text";
 import { parseGrammarMirror, splitPatternSlots } from "@/lib/grammar-mirror";
@@ -257,12 +257,12 @@ export function ParagraphPanel({
       desktopWidth={27 * 16}
       className={cn(
         "scroll-thin fixed z-40 overflow-y-auto overscroll-contain [overflow-anchor:none] border-float-edge bg-float px-5 text-ink shadow-pop ",
-        "inset-x-0 bottom-0 max-h-[52dvh] rounded-t-3xl border-t pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]",
+        "inset-x-0 bottom-0 max-h-[52dvh] rounded-t-3xl border-t pt-0 pb-[max(1.25rem,env(safe-area-inset-bottom))]",
         SIDE_PANEL,
-        "md:bottom-auto md:max-h-[calc(100dvh-6.5rem)] md:pb-5",
+        "md:bottom-auto md:max-h-[calc(100dvh-6.5rem)] md:!pt-0 md:pb-5",
       )}
     >
-      <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-line md:hidden" aria-hidden />
+      <div className="mx-auto mt-3 mb-0 h-1 w-10 rounded-full bg-line md:hidden" aria-hidden />
       {paragraphEl ? <KeepClear el={paragraphEl} /> : null}
       {paragraphEl && activeMarkContexts.length > 0 ? (
         <SentenceMarks
@@ -277,7 +277,8 @@ export function ParagraphPanel({
         />
       ) : null}
       <div className="grid min-w-0 gap-4">
-        <div className="flex items-center justify-between gap-3">
+        {/* Pinned while a long reading scrolls, as the sheets' headers are (styles.css .panel-head). */}
+        <div className="panel-head sticky top-0 z-10 -mx-5 flex items-center justify-between gap-3 px-5 pt-3 pb-2.5 md:pt-5">
           <h2 className="flex min-w-0 items-center gap-2 font-bold tracking-[-0.02em] text-lg leading-tight">
             <span className="text-accent" aria-hidden>
               ✦
@@ -286,12 +287,12 @@ export function ParagraphPanel({
           </h2>
           <button
             type="button"
-            className={cn(btn.icon, "-my-2 -mr-2")}
+            className={panel.close}
             onClick={onClose}
             aria-label={t("hp.close")}
             data-panel-close
           >
-            <X className="size-5" aria-hidden />
+            <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
           </button>
         </div>
 

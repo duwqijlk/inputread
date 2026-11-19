@@ -25,7 +25,7 @@ export function WordLookupMenu({
     <Menu.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <Menu.Trigger
         type="button"
-        className="inline-flex size-11 shrink-0 items-center justify-center rounded text-muted outline-none hover:bg-sheet hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent data-[state=open]:bg-sheet data-[state=open]:text-ink"
+        className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted outline-none hover:bg-ink/[0.06] hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent data-[state=open]:bg-ink/[0.08] data-[state=open]:text-ink"
         aria-label={t("card.senses.more")}
         data-word-more
       >

@@ -24,7 +24,7 @@ const stubs = {
   "@/components/floating-card": { FloatingAside: ({ children }) => React.createElement("aside", { "data-word-card": true }, children) },
   "@/components/help-panels": { SentenceHint: () => null },
   "@/components/side-panel": { SIDE_PANEL: "" },
-  "@/components/ui": { cn: (...parts) => parts.filter(Boolean).join(" "), SpeakButton: () => null },
+  "@/components/ui": { cn: (...parts) => parts.filter(Boolean).join(" "), SpeakButton: () => null, panel: { close: "close", closeIcon: "close-icon" } },
   "@/components/credit-line": { CreditLine: () => null },
   "@/components/word-feedback": { WordMeaning: (props) => { received.community = props; return React.createElement("div", { "data-test-community": true }, props.meaning); } },
   "@/components/word-sense-panel": { WordSensePanel: (props) => { received.panel = props; const [tab, setTab] = React.useState("recommended"); return React.createElement("button", { "data-test-panel": true, onClick: () => setTab("dictionary") }, tab); } },

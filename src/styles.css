@@ -2064,20 +2064,28 @@
    full-height gutter (which cut through the 20px corner on Windows). WebKit/Blink use the pseudo
    elements; engines without them get the standard thin scrollbar. */
 [role="dialog"]::-webkit-scrollbar,
-[role="alertdialog"]::-webkit-scrollbar {
+[role="alertdialog"]::-webkit-scrollbar,
+[data-word-card]::-webkit-scrollbar,
+[data-para-panel]::-webkit-scrollbar {
   width: 14px;
 }
 [role="dialog"]::-webkit-scrollbar-button,
-[role="alertdialog"]::-webkit-scrollbar-button {
+[role="alertdialog"]::-webkit-scrollbar-button,
+[data-word-card]::-webkit-scrollbar-button,
+[data-para-panel]::-webkit-scrollbar-button {
   display: none;
 }
 [role="dialog"]::-webkit-scrollbar-track,
-[role="alertdialog"]::-webkit-scrollbar-track {
+[role="alertdialog"]::-webkit-scrollbar-track,
+[data-word-card]::-webkit-scrollbar-track,
+[data-para-panel]::-webkit-scrollbar-track {
   background: transparent;
   margin-block: 20px;
 }
 [role="dialog"]::-webkit-scrollbar-thumb,
-[role="alertdialog"]::-webkit-scrollbar-thumb {
+[role="alertdialog"]::-webkit-scrollbar-thumb,
+[data-word-card]::-webkit-scrollbar-thumb,
+[data-para-panel]::-webkit-scrollbar-thumb {
   min-height: 40px;
   background-color: rgb(var(--ink-rgb) / 0.16);
   border: 5px solid transparent;
@@ -2085,12 +2093,25 @@
   background-clip: padding-box;
 }
 [role="dialog"]:hover::-webkit-scrollbar-thumb,
-[role="alertdialog"]:hover::-webkit-scrollbar-thumb {
+[role="alertdialog"]:hover::-webkit-scrollbar-thumb,
+[data-word-card]:hover::-webkit-scrollbar-thumb,
+[data-para-panel]:hover::-webkit-scrollbar-thumb {
   background-color: rgb(var(--ink-rgb) / 0.28);
 }
 [role="dialog"]::-webkit-scrollbar-corner,
-[role="alertdialog"]::-webkit-scrollbar-corner {
+[role="alertdialog"]::-webkit-scrollbar-corner,
+[data-word-card]::-webkit-scrollbar-corner,
+[data-para-panel]::-webkit-scrollbar-corner {
   background: transparent;
+}
+/* The word card and paragraph help carry .scroll-thin, whose standard scrollbar properties would
+   switch the pill above off in Blink: hand those two back to the pseudo-elements. */
+@supports selector(::-webkit-scrollbar) {
+  [data-word-card].scroll-thin,
+  [data-para-panel].scroll-thin {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
 }
 @supports not selector(::-webkit-scrollbar) {
   [role="dialog"],
