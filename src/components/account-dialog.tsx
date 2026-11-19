@@ -327,7 +327,7 @@ function Profile({
   }
 
   return (
-    <div className="grid gap-2" data-account-avatar>
+    <div className="grid gap-2 rounded-xl bg-sheet px-4 py-3.5" data-account-avatar>
       <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4">
         <div className="relative">
           {publicId ? (
@@ -340,14 +340,14 @@ function Profile({
           {publicId ? (
             <button
               type="button"
-              className="absolute -right-1 -bottom-1 grid size-7 place-items-center rounded-full border-2 border-paper bg-ink text-paper disabled:opacity-60"
+              className="absolute -right-0.5 -bottom-0.5 grid size-6 place-items-center rounded-full bg-paper text-ink shadow-[0_1px_3px_rgb(0_0_0/0.2),0_0_0_2px_var(--sheet)] transition-transform duration-150 hover:scale-105 active:scale-95 disabled:opacity-60"
               disabled={working || !verified}
               onClick={() => input.current?.click()}
               aria-label={t("account.avatarChange")}
               title={verified ? t("account.avatarHint") : t("account.err.avatarVerify")}
               data-account-avatar-change
             >
-              <Camera className="size-3.5" aria-hidden />
+              <Camera className="size-3" strokeWidth={2.25} aria-hidden />
             </button>
           ) : null}
           <input
@@ -848,8 +848,8 @@ export function AccountDialog() {
                       ? t("account.nicknamePromptTitle")
                       : t("account.title")}
             </Dialog.Title>
-            <Dialog.Close className={cn(btn.icon, "-mr-2.5")} aria-label={t("common.close")}>
-              <X className="size-5" aria-hidden />
+            <Dialog.Close className={panel.close} aria-label={t("common.close")}>
+              <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
             </Dialog.Close>
           </div>
           <Dialog.Description className={signedIn || signingUp ? "sr-only" : panel.desc}>

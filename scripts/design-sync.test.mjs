@@ -59,10 +59,11 @@ test("button text never wraps; the continue button and the detail's main button 
   const discover = read("src/components/discover-browse.tsx");
   const actions = discover.match(/className="([^"]+)" data-detail-actions/)?.[1].split(/\s+/) ?? [];
   for (const name of ["flex", "flex-wrap", "items-center"]) assert.ok(actions.includes(name), name);
-  // Full-width actions on phones keep complete labels inside the sheet; desktop actions size to text.
+  // On a phone the main button fills the row beside the icon buttons, keeping its whole label;
+  // desktop actions size to their text.
   const detail = discover.slice(discover.indexOf("data-detail-actions"));
   const primary = detail.match(/btn\.primary,\s*"([^"]+)"/)?.[1].split(/\s+/) ?? [];
-  for (const name of ["relative", "min-w-0", "w-full", "max-w-full", "flex-none", "overflow-hidden", "sm:w-auto"])
+  for (const name of ["relative", "min-w-0", "w-full", "max-w-full", "flex-1", "overflow-hidden", "sm:w-auto", "sm:flex-none"])
     assert.ok(primary.includes(name), `primary action: ${name}`);
 });
 

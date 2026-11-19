@@ -8,7 +8,7 @@ import { SPONSOR_EMAIL, isSponsorMethod, sponsorName, type SponsorMethod } from 
 import wechatQr from "@/assets/sponsor/wechat.png?url&no-inline";
 import { EVM_CHAINS, SPONSOR_WALLETS, type SponsorWallet } from "@/lib/sponsor-wallets";
 import { accountRequest } from "@/lib/sync-engine";
-import { btn, cn, Segmented } from "@/components/ui";
+import { btn, cn, panel, Segmented } from "@/components/ui";
 
 type PaymentOption = SponsorWallet["id"] | "wechat";
 
@@ -190,13 +190,13 @@ export function SponsorDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/[0.32]" />
         <Dialog.Content
-          className="anim-pop fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-2xl border border-float-edge bg-float p-5 text-ink shadow-lift "
+          className="anim-pop fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-float-edge bg-float px-5 pb-5 text-ink shadow-lift"
           data-sponsor-dialog
         >
-          <div className="flex items-start justify-between gap-3">
+          <div className="panel-head sticky top-0 z-10 -mx-5 flex items-center justify-between gap-3 px-5 pt-5 pb-3">
             <Dialog.Title className="font-bold tracking-[-0.02em] text-xl">{t("thanks.dialogTitle")}</Dialog.Title>
-            <Dialog.Close className={btn.icon} aria-label={t("common.close")}>
-              <X className="size-4" aria-hidden />
+            <Dialog.Close className={panel.close} aria-label={t("common.close")}>
+              <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
             </Dialog.Close>
           </div>
           <Dialog.Description className="-mt-2 text-sm leading-6 text-muted">{t("thanks.gift")}</Dialog.Description>

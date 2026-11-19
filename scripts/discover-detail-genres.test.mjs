@@ -18,7 +18,7 @@ const stubs = {
   "@/components/book-cover": { BookCover: () => null, coverLookOf: () => "book", talkCoverTone: () => "" },
   "@/lib/cover-tone": { useBookTone: () => ({}) },
   "@/lib/motion": { bump() {} },
-  "@/components/ui": { cn: (...values) => values.filter(Boolean).join(" "), btn: {} },
+  "@/components/ui": { cn: (...values) => values.filter(Boolean).join(" "), btn: {}, panel: { close: "close", closeIcon: "close-icon" } },
   "@/lib/library-totals": { groupDigits: String },
   "@/lib/lexile": { lexileMeasure: () => "" },
   "@/lib/i18n": { useT: () => ({ locale: "en", t: (key) => labels[key] ?? key }) },

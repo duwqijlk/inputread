@@ -41,14 +41,21 @@ test("All has one original-style new-books carousel, not the cover rail", () => 
   }
 });
 
-test("desktop close is anchored to the header corner without changing the phone layout", () => {
-  assert.match(browse, /-mt-2 -mr-2 sm:absolute sm:top-3 sm:right-3 sm:m-0/);
-  assert.match(browse, /data-detail-close/);
-  assert.match(browse, /content-start gap-1\.5 sm:pr-9/);
+test("the close button sits in the colour block's corner, out of the grid, in the shared sheet style", () => {
+  assert.match(browse, /<div className="absolute top-4 right-4 z-10">\s*<Dialog\.Close className=\{panel\.close\} data-detail-close/);
+  assert.match(browse, /content-start gap-1\.5 self-center pr-8 sm:self-start sm:pt-1 sm:pr-9/, "the title clears the close button");
 });
 
-test("desktop detail reserves a viewport-bounded height before the summary loads", () => {
-  assert.match(browse, /sm:h-\[min\(44rem,calc\(100dvh-2rem\)\)\]/);
+test("cover and title stay together: a phone centres the title beside the cover, actions run full width", () => {
+  assert.match(browse, /grid grid-cols-\[6\.5rem_minmax\(0,1fr\)\] items-start/);
+  assert.match(browse, /tone-cover relative w-full sm:row-span-2/);
+  assert.match(browse, /col-span-2 grid min-w-0 content-start gap-2\.5 sm:col-span-1 sm:col-start-2/);
+  assert.match(browse, /row\.title\.length > 24 \? "text-\[1\.3rem\] sm:text-\[1\.6rem\]"/, "long titles step down");
+});
+
+test("desktop detail fits its content (no reserved height left empty), bounded by the viewport", () => {
+  assert.doesNotMatch(browse, /sm:h-\[min\(44rem/, "a fixed height left a large empty area when a book has no summary");
+  assert.match(browse, /sm:max-h-\[calc\(100dvh-2rem\)\]/);
   assert.match(browse, /sm:auto-rows-max sm:content-start/);
   assert.match(browse, /no-scrollbar fixed z-50 grid/);
   assert.doesNotMatch(browse, /overflow-y-scroll|scrollbar-gutter/);

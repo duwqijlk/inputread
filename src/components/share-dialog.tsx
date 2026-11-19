@@ -212,8 +212,8 @@ export default function ShareDialog({ what, open, onOpenChange }: { what: ShareW
           <PanelHandle />
           <div className={panel.head}>
             <Dialog.Title className={panel.title}>{t("share.title")}</Dialog.Title>
-            <Dialog.Close className={cn(btn.icon, "-mr-2.5")} aria-label={t("common.close")}>
-              <X className="size-5" aria-hidden />
+            <Dialog.Close className={panel.close} aria-label={t("common.close")}>
+              <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
             </Dialog.Close>
           </div>
           <Dialog.Description className="sr-only">{t("share.longPress")}</Dialog.Description>
