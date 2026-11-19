@@ -27,9 +27,12 @@ test("four reading themes, each with every colour and a matching -rgb twin", () 
     }
   }
   assert.doesNotMatch(css, /data-theme="clear"/, "the Clear theme is gone");
-  // Frosted glass material lives on bars (.chrome-bar) and floating layers (.bg-float), with opaque fallbacks.
-  for (const rule of css.match(/[^{}]*\{[^{}]*backdrop-filter[^{}]*\}/g) ?? []) {
-    assert.match(rule, /\.(chrome-bar|bg-float)/, "frosted glass only on bars and floating layers");
+  // Frosted glass material lives on bars (.chrome-bar), floating layers (.bg-float) and the pinned header
+  // inside a floating panel (.panel-head), with opaque fallbacks.
+  // The pinned header fades its blur in on scroll: its keyframe steps belong to .panel-head.
+  const outsideHeaderFade = css.replace(/@keyframes panel-head-line \{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/, "");
+  for (const rule of outsideHeaderFade.match(/[^{}]*\{[^{}]*backdrop-filter[^{}]*\}/g) ?? []) {
+    assert.match(rule, /\.(chrome-bar|bg-float|panel-head)/, "frosted glass only on bars, floating layers and their pinned header");
   }
   assert.match(css, /@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)/);
 });

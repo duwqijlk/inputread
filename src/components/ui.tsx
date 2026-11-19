@@ -747,17 +747,23 @@ export function StatRow({
 export const panel = {
   overlay: "fixed inset-0 z-50 bg-black/[0.32]",
   content:
-    "panel-in fixed z-50 grid content-start gap-4 overflow-y-auto overscroll-contain bg-float text-ink max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[92dvh] max-sm:rounded-t-sheet max-sm:border-t max-sm:border-float-edge max-sm:px-4 max-sm:pb-[calc(20px+env(safe-area-inset-bottom))] max-sm:shadow-[0_-8px_32px_-12px_rgb(0_0_0/0.25)] sm:top-1/2 sm:left-1/2 sm:max-h-[90dvh] sm:w-[min(30rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:gap-5 sm:rounded-2xl sm:border sm:border-float-edge sm:px-6 sm:pt-5 sm:pb-6 sm:shadow-lift",
-  head: "flex items-center justify-between gap-3",
+    "panel-in fixed z-50 grid content-start gap-4 overflow-y-auto overscroll-contain bg-float text-ink max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[92dvh] max-sm:rounded-t-sheet max-sm:border-t max-sm:border-float-edge max-sm:px-4 max-sm:pb-[calc(20px+env(safe-area-inset-bottom))] max-sm:shadow-[0_-8px_32px_-12px_rgb(0_0_0/0.25)] sm:top-1/2 sm:left-1/2 sm:max-h-[90dvh] sm:w-[min(30rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:gap-5 sm:rounded-2xl sm:border sm:border-float-edge sm:px-6 sm:pt-0 sm:pb-6 sm:shadow-lift",
+  /** Pinned while the panel scrolls: frosted, with a hairline once content passes under it (styles.css). */
+  head: "panel-head sticky top-0 z-10 -mx-4 flex items-center justify-between gap-3 px-4 py-2 sm:-mx-6 sm:px-6 sm:pt-5 sm:pb-3",
   title: "m-0 text-2xl leading-tight font-bold tracking-[-0.02em]",
+  /** iOS sheet close: a small tinted circle; the hit area stays 44px. */
+  close:
+    "relative inline-flex size-[30px] shrink-0 items-center justify-center rounded-full bg-ink/[0.07] text-muted transition-colors duration-150 after:absolute after:-inset-[7px] after:content-[''] hover:bg-ink/[0.11] hover:text-ink active:bg-ink/[0.15] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+  closeIcon: "size-4",
   desc: "-mt-2 text-sm leading-relaxed text-muted",
-  group: "grid gap-2",
-  groupTitle: "m-0 px-1 text-[13px] font-bold text-faint",
-  box: "grid rounded-2xl bg-sheet px-4 py-1 [&>*+*]:border-t [&>*+*]:border-line",
-  note: "m-0 px-1 text-[13px] leading-relaxed text-faint",
-  row: "group/row flex min-h-[52px] w-full items-center justify-between gap-3 text-left text-[15px] text-ink",
-  rowLabel: "min-w-0 group-hover/row:text-accent",
-  rowIcon: "size-[18px] shrink-0 text-faint",
+  group: "grid gap-1.5",
+  groupTitle: "m-0 px-4 text-[13px] font-semibold tracking-[-0.005em] text-faint",
+  /** Inset grouped list: rows run edge to edge, hairlines start at the text (styles.css .panel-box). */
+  box: "panel-box grid overflow-hidden rounded-xl bg-sheet",
+  note: "m-0 px-4 text-[13px] leading-relaxed text-faint",
+  row: "group/row flex min-h-12 w-full items-center justify-between gap-3 text-left text-[15px] tracking-[-0.01em] text-ink transition-colors duration-100",
+  rowLabel: "min-w-0",
+  rowIcon: "size-[17px] shrink-0 text-faint/80",
 } as const;
 
 /** The drag bar at the top of a phone sheet; hidden on a wide screen. */
@@ -940,16 +946,17 @@ export function ConfirmDialog({
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/[0.32]" />
-        <AlertDialog.Content className="anim-pop fixed top-1/2 left-1/2 z-50 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-float-edge bg-float p-5 text-ink shadow-lift">
-          <AlertDialog.Title className="text-lg font-semibold">
+        {/* iOS alert: a narrow centred card, centred title and message, two equal buttons side by side. */}
+        <AlertDialog.Content className="anim-pop fixed top-1/2 left-1/2 z-50 w-[min(20rem,calc(100vw-3rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-float-edge bg-float px-5 pt-6 pb-5 text-center text-ink shadow-lift" data-confirm-dialog>
+          <AlertDialog.Title className="text-[1.0625rem] leading-snug font-semibold tracking-[-0.015em]">
             {title}
           </AlertDialog.Title>
-          <AlertDialog.Description className="mt-2 text-[0.95rem] text-muted">
+          <AlertDialog.Description className="mt-1.5 text-[0.875rem] leading-relaxed text-muted">
             {description}
           </AlertDialog.Description>
-          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
-            <AlertDialog.Cancel className={btn.quiet}>{t("common.cancel")}</AlertDialog.Cancel>
-            <AlertDialog.Action className={btn.danger} onClick={onConfirm}>
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <AlertDialog.Cancel className={cn(btn.quiet, "min-w-0 px-3")}>{t("common.cancel")}</AlertDialog.Cancel>
+            <AlertDialog.Action className={cn(btn.danger, "min-w-0 px-3")} onClick={onConfirm}>
               {confirmLabel}
             </AlertDialog.Action>
           </div>

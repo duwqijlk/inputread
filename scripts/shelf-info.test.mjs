@@ -25,7 +25,7 @@ const dialog = {
   Content: ({ onCloseAutoFocus: _focus, ...props }) => React.createElement("section", props),
   Title: element("h2"), Description: element("p"), Close: element("button"),
 };
-const ui = { btn: { quiet: "quiet", icon: "icon" }, cn: (...values) => values.filter(Boolean).join(" "), ProgressBar: () => null, PanelHandle: () => null };
+const ui = { btn: { quiet: "quiet", icon: "icon" }, panel: { close: "close", closeIcon: "close-icon" }, cn: (...values) => values.filter(Boolean).join(" "), ProgressBar: () => null, PanelHandle: () => null };
 function loadComponent(text, stubs) {
   const js = ts.transpileModule(text, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2019, jsx: ts.JsxEmit.ReactJSX },

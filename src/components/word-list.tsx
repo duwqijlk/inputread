@@ -11,7 +11,7 @@ import {
   type ImportPlan,
   type ImportResult,
 } from "@/lib/glossary-import";
-import { btn, cn } from "@/components/ui";
+import { btn, cn, panel as sheetUi } from "@/components/ui";
 
 /* ------------------------------------------------------------------ shared bits */
 
@@ -44,8 +44,8 @@ function Frame({
               <Dialog.Title className="font-bold tracking-[-0.02em] text-xl">{title}</Dialog.Title>
               <Dialog.Description className="text-sm text-muted">{description}</Dialog.Description>
             </div>
-            <Dialog.Close className={cn(btn.icon, "-mt-1 -mr-2")} aria-label={t("common.close")}>
-              <X className="size-5" aria-hidden />
+            <Dialog.Close className={cn(sheetUi.close, "mt-0.5")} aria-label={t("common.close")}>
+              <X className={sheetUi.closeIcon} strokeWidth={2.5} aria-hidden />
             </Dialog.Close>
           </div>
           <div className="scroll-thin grid gap-4 overflow-y-auto px-5 py-4 text-[0.95rem]">

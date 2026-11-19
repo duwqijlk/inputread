@@ -2039,6 +2039,129 @@
   backdrop-filter: none;
 }
 
+/* Dialog scrollbars: a slim overlay-style pill inset from the rounded corners, not the platform's
+   full-height gutter (which cut through the 20px corner on Windows). WebKit/Blink use the pseudo
+   elements; engines without them get the standard thin scrollbar. */
+[role="dialog"]::-webkit-scrollbar,
+[role="alertdialog"]::-webkit-scrollbar {
+  width: 14px;
+}
+[role="dialog"]::-webkit-scrollbar-button,
+[role="alertdialog"]::-webkit-scrollbar-button {
+  display: none;
+}
+[role="dialog"]::-webkit-scrollbar-track,
+[role="alertdialog"]::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 20px;
+}
+[role="dialog"]::-webkit-scrollbar-thumb,
+[role="alertdialog"]::-webkit-scrollbar-thumb {
+  min-height: 40px;
+  background-color: rgb(var(--ink-rgb) / 0.16);
+  border: 5px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+[role="dialog"]:hover::-webkit-scrollbar-thumb,
+[role="alertdialog"]:hover::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--ink-rgb) / 0.28);
+}
+[role="dialog"]::-webkit-scrollbar-corner,
+[role="alertdialog"]::-webkit-scrollbar-corner {
+  background: transparent;
+}
+@supports not selector(::-webkit-scrollbar) {
+  [role="dialog"],
+  [role="alertdialog"] {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--ink-rgb) / 0.22) transparent;
+  }
+}
+
+/* The pinned panel header (ui.tsx panel.head): the same frosted material as its panel, and a
+   hairline that fades in over the first 24px of scroll where scroll-driven animations exist. */
+.panel-head {
+  background: rgb(var(--surface-3-rgb) / 0.86);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .panel-head {
+    background: var(--surface-3);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .panel-head {
+    background: var(--surface-3);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+[data-theme="eink"] .panel-head {
+  background: var(--surface-3);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* At rest the header is clear (a second frosted layer over the panel read as a whiter band); it
+   frosts and gains its hairline as content scrolls under it. */
+/* 0% and 1% both hold `none`: interpolating from none already yields an active filter
+   (saturate(1) blur(0)), which paints the lighter band even at rest. */
+@keyframes panel-head-line {
+  0%,
+  1% {
+    background-color: rgb(var(--surface-3-rgb) / 0);
+    box-shadow: 0 1px 0 transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  100% {
+    background-color: rgb(var(--surface-3-rgb) / 0.72);
+    box-shadow: 0 1px 0 var(--line);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+  }
+}
+@supports (animation-timeline: scroll()) {
+  /* Also the resting look when the panel does not scroll at all (an inactive timeline applies no keyframes). */
+  .panel-head:not([data-theme="eink"] *) {
+    /* A resting blur over the already-frosted panel paints a lighter band in Blink: blur only once scrolled. */
+    background-color: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    animation: panel-head-line linear both;
+    animation-timeline: scroll(nearest);
+    animation-range: 0 24px;
+  }
+}
+
+/* Inset grouped list (ui.tsx panel.box), as in iOS Settings: every row is padded on its own so a
+   pressed row fills the whole width, and the hairline above a row starts at its text, not the edge. */
+.panel-box > * {
+  padding-inline: 16px;
+}
+.panel-box > * + * {
+  background-image: linear-gradient(var(--line), var(--line));
+  background-repeat: no-repeat;
+  background-position: right top;
+  background-size: calc(100% - 16px) 1px;
+}
+@media (hover: hover) {
+  .panel-box > :is(button, a):not(:disabled):hover {
+    background-color: rgb(var(--ink-rgb) / 0.04);
+  }
+}
+.panel-box > :is(button, a):not(:disabled):active {
+  background-color: rgb(var(--ink-rgb) / 0.08);
+}
+.panel-box > :is(button, a):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+[data-theme="eink"] .panel-box > :is(button, a):not(:disabled):active {
+  background-color: transparent;
+}
+
 /* Apple-style borderless tinted select with custom chevron; keeps crisp border on e-ink. */
 .apple-select {
   -webkit-appearance: none;

@@ -18,7 +18,7 @@ import { BookCover, coverLookOf, preloadCoverImage, talkCoverTone } from "@/comp
 import { preloadBookTone, useBookTone } from "@/lib/cover-tone";
 import { bump } from "@/lib/motion";
 import type { ShelfState } from "@/components/shelf-actions";
-import { btn, cn } from "@/components/ui";
+import { btn, cn, panel } from "@/components/ui";
 import type { ContentCategory } from "@/lib/content-category";
 import { groupDigits } from "@/lib/library-totals";
 import { lexileMeasure } from "@/lib/lexile";
@@ -484,40 +484,42 @@ export function BookDetail({
             // A phone gets a bottom sheet (rounded top, a drag bar, at most 88% high); wider screens a centred panel.
             "no-scrollbar fixed z-50 grid max-h-[88dvh] gap-5 overflow-y-auto border border-float-edge bg-float p-5 pt-0 text-ink shadow-lift",
             "inset-x-0 bottom-0 rounded-t-sheet pb-[max(1.25rem,env(safe-area-inset-bottom))] anim-sheet",
-            "sm:inset-auto sm:top-1/2 sm:left-1/2 sm:h-[min(44rem,calc(100dvh-2rem))] sm:max-h-[calc(100dvh-2rem)] sm:auto-rows-max sm:content-start sm:w-[min(36rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:p-6 sm:anim-pop",
+            "sm:inset-auto sm:top-1/2 sm:left-1/2 sm:max-h-[calc(100dvh-2rem)] sm:auto-rows-max sm:content-start sm:w-[min(36rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:p-6 sm:anim-pop",
           )}
           data-book-detail={row?.id}
         >
           {row && model ? (
             <>
               {/* The top on the book's own colour (CoverTone), starting at the sheet's rounded top
-                  edge. The pull handle floats in its top padding, so the cover stays at the centre
-                  of the colour block. */}
+                  edge. A grid: on a phone the cover sits beside the title block (centred on it) and
+                  the actions and credits run full width under both; wider, the cover spans the rows
+                  of a right-hand column. Either way no column is left floating in empty space. */}
               <div
-                className="tone-ground relative -mx-5 flex items-center gap-4 rounded-t-sheet px-5 pt-9 pb-9 sm:-mx-6 sm:-mt-6 sm:gap-6 sm:rounded-t-2xl sm:px-6 sm:py-6"
+                className="tone-ground relative -mx-5 grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-x-4 gap-y-4 rounded-t-sheet px-5 pt-9 pb-6 sm:-mx-6 sm:-mt-6 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-x-6 sm:gap-y-3 sm:rounded-t-2xl sm:px-6 sm:py-6"
                 style={tone}
               >
                 <div className="absolute inset-x-0 top-0 flex h-6 items-center justify-center sm:hidden" aria-hidden>
                   <span className="h-1 w-10 rounded-full bg-ink/30" />
                 </div>
-                <div className="tone-cover relative w-28 shrink-0 sm:w-36" data-tilt>
+                {/* Out of the grid flow, in the colour block's top corner (panel.close is itself relative). */}
+                <div className="absolute top-4 right-4 z-10">
+                  <Dialog.Close className={panel.close} data-detail-close aria-label={t("common.close")}>
+                    <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
+                  </Dialog.Close>
+                </div>
+                <div className="tone-cover relative w-full sm:row-span-2" data-tilt>
                   <BookCover title={row.title} author={row.author} cover={row.coverUrl} look={coverLookOf(row.category, row.series)} />
                 </div>
-                <div className="grid min-w-0 flex-1 content-start gap-1.5 sm:pr-9">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="pt-1 text-[0.8125rem] font-bold text-[var(--book-deep)]">
-                      {row.kind === "classic" ? t("shelf.classic") : t("discover.kindList")}
-                    </span>
-                    <Dialog.Close
-                      className={cn(btn.icon, "-mt-2 -mr-2 sm:absolute sm:top-3 sm:right-3 sm:m-0")}
-                      data-detail-close
-                      aria-label={t("common.close")}
-                    >
-                      <X className="size-5" aria-hidden />
-                    </Dialog.Close>
-                  </div>
+                <div className="grid min-w-0 content-start gap-1.5 self-center pr-8 sm:self-start sm:pt-1 sm:pr-9">
+                  <span className="text-[0.8125rem] font-semibold text-[var(--book-deep)]">
+                    {row.kind === "classic" ? t("shelf.classic") : t("discover.kindList")}
+                  </span>
                   <Dialog.Title
-                    className="font-display text-[1.6rem] leading-tight font-bold tracking-[-0.015em] sm:text-[1.875rem]"
+                    className={cn(
+                      "font-display leading-[1.12] font-bold tracking-[-0.015em] text-balance",
+                      // A long title (Alice's Adventures in Wonderland) steps down so it stays beside the cover.
+                      row.title.length > 24 ? "text-[1.3rem] sm:text-[1.6rem]" : "text-[1.6rem] sm:text-[1.875rem]",
+                    )}
                     lang="en"
                   >
                     {row.title}
@@ -525,15 +527,17 @@ export function BookDetail({
                   <p className="text-[0.9375rem] text-muted" lang="en">
                     {row.author}
                   </p>
+                </div>
+                <div className="col-span-2 grid min-w-0 content-start gap-2.5 sm:col-span-1 sm:col-start-2">
                   {/* Whole buttons wrap to the next line when they do not fit; their text never wraps (English
                       labels run about twice as long as Chinese ones). */}
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 pt-2" data-detail-actions>
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:flex-nowrap" data-detail-actions>
                     <button
                       ref={actionRef}
                       type="button"
                       className={cn(
                         btn.primary,
-                        "relative min-w-0 w-full max-w-full flex-none overflow-hidden px-2 text-[0.8125rem] sm:w-auto sm:px-3 sm:text-sm",
+                        "relative min-w-0 w-full max-w-full flex-1 overflow-hidden px-3 text-[0.9375rem] sm:w-auto sm:flex-none sm:px-4 sm:text-sm",
                         // Adding: the progress shows inside the button, with a line along its bottom edge.
                         model.state === "busy" && "disabled:opacity-100 bg-accent-soft text-accent",
                       )}
@@ -556,7 +560,7 @@ export function BookDetail({
                     {model.held && model.state !== "on" ? (
                       <button
                         type="button"
-                        className={cn(btn.quiet, "min-w-0 w-full max-w-full px-2 text-[0.8125rem] sm:w-auto sm:px-3 sm:text-sm")}
+                        className={cn(btn.quiet, "min-w-0 w-full max-w-full flex-1 px-3 text-[0.9375rem] sm:w-auto sm:flex-none sm:px-4 sm:text-sm")}
                         onClick={onOpen}
                         data-detail-open
                       >
@@ -590,7 +594,7 @@ export function BookDetail({
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-xs text-muted" data-detail-genres>
                       <span>{t("browse.genreLabel")}</span>
                       <ul className="flex flex-wrap gap-x-2 gap-y-1" aria-label={t("browse.genreLabel")}>
-                        {genres.map((genre) => <li key={genre} className="rounded border border-ink/15 px-1.5 py-0.5" data-detail-genre={genre}>{t(`genre.${genre}`)}</li>)}
+                        {genres.map((genre) => <li key={genre} className="rounded-full bg-ink/[0.06] px-2.5 py-0.5 font-medium text-ink/75" data-detail-genre={genre}>{t(`genre.${genre}`)}</li>)}
                       </ul>
                     </div>
                   ) : null}
@@ -611,15 +615,23 @@ export function BookDetail({
               {/* Numbers in soft tiles. The Lexile measure shows here and nowhere else, as a number like the
                   other three (790 with a smaller L, design system BookDetail v36); none, no tile. 24px numbers
                   and 13px labels, four in a row on a phone too at 20px (BookDetail visual tidy-up). */}
-              <dl className={cn("grid gap-1.5", lexile ? "grid-cols-4" : "grid-cols-3")} data-detail-facts>
+              <dl
+                className={cn(
+                  "grid gap-1.5",
+                  lexile ? "grid-cols-4" : "grid-cols-3",
+                  // A phone: the "Marked words" tile gets the width its label needs (Lexile, words, phrases, notes).
+                  lexile && "max-sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,0.9fr)]",
+                )}
+                data-detail-facts
+              >
                 {[
                   ...(lexile ? [{ label: t("browse.fact.level"), value: <LexileNumber measure={lexile} />, lexile: true }] : []),
                   { label: t("dashboard.words"), value: groupDigits(facts.words), lexile: false },
                   { label: t("dashboard.phrases"), value: groupDigits(facts.phrases), lexile: false },
                   { label: t("browse.fact.notes"), value: groupDigits(facts.notes), lexile: false },
                 ].map((fact) => (
-                  <div key={fact.label} className="grid min-w-0 content-start gap-1.5 rounded-2xl bg-sheet px-2.5 pt-2.5 pb-3 sm:gap-2 sm:px-4 sm:pt-3 sm:pb-3.5">
-                    <dt className="truncate text-[0.8125rem] text-faint">{fact.label}</dt>
+                  <div key={fact.label} className="grid min-w-0 content-start gap-1.5 rounded-xl bg-sheet px-2 pt-2.5 pb-3 sm:gap-2 sm:px-4 sm:pt-3 sm:pb-3.5">
+                    <dt className="truncate text-[0.75rem] tracking-[-0.01em] text-faint sm:text-[0.8125rem]">{fact.label}</dt>
                     <dd
                       className="text-[20px] leading-none sm:text-2xl font-display font-bold tracking-[-0.02em] whitespace-nowrap [font-variant-numeric:lining-nums_tabular-nums] tabular-nums text-ink"
                       data-detail-lexile={fact.lexile ? lexile : undefined}
