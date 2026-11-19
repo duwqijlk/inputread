@@ -2589,3 +2589,54 @@ svg.lucide[stroke-width="2"] {
 [data-theme="eink"] .account-page-pop {
   animation: none;
 }
+
+/* Read aloud (chapter-aloud.tsx). The speaker after each paragraph is an EMPTY span like the help
+   mark: drawn here with a mask, so it is never part of the text. The paragraph being read gets a
+   soft highlight that changes colour only, never a size. */
+.book-body [data-aloud-from] {
+  position: relative;
+  display: inline-block;
+  /* The size of the help mark's glyph (0.72em font, about 0.6em drawn), sitting on the same line. */
+  width: 0.62em;
+  height: 0.62em;
+  margin-left: 0.3em;
+  vertical-align: 0.08em;
+  color: var(--faint);
+  background-color: currentColor;
+  opacity: 0.7;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 5 6 9H2v6h4l5 4V5z'/%3E%3Cpath d='M15.54 8.46a5 5 0 0 1 0 7.07'/%3E%3Cpath d='M19.07 4.93a10 10 0 0 1 0 14.14'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 5 6 9H2v6h4l5 4V5z'/%3E%3Cpath d='M15.54 8.46a5 5 0 0 1 0 7.07'/%3E%3Cpath d='M19.07 4.93a10 10 0 0 1 0 14.14'/%3E%3C/svg%3E") center / contain no-repeat;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 150ms, opacity 150ms;
+}
+.book-body [data-aloud-from]::after {
+  content: "";
+  position: absolute;
+  /* A small mark, a finger-sized target: the tap area grows, the drawing does not. */
+  inset: -0.85em -0.65em;
+}
+.book-body [data-aloud-from]:hover,
+.book-body [data-aloud-from]:focus-visible,
+.book-body [data-aloud-current] > [data-aloud-from] {
+  color: var(--accent);
+  opacity: 1;
+}
+.book-body [data-aloud-from]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.book-body [data-aloud-current] {
+  border-radius: 10px;
+  background: rgb(var(--accent-soft-rgb) / 0.42);
+  box-shadow: 0 0 0 0.45em rgb(var(--accent-soft-rgb) / 0.42);
+  transition: background-color 220ms, box-shadow 220ms;
+}
+[data-theme="eink"] .book-body [data-aloud-current] {
+  background: none;
+  box-shadow: none;
+  outline: 2px solid #000;
+  outline-offset: 0.3em;
+}

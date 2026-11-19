@@ -26,6 +26,7 @@ import {
 import { suggestEmail } from "@/lib/email-typo";
 import { signupEmailAllowed } from "@/lib/signup-email";
 import { AccountPreferences } from "@/components/get-books";
+import { TtsSettings, TtsSummary } from "@/components/tts-settings";
 import { isSponsorAdmin } from "@/lib/sponsor";
 import { navigate } from "@/lib/router";
 import { useT, type Key } from "@/lib/i18n";
@@ -619,9 +620,9 @@ function QuotaSummary() {
 
 /**
  * The signed-in account is a short home list (iOS Settings): profile, reading, two rows that push a
- * page (word-list quota, general), help, and account management. Delete account is a page of its own.
+ * page (word-list quota, general, read aloud), help, and account management. Delete account is a page of its own.
  */
-type AccountPage = "home" | "quota" | "general" | "delete";
+type AccountPage = "home" | "quota" | "general" | "tts" | "delete";
 
 export function AccountDialog() {
   const { t } = useT();
@@ -908,6 +909,8 @@ export function AccountDialog() {
                 ? t("account.glossaryTitle")
                 : subpage === "general"
                   ? t("settings.general")
+                  : subpage === "tts"
+                    ? t("tts.title")
                   : subpage === "delete"
                     ? t("account.delete")
                     : mode === "reset"
@@ -1012,6 +1015,10 @@ export function AccountDialog() {
                 <div key="general" className={cn("grid gap-5", pageClass)} data-account-page="general">
                   <AccountPreferences onDismiss={dismissForNavigation} only="general" />
                 </div>
+              ) : subpage === "tts" ? (
+                <div key="tts" className={cn("grid gap-5", pageClass)} data-account-page="tts">
+                  <TtsSettings />
+                </div>
               ) : subpage === "delete" ? (
                 <form key="delete" className={cn("grid gap-4", pageClass)} onSubmit={(event) => void onDelete(event)} data-account-page="delete">
                   <p className="m-0 rounded-xl bg-warn-soft px-4 py-3 text-sm leading-relaxed text-warn">{t("account.deleteWarn")}</p>
@@ -1044,6 +1051,13 @@ export function AccountDialog() {
                       <button type="button" className={panel.row} onClick={() => openPage("general")} data-account-row="general">
                         <span className={panel.rowLabel}>{t("settings.general")}</span>
                         <ChevronRight className={panel.rowIcon} aria-hidden />
+                      </button>
+                      <button type="button" className={panel.row} onClick={() => openPage("tts")} data-account-row="tts">
+                        <span className={panel.rowLabel}>{t("tts.title")}</span>
+                        <span className="flex items-center gap-1.5">
+                          <TtsSummary />
+                          <ChevronRight className={panel.rowIcon} aria-hidden />
+                        </span>
                       </button>
                     </div>
                   </section>

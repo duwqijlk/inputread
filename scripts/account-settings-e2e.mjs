@@ -100,13 +100,13 @@ async function assertFlatPreferences(page, locale) {
   return prefs;
 }
 
-/** A signed-in account opens on its home list: two rows that push pages, then help. */
+/** A signed-in account opens on its home list: three rows that push pages (Word lists, General, Read aloud), then help. */
 async function assertAccountHome(page, locale) {
   const dialog = page.locator('[data-account-dialog]');
   await dialog.locator('[data-account-page="home"]').waitFor();
   assert.equal(await dialog.locator('[data-account-back]').count(), 0, 'home has no back control');
   assert.equal(await dialog.locator('h2').first().innerText(), labels[locale]('account.title'));
-  assert.deepEqual(await dialog.locator('[data-account-nav] [data-account-row]').evaluateAll(els => els.map(el => el.dataset.accountRow)), ['quota', 'general']);
+  assert.deepEqual(await dialog.locator('[data-account-nav] [data-account-row]').evaluateAll(els => els.map(el => el.dataset.accountRow)), ['quota', 'general', 'tts']);
   assert.equal(await dialog.locator('[data-account-quota-summary]').count(), 1, 'the Word lists row shows its count');
   return assertPreferences(page, locale, ['help']);
 }

@@ -28,6 +28,8 @@ export const PERSONAL_KEYS = [
   "cibian-library-v1",
   "cibian-signed-meanings-v1",
   "cibian-dict-choices-v1",
+  // The reader's own Xiaomi MiMo key and voice (tts-settings.ts): never left behind for the next person.
+  "cibian-mimo-tts-v1",
 ] as const;
 
 /** Which account the data on this device belongs to (its email, lower case). */
