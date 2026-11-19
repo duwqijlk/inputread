@@ -68,6 +68,7 @@ import {
 } from "@/lib/text";
 import { useVocab } from "@/lib/vocab-store";
 import { flowCutOffsets, flowPoint, flowText, flowTextBefore } from "@/lib/flow-text";
+import { AloudBar, AloudHeaderButton, ParagraphSpeakers, readFromParagraph, useChapterAloudBridge } from "@/components/chapter-aloud";
 import { warmDictionaryMappings } from "@/lib/dictionary-positions";
 import {
   mergeSignedGlossary,
@@ -1163,6 +1164,28 @@ export function ReaderScreen({
     }
   }, [book, slots, slotIndex, safeIndex, goSlot, goChapter, pageStep, turnAllowed]);
 
+  // Reading the chapter aloud with the reader's own MiMo voice (chapter-aloud.tsx). At a chapter's
+  // end it opens the next one, and reading carries on once that text is on the page.
+  const aloudVersion = linkedHtml || `${activeExtra?.id ?? safeIndex}`;
+  const aloud = useChapterAloudBridge({
+    articleRef,
+    headerRef,
+    chapterKey: `${bookId}:${activeExtra?.id ?? safeIndex}`,
+    meta: {
+      bookTitle: book?.title ?? "",
+      chapterTitle: (activeExtra ? activeExtra.title : chapter?.title) ?? "",
+      author: shelfBook?.author ?? "",
+    },
+    onNextChapter: () => {
+      if (!book) return false;
+      const hasNext = slots ? slotIndex < slots.length - 1 : safeIndex < book.chapters.length - 1;
+      if (!hasNext) return false;
+      if (slots) goSlot(slotIndex + 1);
+      else goChapter(safeIndex + 1);
+      return true;
+    },
+  });
+
   const pendingWordSpace = useRef<HTMLElement | null>(null);
   const closeWordCard = (restoreFocus = false) => {
     pendingWordSpace.current = null;
@@ -1892,6 +1915,7 @@ export function ReaderScreen({
               {activeExtra ? activeExtra.title || t("reader.extra") : chapter.title}
             </p>
           </div>
+          <AloudHeaderButton />
           <ReaderSettings />
           <SaveMenu
             words={words.length}
@@ -2093,6 +2117,13 @@ export function ReaderScreen({
         </nav>
       </main>
 
+
+      <ParagraphSpeakers
+        articleRef={articleRef}
+        version={aloudVersion}
+        onStartAt={(at) => readFromParagraph(aloud.start, at)}
+      />
+      <AloudBar articleRef={articleRef} headerRef={headerRef} version={aloudVersion} onStart={() => aloud.start()} />
 
       {linkedHtml ? (
         <ParagraphMarks

@@ -1,11 +1,12 @@
 import { ChevronDown, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { getParagraphNoteFlags, paragraphBlocks } from "@/lib/help-lookup";
 import { useT } from "@/lib/i18n";
 import type { ParagraphHelpView, SentenceInParagraph } from "@/lib/help-flow";
 import { FloatingAside } from "@/components/floating-card";
 import { cn, panel, subTabs, TabInk } from "@/components/ui";
+import { ReadAloudButton } from "@/components/read-aloud-button";
 import { CreditLine } from "@/components/credit-line";
 import { flowText } from "@/lib/flow-text";
 import { parseGrammarMirror, splitPatternSlots } from "@/lib/grammar-mirror";
@@ -205,6 +206,12 @@ export function ParagraphPanel({
   const { t } = useT();
   const [open, setOpen] = useState(true);
   const paragraph = state.status === "ready" ? state.view.paragraph : null;
+  const paragraphText = useMemo(() => {
+    if (!paragraphEl) return "";
+    const copy = paragraphEl.cloneNode(true) as Element;
+    copy.querySelectorAll("[data-para-ui]").forEach((node) => node.remove());
+    return copy.textContent ?? "";
+  }, [paragraphEl]);
   const grammar = state.status === "ready" ? state.view.grammar : [];
   const sentences = state.status === "ready" ? state.view.sentences : [];
   const [chosen, setChosen] = useState<number | null>(null);
@@ -285,15 +292,19 @@ export function ParagraphPanel({
             </span>
             <span data-part="help-title">{t("hp.title")}</span>
           </h2>
-          <button
-            type="button"
-            className={panel.close}
-            onClick={onClose}
-            aria-label={t("hp.close")}
-            data-panel-close
-          >
-            <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
-          </button>
+          <div className="flex shrink-0 items-center gap-2.5">
+            {/* Read the original paragraph aloud (only with the reader's own MiMo key; see tts-settings). */}
+            <ReadAloudButton owner="para" text={paragraphText} label={t("tts.readParagraph")} />
+            <button
+              type="button"
+              className={panel.close}
+              onClick={onClose}
+              aria-label={t("hp.close")}
+              data-panel-close
+            >
+              <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
+            </button>
+          </div>
         </div>
 
         {state.status === "loading" ? (
@@ -594,7 +605,10 @@ function GrammarNote({
     >
       <div className="grid min-w-0 gap-1">
         <div className="flex min-w-0 items-center justify-between gap-2">
-          <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.original")}</span>
+          <span className="flex min-w-0 items-center gap-1">
+            <span className="text-xs font-semibold tracking-wide text-accent">{t("hp.original")}</span>
+            <ReadAloudButton owner={`sentence:${note.sentence.slice(0, 64)}`} text={note.sentence} label={t("tts.readSentence")} size="sm" />
+          </span>
           {canFoldOriginal ? (
             <button
               type="button"
@@ -721,13 +735,19 @@ function SentenceNote({
   chosen: boolean;
   onChoose: () => void;
 }) {
+  const { t } = useT();
   return (
     <div
       className="grid min-w-0 gap-2.5 border-t border-line/70 py-3.5 first:border-t-0 first:pt-0 last:pb-0"
       data-sentence-note
       data-chosen={chosen ? "" : undefined}
     >
-      <TargetSentenceButton sentence={note.sentence} chosen={chosen} onChoose={onChoose} />
+      <div className="flex min-w-0 items-start gap-1">
+        <div className="min-w-0 flex-1">
+          <TargetSentenceButton sentence={note.sentence} chosen={chosen} onChoose={onChoose} />
+        </div>
+        <ReadAloudButton owner={`sentence:${note.sentence.slice(0, 64)}`} text={note.sentence} label={t("tts.readSentence")} size="sm" className="mt-1" />
+      </div>
       <p className="break-words font-display text-[1.02rem] leading-relaxed text-ink" lang="en" data-part="easier">
         {note.simple}
       </p>

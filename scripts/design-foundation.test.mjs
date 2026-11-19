@@ -150,8 +150,8 @@ test("account owns settings, with one avatar entry and no outdated guest-reading
   // Signed in, the account is a short home list whose rows push pages (iOS Settings), with a back
   // control; a guest keeps the flat preferences under the sign-in form. No separate Settings dialog.
   assert.doesNotMatch(account, /data-account-settings|data-settings-panel|setView\(/);
-  assert.match(account, /type AccountPage = "home" \| "quota" \| "general" \| "delete";/);
-  for (const row of ["quota", "general", "delete"]) assert.match(account, new RegExp(`data-account-row="${row}"`), `${row} row`);
+  assert.match(account, /type AccountPage = "home" \| "quota" \| "general" \| "tts" \| "delete";/);
+  for (const row of ["quota", "general", "tts", "delete"]) assert.match(account, new RegExp(`data-account-row="${row}"`), `${row} row`);
   assert.match(account, /data-account-back/, "a pushed page has a back control");
   assert.match(account, /<AccountPreferences onDismiss=\{dismissForNavigation\} only="general" \/>/);
   assert.match(account, /<AccountPreferences onDismiss=\{dismissForNavigation\} only="help" \/>/);
