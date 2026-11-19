@@ -10,7 +10,7 @@ import { LOOKUP_SITES, lookupUrl, type LookupSite } from "@/lib/lookup-links";
 import { surfaceOffset } from "@/lib/text";
 import { FloatingAside } from "@/components/floating-card";
 import { SIDE_PANEL } from "@/components/side-panel";
-import { cn, SpeakButton } from "@/components/ui";
+import { cn, panel, SpeakButton } from "@/components/ui";
 import { sendWordFeedback, WordMeaning } from "@/components/word-feedback";
 import { CreditLine } from "@/components/credit-line";
 import { WordSensePanel, type WordSensePanelProps } from "@/components/word-sense-panel";
@@ -367,7 +367,7 @@ export function WordCard({
             <button
               type="button"
               className={cn(
-                "inline-flex size-11 shrink-0 items-center justify-center rounded transition-[background-color,color,transform] duration-100 hover:bg-sheet active:scale-[0.92] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
+                "inline-flex size-11 shrink-0 items-center justify-center rounded-full transition-[background-color,color,transform] duration-100 hover:bg-ink/[0.06] active:scale-[0.92] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
                 saved ? "text-accent" : "text-ink/80 hover:text-ink",
               )}
               disabled={!saved && !effectiveCanSave}
@@ -390,15 +390,19 @@ export function WordCard({
               {/* A heart: outline to save, filled brand once the word is in the notebook. */}
               <Heart className={cn("size-5 stroke-[1.8]", saved && "fill-current")} aria-hidden />
             </button>
-            <button
-              type="button"
-              className="inline-flex size-11 shrink-0 items-center justify-center rounded text-faint transition-[background-color,color,transform] duration-100 hover:bg-sheet hover:text-ink active:scale-[0.92]"
-              onClick={() => onClose(true)}
-              aria-label={t("card.close")}
-              data-panel-close
-            >
-              <X className="size-5 stroke-2" aria-hidden />
-            </button>
+            {/* The shared sheet close (a small tinted circle, 44px hit area), centred in a 44px slot so
+                the row of actions keeps its rhythm. */}
+            <span className="inline-flex size-11 shrink-0 items-center justify-center">
+              <button
+                type="button"
+                className={panel.close}
+                onClick={() => onClose(true)}
+                aria-label={t("card.close")}
+                data-panel-close
+              >
+                <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
+              </button>
+            </span>
           </div>
         </div>
         {phrase ? (
