@@ -60,26 +60,75 @@ async function accountState(page) {
   });
 }
 
-async function assertFlatPreferences(page, locale) {
+const GENERAL_HOOKS = ['data-settings-language', 'data-settings-pronunciation'];
+const HELP_HOOKS = ['data-settings-tutorial', 'data-guide-link'];
+
+/**
+ * The preferences block in the open Account. `groups` says which sections it holds:
+ * both (a guest, an unverified or nickname-prompt account: flat, under the form), help only
+ * (the signed-in home list) or general only (the signed-in General page).
+ */
+async function assertPreferences(page, locale, groups = ['general', 'help']) {
   const dialog = page.locator('[data-account-dialog]');
   const prefs = dialog.locator('[data-account-preferences]');
   await prefs.waitFor({ state: 'attached' });
-  assert.equal(await prefs.count(), 1, 'one direct preferences block');
+  assert.equal(await prefs.count(), 1, 'one preferences block');
   assert.equal(await page.locator('[role=dialog]:visible').count(), 1, 'Account is the only dialog');
-  assert.equal(await page.locator('[data-settings-button], [data-settings-panel], [data-account-settings], [data-account-back], [data-settings-admin]').count(), 0, 'no secondary Settings entry, page, back control or old admin entry');
+  assert.equal(await page.locator('[data-settings-button], [data-settings-panel], [data-account-settings], [data-settings-admin]').count(), 0, 'no separate Settings entry, panel or old admin entry');
   assert.equal(await dialog.locator('[data-settings-theme], [data-theme-tiles], [data-theme-tile]').count(), 0, 'themes belong to reader Aa, never Account');
   assert.equal(await prefs.evaluate(el => !el.closest('form') && !el.querySelector('form')), true, 'preferences remain outside authentication forms');
-  for (const hook of ['data-settings-language', 'data-settings-pronunciation', 'data-settings-tutorial', 'data-guide-link']) {
-    assert.equal(await prefs.locator(`[${hook}]`).count(), 1, `direct ${hook} available`);
+  const want = [...(groups.includes('general') ? GENERAL_HOOKS : []), ...(groups.includes('help') ? HELP_HOOKS : [])];
+  for (const hook of [...GENERAL_HOOKS, ...HELP_HOOKS]) {
+    assert.equal(await prefs.locator(`[${hook}]`).count(), want.includes(hook) ? 1 : 0, `${hook} ${want.includes(hook) ? 'available' : 'not on this page'}`);
   }
   assert.deepEqual(await prefs.locator('section').evaluateAll(els => els.map(el => el.getAttribute('aria-label'))),
-    [labels[locale]('settings.general'), labels[locale]('settings.help')], 'general preferences then help');
-  const guide = prefs.locator('[data-guide-link]');
-  assert.ok(await guide.getAttribute('href'), 'guide has a real destination');
-  assert.equal(await guide.getAttribute('target'), '_blank');
-  assert.ok((await guide.getAttribute('rel')).split(/\s+/).includes('noopener'));
+    groups.map(group => labels[locale](`settings.${group}`)), `sections: ${groups.join(', ')}`);
+  if (groups.includes('help')) {
+    const guide = prefs.locator('[data-guide-link]');
+    assert.ok(await guide.getAttribute('href'), 'guide has a real destination');
+    assert.equal(await guide.getAttribute('target'), '_blank');
+    assert.ok((await guide.getAttribute('rel')).split(/\s+/).includes('noopener'));
+  }
   assert.ok(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth + 1), 'no horizontal Account overflow');
   return prefs;
+}
+
+/** Guests and incomplete accounts: both groups, flat, no pages and no back control. */
+async function assertFlatPreferences(page, locale) {
+  const prefs = await assertPreferences(page, locale);
+  assert.equal(await page.locator('[data-account-back], [data-account-page], [data-account-nav]').count(), 0, 'no pages while not fully signed in');
+  return prefs;
+}
+
+/** A signed-in account opens on its home list: two rows that push pages, then help. */
+async function assertAccountHome(page, locale) {
+  const dialog = page.locator('[data-account-dialog]');
+  await dialog.locator('[data-account-page="home"]').waitFor();
+  assert.equal(await dialog.locator('[data-account-back]').count(), 0, 'home has no back control');
+  assert.equal(await dialog.locator('h2').first().innerText(), labels[locale]('account.title'));
+  assert.deepEqual(await dialog.locator('[data-account-nav] [data-account-row]').evaluateAll(els => els.map(el => el.dataset.accountRow)), ['quota', 'general']);
+  assert.equal(await dialog.locator('[data-account-quota-summary]').count(), 1, 'the Word lists row shows its count');
+  return assertPreferences(page, locale, ['help']);
+}
+
+/** Push the General page; Back gets focus. Returns its preferences block. */
+async function openGeneral(page, locale) {
+  const dialog = page.locator('[data-account-dialog]');
+  await dialog.locator('[data-account-row="general"]').click();
+  await dialog.locator('[data-account-page="general"]').waitFor();
+  assert.equal(await dialog.locator('h2').first().innerText(), labels[locale]('settings.general'), 'the page title says General');
+  await page.waitForFunction(() => document.activeElement?.hasAttribute('data-account-back'));
+  assert.equal(await dialog.locator('[data-account-avatar], [data-reading-overview], [data-account-more]').count(), 0, 'the page shows General only');
+  return assertPreferences(page, locale, ['general']);
+}
+
+/** Back to the home list; focus returns to the row that opened the page. */
+async function backToHome(page, locale, row = 'general') {
+  const dialog = page.locator('[data-account-dialog]');
+  await dialog.locator('[data-account-back]').click();
+  await dialog.locator('[data-account-page="home"]').waitFor();
+  await page.waitForFunction(row => document.activeElement?.getAttribute('data-account-row') === row, row);
+  return assertAccountHome(page, locale);
 }
 
 async function assertBefore(first, second, message) {
@@ -118,17 +167,27 @@ async function accountCase(locale, width, signedIn) {
     const geometry = () => page.locator('header').evaluate(el => { const r = el.getBoundingClientRect(); return [r.x, r.y + scrollY, r.width, r.height, scrollY]; });
     const before = await geometry();
     await trigger.click();
-    let prefs = await assertFlatPreferences(page, locale);
+    let prefs = signedIn ? await assertAccountHome(page, locale) : await assertFlatPreferences(page, locale);
     assert.equal(await page.locator('[data-account-admin]').count(), 0, 'ordinary member/guest has no admin row');
     if (signedIn) {
       const profile = page.locator('[data-account-avatar]'), reading = page.locator('[data-reading-overview]');
-      const quota = page.locator('[data-account-glossary]'), management = page.locator('[data-account-more]');
+      const nav = page.locator('[data-account-nav]'), management = page.locator('[data-account-more]');
       await assertBefore(profile, reading, 'profile precedes reading');
-      await assertBefore(reading, quota, 'reading precedes quota');
-      await assertBefore(quota, prefs, 'quota precedes general/help preferences');
-      await assertBefore(prefs, management, 'preferences precede account management');
+      await assertBefore(reading, nav, 'reading precedes the Word lists / General rows');
+      await assertBefore(nav, prefs, 'the page rows precede help');
+      await assertBefore(prefs, management, 'help precedes account management');
       assert.deepEqual(await management.locator('[data-account-export], [data-account-logout], [data-account-delete]').evaluateAll(els => els.map(el =>
         ['export', 'logout', 'delete'].find(key => el.hasAttribute('data-account-' + key)))), ['export', 'logout', 'delete']);
+      // The Word lists page holds the quota rows, and Back returns to its row.
+      await page.locator('[data-account-row="quota"]').click();
+      await page.locator('[data-account-page="quota"] [data-account-glossary]').waitFor();
+      assert.equal(await page.locator('[data-account-dialog] h2').first().innerText(), labels[locale]('account.glossaryTitle'));
+      prefs = await backToHome(page, locale, 'quota');
+      // Delete account is a page of its own with the password form, not an inline expansion.
+      await page.locator('[data-account-row="delete"]').click();
+      await page.locator('[data-account-page="delete"] #account-delete-password').waitFor();
+      assert.equal(await page.locator('[data-account-delete-confirm]').count(), 1);
+      prefs = await backToHome(page, locale, 'delete');
       await page.locator('[data-account-nickname-edit]').click();
       await page.locator('[data-account-nickname]').fill('Unsaved River');
     } else {
@@ -138,27 +197,39 @@ async function accountCase(locale, width, signedIn) {
     }
     const drafts = async () => page.locator('[data-account-email], [data-account-password], [data-account-nickname]').evaluateAll(els => els.map(el => [el.getAttribute('data-account-password') || el.id, el.value]));
     const draftBefore = await drafts(), authBefore = await accountState(page), requestsBefore = apiRequests.length;
+    // Signed in, the nickname draft lives in the dialog while General is open; it is checked on return.
+    if (signedIn) prefs = await openGeneral(page, locale);
+    const visibleDrafts = async () => (signedIn ? [] : drafts());
+    const draftShown = await visibleDrafts();
     await prefs.locator('[data-settings-pronunciation]').getByRole('button', { name: labels[locale]('ipa.uk'), exact: true }).click();
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('cibian-prefs-v1')).state.pronunciationAccent), 'UK');
-    assert.deepEqual(await drafts(), draftBefore, 'accent change preserves every auth/profile draft');
+    assert.deepEqual(await visibleDrafts(), draftShown, 'accent change preserves every auth/profile draft');
     const otherLocale = locale === 'en' ? 'zh' : 'en';
     await prefs.locator('[data-settings-language] button[aria-pressed=false]').click();
     assert.equal(await page.evaluate(() => localStorage.getItem('cibian-locale-v1')), otherLocale);
-    prefs = await assertFlatPreferences(page, otherLocale);
-    assert.deepEqual(await drafts(), draftBefore, 'language change preserves every auth/profile draft');
+    prefs = signedIn ? await assertPreferences(page, otherLocale, ['general']) : await assertFlatPreferences(page, otherLocale);
+    assert.deepEqual(await visibleDrafts(), draftShown, 'language change preserves every auth/profile draft');
     assert.deepEqual(await accountState(page), authBefore, 'preferences never change account state');
     assert.equal(apiRequests.length, requestsBefore, 'preferences never submit an auth form or request account APIs');
     await prefs.locator('[data-settings-language] button[aria-pressed=false]').click();
     await prefs.locator('[data-settings-pronunciation]').scrollIntoViewIfNeeded();
     await screenshot(page, `${locale}-${width}-${signedIn ? 'in' : 'guest'}`);
-    assert.deepEqual(await drafts(), draftBefore, 'roundtrip language still preserves drafts');
+    assert.deepEqual(await visibleDrafts(), draftShown, 'roundtrip language still preserves drafts');
     await prefs.locator('[data-settings-language] button[aria-pressed=false]').click();
+    if (signedIn) {
+      // Back on the home list (now in the other language), the nickname draft is still there.
+      await backToHome(page, otherLocale);
+      await page.locator('[data-account-nickname-edit]').click();
+      assert.equal(await page.locator('[data-account-nickname]').inputValue(), 'Unsaved River', 'the nickname draft survives a visit to General');
+      assert.deepEqual(await drafts(), draftBefore, 'roundtrip through General preserves the profile draft');
+    }
     await closeAccount(page);
     assert.deepEqual(await geometry(), before, 'Account leaves shelf geometry and scroll untouched');
 
     // Real reload, not re-seeding storage: both preferences must survive reopening.
     await page.reload(); await waitForAccount(page); await patchAccount(page, identity);
-    await trigger.click(); prefs = await assertFlatPreferences(page, otherLocale);
+    await trigger.click();
+    prefs = signedIn ? (await assertAccountHome(page, otherLocale), await openGeneral(page, otherLocale)) : await assertFlatPreferences(page, otherLocale);
     assert.equal(await page.evaluate(() => localStorage.getItem('cibian-locale-v1')), otherLocale);
     assert.equal(await prefs.locator('[data-settings-pronunciation]').getByRole('button', { name: labels[otherLocale]('ipa.uk'), exact: true }).getAttribute('aria-pressed'), 'true');
     await prefs.locator('[data-settings-language] button[aria-pressed=false]').click();
@@ -181,14 +252,15 @@ async function accountCase(locale, width, signedIn) {
       ['nickname', { ...member, nickname: null, nicknamePrompt: true }],
     ]) {
       await patchAccount(page, fields); await trigger.click();
-      prefs = await assertFlatPreferences(page, locale);
+      const paged = state === 'offline-member';
+      prefs = paged ? (await assertAccountHome(page, locale), await openGeneral(page, locale)) : await assertFlatPreferences(page, locale);
       if (state === 'unverified') await page.locator('[data-email-code-input]').fill('123');
       if (state === 'nickname') await page.locator('[data-account-nickname]').fill('Draft Nickname');
       if (state === 'incomplete-guest') await page.locator('[data-account-email]').fill('offline-draft@example.test');
       const incompleteDrafts = () => page.locator('[data-account-dialog] input').evaluateAll(els => els.map(el => [el.id, el.value]));
       const stateBefore = await accountState(page), incompleteBefore = await incompleteDrafts();
       await prefs.locator('[data-settings-language] button[aria-pressed=false]').click();
-      await assertFlatPreferences(page, otherLocale);
+      if (paged) await assertPreferences(page, otherLocale, ['general']); else await assertFlatPreferences(page, otherLocale);
       await prefs.locator('[data-settings-pronunciation]').getByRole('button', { name: labels[otherLocale]('ipa.uk'), exact: true }).click();
       await prefs.locator('[data-settings-language] button[aria-pressed=false]').click();
       assert.deepEqual(await accountState(page), stateBefore, `${state}: preferences preserve auth state`);
@@ -202,7 +274,7 @@ async function accountCase(locale, width, signedIn) {
     const sponsorEmail = await page.evaluate(async () => (await import('/src/lib/sponsor.ts')).SPONSOR_EMAIL);
     for (const fields of [{ ...member, role: 'admin' }, { ...member, email: sponsorEmail }]) {
       await patchAccount(page, fields); await trigger.click();
-      prefs = await assertFlatPreferences(page, locale);
+      prefs = await assertAccountHome(page, locale);
       const management = page.locator('[data-account-more]'), admin = management.locator('[data-account-admin]');
       assert.equal(await admin.count(), 1, 'role admin or sponsor admin has exactly one management entry');
       assert.equal(await prefs.locator('[data-account-admin]').count(), 0, 'admin never belongs to general/help');
@@ -214,14 +286,14 @@ async function accountCase(locale, width, signedIn) {
       await page.goto(new URL('shelf', base).href); await waitForAccount(page);
     }
     await patchAccount(page, identity); await trigger.click();
-    prefs = await assertFlatPreferences(page, locale);
+    prefs = signedIn ? await assertAccountHome(page, locale) : await assertFlatPreferences(page, locale);
     assert.equal(await page.locator('[data-account-admin]').count(), 0);
     await prefs.locator('[data-settings-tutorial]').click();
     await page.locator('[data-account-dialog]').waitFor({ state: 'hidden' });
     await page.locator('[data-tutorial-row]').first().waitFor();
     assert.equal((await accountState(page)).dialogOpen, false, 'tutorial navigation dismisses Account');
     assert.deepEqual(errors, []);
-    console.log(`PASS ${locale} ${width}px ${signedIn ? 'signed-in' : 'guest'}: flat Account order, preferences/persistence, drafts, focus, auth states, admin/tutorial`);
+    console.log(`PASS ${locale} ${width}px ${signedIn ? 'signed-in' : 'guest'}: ${signedIn ? 'home list + pages' : 'flat'} Account order, preferences/persistence, drafts, focus, auth states, admin/tutorial`);
   } finally { await context.close(); }
 }
 
