@@ -186,6 +186,34 @@ export function localPreviewApi() {
   const middleware = (req, res, next) => {
     if (process.env.DEV_PREVIEW !== "1") return next();
     const url = (req.url ?? "").split("?", 1)[0] ?? "";
+    // EPUBs are not in the repo, and the books CDN only allows https://inputread.site cross-origin,
+    // so fetch a missing one server-side. A local public-books/<id>/book.epub still wins.
+    const epubMatch = /^\/public-books\/([a-z0-9][a-z0-9_-]{0,63})\/book\.epub$/.exec(url);
+    if (epubMatch && !existsSync(join(rootDir, "public-books", epubMatch[1], "book.epub"))) {
+      fetch(`https://books.inputread.site/public-books/${epubMatch[1]}/book.epub`)
+        .then(async (upstream) => {
+          if (!upstream.ok) return sendJson(res, { error: "not_found" }, upstream.status);
+          res.statusCode = 200;
+          res.setHeader("content-type", TYPES[".epub"]);
+          res.setHeader("cache-control", "no-store");
+          res.end(Buffer.from(await upstream.arrayBuffer()));
+        })
+        .catch(() => sendJson(res, { error: "upstream_failed" }, 502));
+      return;
+    }
+    // The repo's sample glossaries are not the ones the catalog was hashed against (the real ones are
+    // served only by the logged-in API), so describe the local files the mock /api/glossary returns.
+    if (url === "/public-books/catalog.json") {
+      const catalog = JSON.parse(readFileSync(join(rootDir, "public-books", "catalog.json"), "utf8"));
+      for (const pack of catalog.packs ?? []) {
+        const file = join(rootDir, "public-books", String(pack.id), "glossary.json");
+        if (!pack.glossary || !existsSync(file)) continue;
+        const bytes = readFileSync(file);
+        const sha256 = createHash("sha256").update(bytes).digest("hex");
+        Object.assign(pack.glossary, { bytes: bytes.length, sha256, rev: sha256.slice(0, 12) });
+      }
+      return sendJson(res, catalog);
+    }
     if (!url.startsWith("/api/")) return next();
     if (url === "/api/auth/me") {
       const resetAt = Date.now() + 5 * 86400000;

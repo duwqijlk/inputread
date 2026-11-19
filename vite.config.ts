@@ -13,6 +13,7 @@ import {
   dvhFallbacks,
   guideFolder,
   legacyOnlyWithoutModules,
+  localPreviewApi,
   offlineShell,
   packsFolder,
   publicBooks,
@@ -67,6 +68,8 @@ export default defineConfig(({ mode }) => ({
   // Tailwind is a PostCSS plugin now (postcss.config.js), not a Vite plugin: that is how v3 works.
   plugins: [
     localIpaData({ mode, root: fileURLToPath(new URL(".", import.meta.url)), directory: process.env.LOCAL_IPA_DATA_DIR }),
+    // Mock /api/* for `vite dev` only when DEV_PREVIEW=1 (no D1/Functions locally); a no-op otherwise.
+    localPreviewApi(),
     packsFolder(),
     publicBooks(),
     wordLists(),
