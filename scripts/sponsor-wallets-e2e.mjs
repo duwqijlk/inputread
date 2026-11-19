@@ -38,18 +38,7 @@ try {
       assert.equal(await link.locator('.lucide-coffee').count(), 1);
       assert.equal(await link.locator('.lucide-heart').count(), 0);
       assert.equal(await page.locator('[data-tutorial-tab]').count(), 0);
-      const dock = page.locator('[data-sponsor-tab]');
-      if (width >= 1185) {
-        assert.equal(await dock.isVisible(), true);
-        const geometry = () => page.locator('[data-overview-tabs]').evaluate(el => {
-          const r = el.getBoundingClientRect(); return [r.x, r.y, r.width, r.height];
-        });
-        const before = await geometry();
-        await dock.click();
-        await page.locator('[data-sponsor-dialog]').waitFor();
-        assert.deepEqual(await geometry(), before, 'coffee dialog does not shift the page');
-        await page.locator('[data-sponsor-dialog]').getByRole('button', { name: 'Close', exact: true }).click();
-      } else assert.equal(await dock.isVisible(), false, 'desktop dock stays hidden on phones');
+      assert.equal(await page.locator('[data-sponsor-tab]').count(), 0, 'no floating coffee tab in the margin');
       await link.click();
       assert.equal(await page.getByRole('heading', { name: 'BUY ME A COFFEE', exact: true }).count(), 1);
       const pick = page.locator('[data-sponsor-network-pick]');

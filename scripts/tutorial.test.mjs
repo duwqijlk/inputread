@@ -105,13 +105,9 @@ test("the feedback tip opens over any book the first time the reader is open, no
   assert.match(tip, /card\.feedbackMissing/);
 });
 
-test("tutorials stay in Settings while the desktop margin opens sponsorship", () => {
+test("tutorials stay in Settings and the margin carries no sponsorship tab", () => {
   const tab = read("src/components/tutorial-tab.tsx");
   assert.doesNotMatch(tab, /export function TutorialTab/, "the docked tutorial entry is removed");
-  const sponsor = read("src/components/sponsor-tab.tsx");
-  assert.match(sponsor, /min-\[1185px\]:inline-flex/, "the coffee tab only where the page margin can hold it");
-  assert.match(sponsor, /<Coffee/);
-  assert.match(sponsor, /<SponsorDialog/);
   const tutorial = read("src/lib/tutorial.ts");
   assert.match(tutorial, /TUTORIALS = \["start", "tip", "quotes"\]/);
   assert.match(tutorial, /QUOTE_TIP_KEY = "cibian-quote-tip-v1"/);
@@ -119,5 +115,5 @@ test("tutorials stay in Settings while the desktop margin opens sponsorship", ()
   assert.match(settings, /useTutorialList\.getState\(\)\.show\("center"\)/, "Settings opens the same list");
   const app = read("src/components/margin-app.tsx");
   assert.match(app, /data-account-dot/, "a dot on the avatar for a tutorial not seen yet");
-  assert.match(app, /menu === "shelf" \|\| menu === "discover" \|\| menu === "dashboard"\) && screen\.kind !== "read"/, "public pages only");
+  assert.doesNotMatch(app, /<SponsorTab \/>/, "the redesign dropped the floating coffee tab; sponsorship lives on the overview");
 });
