@@ -12,15 +12,18 @@ import { NewTag } from "@/components/tutorial-tab";
  * card, and a word-list book asks for the reader's own EPUB there (the own-EPUB dialog).
  */
 
-export function AccountPreferences({ onDismiss }: { onDismiss: () => void }) {
+/** Both groups (a guest under the sign-in form), or one: the signed-in account shows General on its own page. */
+export function AccountPreferences({ onDismiss, only }: { onDismiss: () => void; only?: "general" | "help" }) {
   const { t } = useT();
   const tutorialNews = useTutorialNews();
   const pronunciationAccent = usePrefs((state) => state.pronunciationAccent);
   const setPrefs = usePrefs((state) => state.set);
   return (
     <div className="grid gap-5" data-account-preferences>
+      {only === "help" ? null : (
       <section className={panel.group} aria-label={t("settings.general")}>
-        <h3 className={panel.groupTitle}>{t("settings.general")}</h3>
+        {/* On its own page the page title already says "General". */}
+        {only === "general" ? null : <h3 className={panel.groupTitle}>{t("settings.general")}</h3>}
         <div className={panel.box}>
           <div className={panel.row} data-settings-language>
             <span>{t("settings.langTitle")}</span>
@@ -42,7 +45,9 @@ export function AccountPreferences({ onDismiss }: { onDismiss: () => void }) {
         </div>
         <p className={panel.note}>{t("settings.pronunciationHelp")}</p>
       </section>
+      )}
 
+      {only === "general" ? null : (
       <section className={panel.group} aria-label={t("settings.help")}>
         <h3 className={panel.groupTitle}>{t("settings.help")}</h3>
         <div className={panel.box}>
@@ -71,6 +76,7 @@ export function AccountPreferences({ onDismiss }: { onDismiss: () => void }) {
           </a>
         </div>
       </section>
+      )}
     </div>
   );
 }

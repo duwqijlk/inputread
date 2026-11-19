@@ -647,6 +647,7 @@ export const zh: Record<Key, string> = {
   /* ---- account */
   "account.manage": "账号",
   "account.title": "账号",
+  "account.back": "返回",
   "account.desc":
     "登录后可以添加和阅读图书，书架、读到哪里和生词也会同步到其他设备。",
   "account.signedDesc":
@@ -789,6 +790,8 @@ export const zh: Record<Key, string> = {
   "err.glossaryTimeout": "词表下载超时了。请在网络稳定时重试。",
   "err.glossaryMismatch": "词表文件与书目记录不一致，可能刚刚更新过。请刷新页面后重试。",
   "err.fileNotFound": "这本书下载不了，找不到文件。",
+  "err.offline": "现在没有网络。连上网络后再试一次。",
+  "err.serverBusy": "书的服务器暂时没有响应，请过一会儿再试。",
   "err.downloadStopped": "下载中断了。请检查网络，再试一次。",
   "err.noSpace": "浏览器的空间不够存这本书。请先删除一些旧书，或者选一本小一点的书。",
   "err.saveFailedPack": "这本书没能保存在浏览器里。请换一个浏览器，或者关闭隐私模式再试。",

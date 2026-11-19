@@ -25,7 +25,7 @@ import { lexileMeasure } from "@/lib/lexile";
 import type { CatalogPack } from "@/lib/packs";
 import type { WordListPack } from "@/lib/word-list-catalog";
 import { useT } from "@/lib/i18n";
-import { preloadBookBlurb, useBookBlurb } from "@/lib/book-blurbs";
+import { preloadBookBlurb, useBookBlurb, useBookBlurbLoading } from "@/lib/book-blurbs";
 import { BookMaintainerList, BookMaintainers } from "@/components/book-maintainers";
 import { catalogRef } from "@/lib/catalog-id";
 import { SITE } from "@/lib/page-meta";
@@ -414,7 +414,8 @@ export function FeaturedBook({
 function actionLabel(model: CardModel, canAdd: boolean, t: ReturnType<typeof useT>["t"]): string {
   switch (model.state) {
     case "busy":
-      return model.fraction != null
+      // Before the first bytes arrive there is no real number yet: "Adding…", not "Adding… 0%".
+      return model.fraction != null && model.fraction >= 0.01
         ? t("discover.workingPct", { pct: Math.round(model.fraction * 100) })
         : t("discover.working");
     case "on":
@@ -465,7 +466,9 @@ export function BookDetail({
     wasBusy.current = model?.state === "busy";
   }, [model?.state]);
   // What the book is about, in the interface language. "" while it loads, or when none is written yet.
-  const blurb = useBookBlurb(row ? { kind: row.kind === "classic" ? "public" : "lists", id: row.id } : null, locale);
+  const blurbBook = row ? { kind: row.kind === "classic" ? ("public" as const) : ("lists" as const), id: row.id } : null;
+  const blurb = useBookBlurb(blurbBook, locale);
+  const blurbLoading = useBookBlurbLoading(blurbBook);
   const Icon =
     model?.state === "busy"
       ? Loader2
@@ -551,8 +554,8 @@ export function BookDetail({
                       {model.state === "busy" ? (
                         <span className="absolute inset-x-0 bottom-0 h-[3px] bg-accent/20" aria-hidden>
                           <span
-                            className={cn("block h-full bg-accent transition-[width] duration-200", model.fraction == null && "w-1/3 animate-pulse")}
-                            style={model.fraction == null ? undefined : { width: `${Math.round(Math.min(1, Math.max(0, model.fraction)) * 100)}%` }}
+                            className={cn("block h-full bg-accent transition-[width] duration-200", (model.fraction == null || model.fraction < 0.01) && "progress-indeterminate w-1/3")}
+                            style={model.fraction == null || model.fraction < 0.01 ? undefined : { width: `${Math.round(Math.min(1, Math.max(0, model.fraction)) * 100)}%` }}
                           />
                         </span>
                       ) : null}
@@ -601,8 +604,18 @@ export function BookDetail({
                 </div>
               </div>
 
+              {/* While the summary loads, three soft lines hold its place (no height jump when it lands);
+                  a book without one lets them go. */}
+              {!blurb && blurbLoading ? (
+                <div className="grid gap-2.5 pt-0.5" aria-hidden data-detail-blurb-placeholder>
+                  <span className="skeleton-line h-3.5 w-28" />
+                  <span className="skeleton-line h-3 w-full" />
+                  <span className="skeleton-line h-3 w-11/12" />
+                  <span className="skeleton-line h-3 w-3/5" />
+                </div>
+              ) : null}
               {blurb ? (
-                <section className="grid gap-1.5" aria-labelledby="book-blurb-title" data-detail-blurb>
+                <section className="blurb-in grid gap-1.5" aria-labelledby="book-blurb-title" data-detail-blurb>
                   <h3 id="book-blurb-title" className="text-sm font-semibold">
                     {t("browse.blurbTitle")}
                   </h3>

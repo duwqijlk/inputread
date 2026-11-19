@@ -22,7 +22,7 @@ const stubs = {
   "@/lib/library-totals": { groupDigits: String },
   "@/lib/lexile": { lexileMeasure: () => "" },
   "@/lib/i18n": { useT: () => ({ locale: "en", t: (key) => labels[key] ?? key }) },
-  "@/lib/book-blurbs": { useBookBlurb: () => "" },
+  "@/lib/book-blurbs": { useBookBlurb: () => "", useBookBlurbLoading: () => false },
   "@/components/book-maintainers": { BookMaintainerList: () => null },
   "@/lib/catalog-id": { catalogRef: (catalog, id) => `${catalog}:${id}` },
   "@/lib/page-meta": { SITE: "https://test.invalid" },

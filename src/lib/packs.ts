@@ -626,13 +626,20 @@ async function fetchBytes(
   expected: number,
   onBytes: (loaded: number, total: number) => void,
 ): Promise<Uint8Array> {
+  // Say what actually went wrong: offline, no such file, the server failing, or the connection.
+  if (typeof navigator !== "undefined" && navigator.onLine === false) throw new Error(tr("err.offline"));
   let res: Response;
   try {
     res = await fetch(url, { cache: "no-cache" });
   } catch {
-    throw new Error(tr("err.downloadFailed"));
+    throw new Error(tr(typeof navigator !== "undefined" && navigator.onLine === false ? "err.offline" : "err.downloadFailed"));
   }
-  if (!res.ok) throw new Error(tr("err.fileNotFound"));
+  if (res.status === 404 || res.status === 410) throw new Error(tr("err.fileNotFound"));
+  if (res.status >= 500) throw new Error(tr("err.serverBusy"));
+  if (!res.ok) throw new Error(tr("err.downloadFailed"));
+  // A host that answers a missing file with a web page (200, HTML) has no such file; it is not
+  // a damaged download (the hash check would say so, which sent readers to retry for nothing).
+  if (/text\/html/i.test(res.headers.get("content-type") ?? "")) throw new Error(tr("err.fileNotFound"));
   const total = Number(res.headers.get("content-length")) || expected || 0;
   if (!res.body) {
     const all = new Uint8Array(await res.arrayBuffer());

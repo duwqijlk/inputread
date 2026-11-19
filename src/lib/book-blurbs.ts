@@ -83,3 +83,31 @@ export function useBookBlurb(book: { kind: BlurbKind; id: string } | null, local
   if (cached) return cached[locale];
   return loaded?.key === key ? loaded.value[locale] : "";
 }
+
+/**
+ * True while the blurb of `book` has not answered yet (neither a text nor "none written"), so the
+ * detail can hold a placeholder of about the right height instead of jumping when it lands.
+ */
+export function useBookBlurbLoading(book: { kind: BlurbKind; id: string } | null): boolean {
+  const key = book ? blurbKey(book.kind, book.id) : "";
+  const [settled, setSettled] = useState(() => (key && resolved.has(key) ? key : ""));
+  useEffect(() => {
+    if (!book || !key) return;
+    if (resolved.has(key)) {
+      setSettled(key);
+      return;
+    }
+    let alive = true;
+    void loadBlurb(book.kind, book.id).finally(() => {
+      if (alive) setSettled(key);
+    });
+    return () => {
+      alive = false;
+    };
+    // `key` carries kind and id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  // `resolved` covers a book read earlier (no placeholder flash before the effect runs); `settled`
+  // covers a read that failed, which is not kept in `resolved` and so must not hold the placeholder.
+  return Boolean(key) && settled !== key && !resolved.has(key);
+}

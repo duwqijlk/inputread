@@ -649,6 +649,7 @@ export const en = {
   /* ---- account */
   "account.manage": "Account",
   "account.title": "Account",
+  "account.back": "Back",
   "account.desc":
     "Sign in to add and read books, and to sync your shelf, reading place, and saved words.",
   "account.signedDesc":
@@ -802,6 +803,8 @@ export const en = {
   "err.glossaryTimeout": "The word-list download took too long. Try again on a steadier connection.",
   "err.glossaryMismatch": "This word list does not match the book list. The list may have changed. Refresh the page and try again.",
   "err.fileNotFound": "This book could not be downloaded. The file was not found.",
+  "err.offline": "You are offline. Connect to the internet and try again.",
+  "err.serverBusy": "The book server is not answering right now. Please try again in a minute.",
   "err.downloadStopped": "The download stopped. Check your connection and try again.",
   "err.noSpace":
     "Your browser does not have enough space for this book. Please delete some old books, or choose a smaller one.",
