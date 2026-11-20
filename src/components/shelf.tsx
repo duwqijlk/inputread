@@ -478,13 +478,18 @@ function BookCard({
       </div>
       <div className="grid flex-1 content-start gap-1">
         <div className="flex items-start gap-1">
+          {/* The two-line clamp sits on a span: on a <button> engines drop the -webkit-box display
+              (Chrome clips with no ellipsis, iPhone Safari may not clamp at all), so a long speech
+              title ran on and the shelf rows lost their even height. Discover's cards do the same. */}
           <button
             type="button"
             onClick={onOpen}
-            className={cn(cardTitleClass, "min-w-0 flex-1 text-left")}
+            className="min-w-0 flex-1 text-left"
             lang="en"
           >
-            {book.title}
+            <span className={cardTitleClass} data-shelf-title>
+              {book.title}
+            </span>
           </button>
           <Menu.Root open={menuOpen} onOpenChange={setMenuOpen}>
             <Menu.Trigger
