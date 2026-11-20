@@ -202,7 +202,9 @@ test("focus handoff waits for menu close and restores the retained exact trigger
   assert.match(infoSource, /onCloseAutoFocus=\{\(event\) => \{\s*event.preventDefault\(\);\s*onReturnFocus\(\);/);
   assert.match(infoSource, /Dialog.Title/);
   assert.match(infoSource, /Dialog.Description/);
-  assert.match(infoSource, /max-h-\[calc\(100vh-2rem\)\].*overflow-y-auto/);
+  // Bounded by the viewport; the header stays and only the body below it scrolls.
+  assert.match(infoSource, /max-h-\[calc\(100vh-2rem\)\]/);
+  assert.match(infoSource, /className="panel-body [^"]*overflow-y-auto/);
   assert.doesNotMatch(infoSource, /dvh|fetch\(|useBookBlurb|useCatalog|useClassicBookIds|maintainer|BookDetail/);
 });
 

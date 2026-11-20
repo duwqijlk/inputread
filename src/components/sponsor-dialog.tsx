@@ -190,16 +190,17 @@ export function SponsorDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/[0.32]" />
         <Dialog.Content
-          className="anim-pop fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-float-edge bg-float px-5 pb-5 text-ink shadow-lift"
+          className="anim-pop panel-sheet fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-float-edge bg-float text-ink shadow-lift"
           data-sponsor-dialog
         >
-          <div className="panel-head sticky top-0 z-10 -mx-5 flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+          <div className="panel-head relative z-10 flex shrink-0 items-center justify-between gap-3 px-5 pt-5 pb-3">
             <Dialog.Title className="font-bold tracking-[-0.02em] text-xl">{t("thanks.dialogTitle")}</Dialog.Title>
             <Dialog.Close className={panel.close} aria-label={t("common.close")}>
               <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
             </Dialog.Close>
           </div>
-          <Dialog.Description className="-mt-2 text-sm leading-6 text-muted">{t("thanks.gift")}</Dialog.Description>
+          <div className="panel-body grid min-h-0 flex-1 content-start gap-4 overflow-y-auto overscroll-contain px-5 pt-1 pb-5">
+          <Dialog.Description className="text-sm leading-6 text-muted">{t("thanks.gift")}</Dialog.Description>
           <div className="grid gap-1.5" data-sponsor-network-pick>
             <p className="text-sm font-semibold">{t("thanks.payment.pick")}</p>
             <Segmented<PaymentOption>
@@ -289,6 +290,7 @@ export function SponsorDialog({
               </button>
             </form>
           )}
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

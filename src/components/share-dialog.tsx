@@ -216,6 +216,7 @@ export default function ShareDialog({ what, open, onOpenChange }: { what: ShareW
               <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
             </Dialog.Close>
           </div>
+          <div className={panel.body}>
           <Dialog.Description className="sr-only">{t("share.longPress")}</Dialog.Description>
 
           <div className="grid justify-items-center gap-3.5">
@@ -272,6 +273,7 @@ export default function ShareDialog({ what, open, onOpenChange }: { what: ShareW
               ) : null}
             </div>
             <p className="-mt-1.5 m-0 text-center text-xs text-faint">{t("share.longPress")}</p>
+          </div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

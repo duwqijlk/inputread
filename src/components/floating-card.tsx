@@ -78,7 +78,7 @@ export function useFloatingCard(
       const width = Math.min(desktopWidth, vw < 1024 ? 384 : desktopWidth, Math.max(220, vw - 24));
       // The word body scrolls independently. Measure its unconstrained content and
       // padding/borders so expanding AND collapsing details resize the whole card.
-      const content = panel?.querySelector<HTMLElement>("[data-word-content]");
+      const content = panel?.querySelector<HTMLElement>("[data-word-content], [data-sheet-content]");
       let measured = panel ? Math.max(panel.offsetHeight, panel.scrollHeight) : 0;
       if (panel && content) {
         const css = getComputedStyle(panel);
@@ -90,7 +90,7 @@ export function useFloatingCard(
         for (const child of panel.children) {
           if (!(child instanceof HTMLElement)) continue;
           const style = getComputedStyle(child);
-          const height = child.hasAttribute("data-word-body")
+          const height = child.hasAttribute("data-word-body") || child.hasAttribute("data-sheet-body")
             ? content.offsetHeight +
               parseFloat(style.paddingTop) +
               parseFloat(style.paddingBottom) +
@@ -144,7 +144,7 @@ export function useFloatingCard(
     if (panel) {
       observer.observe(panel);
       for (const part of panel.querySelectorAll(
-        "[data-word-header], [data-word-content], [data-word-footer]",
+        "[data-word-header], [data-word-content], [data-word-footer], [data-sheet-content]",
       )) {
         observer.observe(part);
       }

@@ -263,13 +263,14 @@ export function ParagraphPanel({
       kind="para"
       desktopWidth={27 * 16}
       className={cn(
-        "scroll-thin fixed z-40 overflow-y-auto overscroll-contain [overflow-anchor:none] border-float-edge bg-float px-5 text-ink shadow-pop ",
-        "inset-x-0 bottom-0 max-h-[52dvh] rounded-t-3xl border-t pt-0 pb-[max(1.25rem,env(safe-area-inset-bottom))]",
+        // A column: drag bar, header (never scrolls), and the body, the only part that scrolls.
+        "panel-sheet fixed z-40 flex flex-col overflow-hidden border-float-edge bg-float text-ink shadow-pop",
+        "inset-x-0 bottom-0 max-h-[52dvh] rounded-t-3xl border-t",
         SIDE_PANEL,
-        "md:bottom-auto md:max-h-[calc(100dvh-6.5rem)] md:!pt-0 md:pb-5",
+        "md:bottom-auto md:max-h-[calc(100dvh-6.5rem)] md:!pt-0",
       )}
     >
-      <div className="mx-auto mt-3 mb-0 h-1 w-10 rounded-full bg-line md:hidden" aria-hidden />
+      <div className="mx-auto mt-2.5 mb-0 h-1 w-10 shrink-0 rounded-full bg-line md:hidden" aria-hidden />
       {paragraphEl ? <KeepClear el={paragraphEl} /> : null}
       {paragraphEl && activeMarkContexts.length > 0 ? (
         <SentenceMarks
@@ -283,9 +284,8 @@ export function ParagraphPanel({
           onReveal={onRevealSentence}
         />
       ) : null}
-      <div className="grid min-w-0 gap-4">
-        {/* Pinned while a long reading scrolls, as the sheets' headers are (styles.css .panel-head). */}
-        <div className="panel-head sticky top-0 z-10 -mx-5 flex items-center justify-between gap-3 px-5 pt-3 pb-2.5 md:pt-5">
+      {/* The header stays put; a hairline shows under it once the body scrolls (styles.css .panel-head). */}
+      <div className="panel-head relative z-10 flex shrink-0 items-center justify-between gap-3 px-5 pt-3 pb-2.5 md:pt-5">
           <h2 className="flex min-w-0 items-center gap-2 font-bold tracking-[-0.02em] text-lg leading-tight">
             <span className="text-accent" aria-hidden>
               ✦
@@ -305,8 +305,12 @@ export function ParagraphPanel({
               <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
             </button>
           </div>
-        </div>
-
+      </div>
+      <div
+        className="panel-body min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-5 pt-1 pb-[max(1.25rem,env(safe-area-inset-bottom))] md:pb-5"
+        data-sheet-body
+      >
+      <div className="grid min-w-0 gap-4" data-sheet-content>
         {state.status === "loading" ? (
           <div className="grid gap-2" aria-busy="true" aria-label={t("hp.lookingAria")}>
             <div className="h-4 w-full animate-pulse rounded bg-line" />
@@ -485,6 +489,7 @@ export function ParagraphPanel({
         >
           {showGrammar ? t("hp.footerGrammar") : t("hp.footer")}
         </p>
+      </div>
       </div>
     </FloatingAside>
   );

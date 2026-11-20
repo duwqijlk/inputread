@@ -715,7 +715,7 @@ export function AccountDialog() {
     setNote("");
     setPageMove("push");
     setPage(next);
-    sheet.current?.scrollTo({ top: 0 });
+    sheet.current?.querySelector(".panel-body")?.scrollTo({ top: 0 });
     requestAnimationFrame(() => sheet.current?.querySelector<HTMLButtonElement>("[data-account-back]")?.focus());
   }
 
@@ -726,7 +726,7 @@ export function AccountDialog() {
     setShow(false);
     setPageMove("pop");
     setPage("home");
-    sheet.current?.scrollTo({ top: 0 });
+    sheet.current?.querySelector(".panel-body")?.scrollTo({ top: 0 });
     // Focus returns to the row that opened the page, as a navigation stack does.
     requestAnimationFrame(() => sheet.current?.querySelector<HTMLButtonElement>(`[data-account-row="${from}"]`)?.focus());
   }
@@ -928,6 +928,7 @@ export function AccountDialog() {
               <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
             </Dialog.Close>
           </div>
+          <div className={panel.body} data-account-body>
           <Dialog.Description className={signedIn || signingUp ? "sr-only" : panel.desc}>
             {checking || signingUp
               ? t("account.codeTitle")
@@ -1250,6 +1251,7 @@ export function AccountDialog() {
             {!signedIn || checking || prompting ? (
               <div className="mt-5"><AccountPreferences onDismiss={dismissForNavigation} /></div>
             ) : null}
+          </div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>
