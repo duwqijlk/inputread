@@ -99,6 +99,17 @@ test("the reader: top-bar button, a speaker after every paragraph, the bar, and 
   const ui = read("src/components/chapter-aloud.tsx");
   assert.match(ui, /function firstVisibleParagraph/, "starts at the paragraph on screen, not the chapter top");
   assert.match(ui, /mark\.setAttribute\("data-para-ui", ""\);\s*mark\.setAttribute\("data-aloud-from"/, "an empty UI span, outside the text");
+  // Paragraph speakers only in read-aloud mode (player open or reading): plain reading keeps just
+  // the help mark, so a tap meant for it cannot start reading.
+  assert.match(ui, /const mode = useChapterAloud\(\(state\) => state\.panel \|\| state\.status !== "off"\);/);
+  assert.match(ui, /if \(!root \|\| !ready \|\| !mode\) return;/);
+  assert.match(ui, /root\.setAttribute\("data-aloud-mode", ""\);/);
+  // Beside a help mark the two tap areas never meet: the speaker's grows right only, the help
+  // mark's stops at its edge in read-aloud mode, and a gap sits between them.
+  const styles = read("src/styles.css");
+  assert.match(styles, /\.book-body \[data-aloud-from\]::after \{[^}]*left: 0;/);
+  assert.match(styles, /\.book-body \[data-para-marker\] \+ \[data-aloud-from\] \{\s*margin-left: 0\.6em;/);
+  assert.match(styles, /\.book-body\[data-aloud-mode\] \[data-para-marker\]::after \{\s*right: 0;/);
   assert.match(ui, /if \(!ready\) return null;/, "nothing without a key");
   // The top-bar button opens the player (voice, speed, auto-next, then Play).
   const header = ui.slice(ui.indexOf("export function AloudHeaderButton"), ui.indexOf("const SHOW_OPTIONS"));

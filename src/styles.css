@@ -2602,21 +2602,40 @@ svg.lucide[stroke-width="2"] {
   margin-left: 0.3em;
   vertical-align: 0.08em;
   color: var(--faint);
-  background-color: currentColor;
   opacity: 0.7;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 5 6 9H2v6h4l5 4V5z'/%3E%3Cpath d='M15.54 8.46a5 5 0 0 1 0 7.07'/%3E%3Cpath d='M19.07 4.93a10 10 0 0 1 0 14.14'/%3E%3C/svg%3E") center / contain no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 5 6 9H2v6h4l5 4V5z'/%3E%3Cpath d='M15.54 8.46a5 5 0 0 1 0 7.07'/%3E%3Cpath d='M19.07 4.93a10 10 0 0 1 0 14.14'/%3E%3C/svg%3E") center / contain no-repeat;
   cursor: pointer;
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   transition: color 150ms, opacity 150ms;
 }
+/* The drawing is a masked layer of its own: a mask on the span itself also clipped its enlarged
+   tap area (::after) to the 12px icon, so only a tap right on the icon counted. */
+.book-body [data-aloud-from]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 5 6 9H2v6h4l5 4V5z'/%3E%3Cpath d='M15.54 8.46a5 5 0 0 1 0 7.07'/%3E%3Cpath d='M19.07 4.93a10 10 0 0 1 0 14.14'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 5 6 9H2v6h4l5 4V5z'/%3E%3Cpath d='M15.54 8.46a5 5 0 0 1 0 7.07'/%3E%3Cpath d='M19.07 4.93a10 10 0 0 1 0 14.14'/%3E%3C/svg%3E") center / contain no-repeat;
+}
 .book-body [data-aloud-from]::after {
   content: "";
   position: absolute;
-  /* A small mark, a finger-sized target: the tap area grows, the drawing does not. */
-  inset: -0.85em -0.65em;
+  /* A small mark, a finger-sized target: the tap area grows up, down and to the right, never to
+     the left, where the help mark is. */
+  top: -0.85em;
+  right: -0.75em;
+  bottom: -0.85em;
+  left: 0;
+}
+/* After a help mark: a wider gap, which neither tap area reaches (the help mark's own area stops at
+   its right edge in read-aloud mode), so a tap between them does nothing rather than the wrong thing. */
+.book-body [data-para-marker] + [data-aloud-from] {
+  margin-left: 0.6em;
+}
+.book-body[data-aloud-mode] [data-para-marker]::after {
+  right: 0;
 }
 .book-body [data-aloud-from]:hover,
 .book-body [data-aloud-from]:focus-visible,
