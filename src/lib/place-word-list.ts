@@ -11,7 +11,7 @@ import { fetchCoverData } from "@/lib/covers";
 import { refundGlossaryPlace } from "@/lib/glossary-fetch";
 import { fetchWordList } from "@/lib/pair-epub";
 import { resolveAgainst } from "@/lib/packs";
-import { findOnShelf } from "@/lib/shelf-identity";
+import { findOnShelf, sameBook } from "@/lib/shelf-identity";
 import { useVocab } from "@/lib/vocab-store";
 import { WORD_LIST_CATALOG_URL, type WordListPack } from "@/lib/word-list-catalog";
 
@@ -50,8 +50,14 @@ async function place(pack: WordListPack): Promise<string> {
   const stored = new Set((await listBookSummaries().catch(() => [])).map((book) => book.id));
   const shelf = () => useVocab.getState().books.map((book) => ({ ...book, stored: stored.has(book.id) }));
 
-  // 1. The record of this very list.
-  const byId = records.find((record) => record.packId === pack.id);
+  // 1. The record of this very list. A record whose card is plainly another book (an older rule
+  //    re-labelled Vol 2 as Vol 3) is not this list's card: using it would open the wrong volume.
+  const wanted = { title: pack.title, author: pack.author, isbn: pack.isbn };
+  const byId = records.find((record) => {
+    if (record.packId !== pack.id) return false;
+    const card = useVocab.getState().books.find((book) => book.id === record.bookId);
+    return !card || sameBook(card, wanted);
+  });
   // 2. The same book under another pack id.
   const same = byId ? null : findOnShelf(shelf(), { title: pack.title, author: pack.author, isbn: pack.isbn });
 

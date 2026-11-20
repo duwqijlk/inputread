@@ -44,6 +44,37 @@ test("the same book under different spellings is one book", () => {
   );
 });
 
+test("volumes whose number sits in the subtitle or brackets stay different books", () => {
+  // The catalog's EnglishPod volumes: dropping " - ..." and "(...)" left "EnglishPod" for all six,
+  // so opening Vol 3 opened the Vol 2 already on the shelf.
+  const vol = (n, from, to) => ({
+    title: `EnglishPod - Complete Transcripts (365 Lessons) Vol ${n} (Lessons ${from}-${to})`,
+    author: "EnglishPod",
+  });
+  assert.equal(sameBook(vol(2, 71, 140), vol(3, 141, 210)), false, "Vol 2 is not Vol 3");
+  assert.equal(sameBook(vol(3, 141, 210), vol(3, 141, 210)), true, "Vol 3 is Vol 3");
+  const shelf = [
+    { id: "vol2", ...vol(2, 71, 140), stored: true },
+    { id: "vol1", ...vol(1, 1, 70), stored: true },
+  ];
+  assert.equal(findOnShelf(shelf, vol(3, 141, 210)), null, "Vol 3 finds no card when only Vol 1 and 2 are on the shelf");
+  assert.equal(findOnShelf([...shelf, { id: "vol3", ...vol(3, 141, 210), stored: false }], vol(3, 141, 210))?.id, "vol3");
+  assert.equal(
+    sameBook({ title: "Harry Potter - Book 1", author: "J. K. Rowling" }, { title: "Harry Potter - Book 2", author: "J. K. Rowling" }),
+    false,
+  );
+  assert.equal(
+    sameBook({ title: "Diary of a Wimpy Kid (Book 3)", author: "Jeff Kinney" }, { title: "Diary of a Wimpy Kid (Book 4)", author: "Jeff Kinney" }),
+    false,
+  );
+  // A number only one side gives is still the same book (a series tail on one copy).
+  assert.equal(
+    sameBook({ title: "Ghost Town at Sundown (Magic Tree House #10)", author: "Mary Pope Osborne" }, { title: "Ghost Town at Sundown", author: "Mary Pope Osborne" }),
+    true,
+  );
+  assert.equal(sameBook({ title: "1984 (Penguin Classics)", author: "George Orwell" }, { title: "1984", author: "George Orwell" }), true);
+});
+
 test("duplicate cards are grouped, and the card with the e-book is the one kept", () => {
   const imported = entry({ id: "imported", stored: true, work: 3 });
   const placeholder = entry({ id: "placeholder", needsEpub: true, work: 5 });

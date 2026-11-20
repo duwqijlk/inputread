@@ -15,7 +15,7 @@ const identityUrl = dataUrl(compile(identitySource)
   .replace('"@/lib/book-title"', JSON.stringify(dataUrl(compile(titleSource))))
   .replace('"@/lib/shelf-identity"', JSON.stringify(dataUrl(compile(readFileSync(new URL("../src/lib/shelf-identity.ts", import.meta.url), "utf8"))
     .replace('"@/lib/book-meta"', JSON.stringify(dataUrl(compile(readFileSync(new URL("../src/lib/book-meta.ts", import.meta.url), "utf8")))))))));
-const { sameCatalogBook, planSafeShelfMerges, uniqueBookRecord } = await import(identityUrl);
+const { sameCatalogBook, planSafeShelfMerges, uniqueBookRecord, relinkMislabelled } = await import(identityUrl);
 const { discoverShelfBook, createDiscoverShelfLookup } = await import(dataUrl(compile(source)
   .replace('"@/lib/catalog-shelf-identity"', JSON.stringify(identityUrl))));
 
@@ -148,4 +148,45 @@ test("explicit catalog identities separate identical raw ids; legacy collisions 
   assert.equal(discoverShelfBook([privateBook], [{ bookId: "private", packId: row.id }], wanted).ambiguous, true);
   assert.equal(discoverShelfBook([publicBook], [records[1]], wanted).book, undefined);
   assert.equal(discoverShelfBook([book({ id: "a" }), book({ id: "b" })], [], row).ambiguous, true);
+});
+
+test("a card an older rule re-labelled as another volume is put back, and only when certain", () => {
+  const vol = (n, from, to) => ({
+    id: `englishpod-365-vol-${n}-lessons-${from}-${to}`,
+    title: `EnglishPod - Complete Transcripts (365 Lessons) Vol ${n} (Lessons ${from}-${to})`,
+    author: "EnglishPod",
+    isbn: "",
+    catalog: "word-lists",
+  });
+  const catalog = [vol(1, 1, 70), vol(2, 71, 140), vol(3, 141, 210)];
+  // The Vol 2 card, whose one record was overwritten with Vol 3 when Vol 3 was added.
+  const vol2Card = { id: "card-vol2", title: catalog[1].title, author: "EnglishPod" };
+  const wrong = { bookId: "card-vol2", packId: catalog[2].id, rev: "r", sha256: "", installedAt: 1, catalog: "word-lists" };
+  const fixes = relinkMislabelled([vol2Card], [wrong], catalog);
+  assert.equal(fixes.length, 1);
+  assert.equal(fixes[0].packId, catalog[1].id, "the record names Vol 2 again");
+  // After the fix Discover sees Vol 2 on the shelf and Vol 3 not, so Vol 3 opens nothing wrong.
+  const fixed = { ...wrong, packId: fixes[0].packId };
+  const lookup = createDiscoverShelfLookup([vol2Card], [fixed], catalog);
+  assert.equal(lookup(catalog[1]).book?.id, "card-vol2");
+  assert.equal(lookup(catalog[2]).book, undefined, "Vol 3 is not held: adding it makes its own card");
+
+  // Left alone: a correct record, a made-up pack id, a card that matches no book or two, a book another card holds.
+  const right = { ...wrong, packId: catalog[1].id };
+  assert.deepEqual(relinkMislabelled([vol2Card], [right], catalog), []);
+  assert.deepEqual(relinkMislabelled([vol2Card], [{ ...wrong, packId: "my-own-pack" }], catalog), [], "an imported pack id is not checked");
+  assert.deepEqual(relinkMislabelled([{ ...vol2Card, title: "Something else" }], [wrong], catalog), []);
+  assert.deepEqual(relinkMislabelled([vol2Card], [wrong], [...catalog, { ...catalog[1], id: "duplicate-vol2" }]), [], "two exact matches: not certain");
+  const otherCard = { id: "card-other", title: catalog[1].title, author: "EnglishPod" };
+  const held = { bookId: "card-other", packId: catalog[1].id, rev: "r", sha256: "", installedAt: 1, catalog: "word-lists" };
+  assert.deepEqual(relinkMislabelled([vol2Card, otherCard], [wrong, held], catalog), [], "Vol 2 already has a card");
+  assert.deepEqual(relinkMislabelled([], [wrong], catalog), [], "a record of a card no longer on the shelf");
+});
+
+test("adding a word list never reuses a card that is plainly another volume", () => {
+  const place = readFileSync(new URL("../src/lib/place-word-list.ts", import.meta.url), "utf8");
+  assert.match(place, /if \(record\.packId !== pack\.id\) return false;[\s\S]*?return !card \|\| sameBook\(card, wanted\);/);
+  const discover = readFileSync(new URL("../src/components/discover.tsx", import.meta.url), "utf8");
+  assert.match(discover, /const fixes = relinkMislabelled\(/, "Discover puts re-labelled cards back before drawing them");
+  assert.match(discover, /await savePackRecord\(\{ \.\.\.record, packId: fix\.packId \}\);/);
 });
