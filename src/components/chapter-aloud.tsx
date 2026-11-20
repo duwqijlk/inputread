@@ -159,9 +159,12 @@ export function AloudHeaderButton() {
 const SHOW_OPTIONS = "inputread-aloud-options";
 
 /**
- * A small speaker after the last word of every paragraph (after its help mark, if any). Like the
- * help mark it is an EMPTY span drawn by CSS, so it never reaches the paragraph's text, anchors or
+ * A small speaker after the last word of every paragraph (after its help mark, if any), shown only
+ * in read-aloud mode: while the player is open or a chapter is being read. In plain reading the
+ * paragraph ends carry only the help mark, so a tap meant for it never starts reading. Like the help
+ * mark it is an EMPTY span drawn by CSS, so it never reaches the paragraph's text, anchors or
  * selections. Tapping one reads from that paragraph on. The paragraph being read is highlighted.
+ * The article gets `data-aloud-mode` meanwhile, which keeps the two marks' tap areas apart.
  */
 export function ParagraphSpeakers({
   articleRef,
@@ -179,10 +182,12 @@ export function ParagraphSpeakers({
   startAt.current = onStartAt;
   const status = useChapterAloud((state) => state.status);
   const index = useChapterAloud((state) => state.index);
+  const mode = useChapterAloud((state) => state.panel || state.status !== "off");
 
   useEffect(() => {
     const root = articleRef.current;
-    if (!root || !ready) return;
+    if (!root || !ready || !mode) return;
+    root.setAttribute("data-aloud-mode", "");
     const added: Element[] = [];
     readerParagraphBlocks(root).forEach((block, at) => {
       if (!/[A-Za-z]/.test(flowText(block))) return;
@@ -218,8 +223,9 @@ export function ParagraphSpeakers({
       root.removeEventListener("click", onClick, true);
       root.removeEventListener("keydown", onKey, true);
       for (const mark of added) mark.remove();
+      root.removeAttribute("data-aloud-mode");
     };
-  }, [articleRef, version, ready, label]);
+  }, [articleRef, version, ready, mode, label]);
 
   // The paragraph being read: a soft highlight (colour only, the page does not move).
   useEffect(() => {
