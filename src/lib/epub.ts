@@ -1412,6 +1412,156 @@ export async function parseEpub(
       nextAnchor: string;
       lastSlice: boolean;
     }[] = [];
+    const spineIndexByPath = new Map(spineRefs.map((item, idx) => [item.path, idx]));
+    const tocEntriesByPath = new Map<string, { title: string; path: string; anchor: string }[]>();
+    for (const entry of toc) {
+      if (!entry.path) continue;
+      const list = tocEntriesByPath.get(entry.path);
+      if (list) list.push(entry);
+      else tocEntriesByPath.set(entry.path, [entry]);
+    }
+    let lastResolvedSpineAt = -1;
+
+    function nextInOrderTocSpineAt(fromIndex: number, floor: number): number {
+      for (let j = fromIndex + 1; j < toc.length; j += 1) {
+        const cand = toc[j];
+        if (!cand) continue;
+        const at = spineIndexByPath.get(cand.path);
+        if (at !== undefined && at > floor) return at;
+      }
+      return -1;
+    }
+
+    /**
+     * When a TOC file is only targeted by fragment anchor(s) sitting at its very tail
+     * (Calibre MOBI->EPUB page-break shift: `<a id="filepos..."></a><div class="mbppagebreak"/>`),
+     * the chapter body before that anchor is completely unclaimed. Return that leading slice.
+     */
+    function unclaimedTailAnchorPrefix(body: Element, filePath: string): HTMLElement | null {
+      const entries = tocEntriesByPath.get(filePath);
+      if (!entries || entries.length === 0) return null;
+      if (entries.some((item) => !item.anchor)) return null;
+      const anchorEls = entries
+        .map((item) => findById(body, item.anchor))
+        .filter((el): el is Element => el !== null);
+      if (anchorEls.length === 0) return null;
+      let earliest = anchorEls[0]!;
+      for (let k = 1; k < anchorEls.length; k += 1) {
+        const cand = anchorEls[k]!;
+        if (earliest.compareDocumentPosition(cand) & Node.DOCUMENT_POSITION_PRECEDING) {
+          earliest = cand;
+        }
+      }
+      const after = sliceBetween(body, earliest, null);
+      if (englishLetters(after.textContent ?? "") >= 20) return null;
+      const before = sliceBetween(body, null, earliest);
+      if (englishLetters(before.textContent ?? "") < 40) return null;
+      return before;
+    }
+
+    /**
+     * Segmentation >= 3 recovery for Calibre-broken TOC pointers:
+     *  - Type A: TOC points to a short title-only split page (<20 letters) right before the body file.
+     *  - Type B: TOC points to a tail `#anchor` left behind at the end of the previous split file
+     *            (including consecutive shifts where the next file itself ends with the next tail anchor).
+     *  - Type C: TOC points to a dead `#anchor` or jumps backwards to `split_0`, leaving an unclaimed
+     *            body file sitting strictly between the previous and next in-order TOC spine positions.
+     */
+    async function recoverBrokenTocChapter(
+      tocIndex: number,
+      entryPath: string,
+      rawTitle: string,
+      deadOrMispointed: boolean,
+    ): Promise<number> {
+      const tocTitle = englishTitle(stripWordBreaks(rawTitle), "");
+      if (isFrontMatterTitle(tocTitle)) return -1;
+      const entrySpineAt = spineIndexByPath.get(entryPath) ?? -1;
+      const backwardsJump = lastResolvedSpineAt >= 0 && entrySpineAt >= 0 && entrySpineAt < lastResolvedSpineAt;
+      let startAt: number;
+      let endBefore: number;
+      if (deadOrMispointed || backwardsJump) {
+        if (lastResolvedSpineAt < 0) return -1;
+        const nextBound = nextInOrderTocSpineAt(tocIndex, lastResolvedSpineAt);
+        if (nextBound <= lastResolvedSpineAt + 1) return -1;
+        startAt = lastResolvedSpineAt + 1;
+        endBefore = nextBound;
+      } else {
+        if (entrySpineAt < 0) return -1;
+        startAt = entrySpineAt + 1;
+        endBefore = spineRefs.length;
+      }
+
+      for (let s = startAt; s < endBefore; s += 1) {
+        const item = spineRefs[s];
+        if (!item || !item.linear) continue;
+        if (attached.has(item.path)) continue;
+        if (tocFiles.has(item.path)) {
+          if (!deadOrMispointed && !backwardsJump) {
+            const extraDoc = await loadDoc(item.path);
+            if (extraDoc?.body && !looksLikeContents(extraDoc)) {
+              const lead = unclaimedTailAnchorPrefix(extraDoc.body, item.path);
+              if (lead) {
+                const beforePush = chapters.length;
+                const subPieces = tocSliceSplit(lead, rawTitle);
+                if (subPieces) {
+                  for (const piece of subPieces) {
+                    if (chapters.length >= CHAPTER_CAP) break;
+                    await push(piece.holder, piece.title, item.path, chapters.length);
+                  }
+                } else {
+                  await push(lead, rawTitle, item.path, chapters.length);
+                }
+                if (chapters.length > beforePush) {
+                  attached.add(item.path);
+                  return s;
+                }
+              }
+            }
+          }
+          break;
+        }
+        const extraDoc = await loadDoc(item.path);
+        if (!extraDoc?.body || looksLikeContents(extraDoc)) break;
+        const bodyHolder = sliceBetween(extraDoc.body, null, null);
+        if (englishLetters(bodyHolder.textContent ?? "") < 40) continue;
+        const beforePush = chapters.length;
+        const subPieces = tocSliceSplit(bodyHolder, rawTitle);
+        if (subPieces) {
+          for (const piece of subPieces) {
+            if (chapters.length >= CHAPTER_CAP) break;
+            await push(piece.holder, piece.title, item.path, chapters.length);
+          }
+        } else {
+          await push(bodyHolder, rawTitle, item.path, chapters.length);
+        }
+        if (chapters.length > beforePush) {
+          attached.add(item.path);
+          const recovered = chapters[chapters.length - 1];
+          if (recovered && englishLetters(recovered.paragraphs.join(" ")) >= 40) {
+            const cont = await continuationRenders(item.path);
+            for (const extra of cont.appended) {
+              recovered.paragraphs.push(...extra.paragraphs);
+              recovered.html += extra.html;
+            }
+            for (const prom of cont.promoted) {
+              if (chapters.length >= CHAPTER_CAP) break;
+              const promSlices = tocSliceSplit(sliceBetween(prom.body, null, null), prom.title);
+              if (promSlices) {
+                for (const piece of promSlices) {
+                  if (chapters.length >= CHAPTER_CAP) break;
+                  await push(piece.holder, piece.title, prom.path, chapters.length);
+                }
+              } else {
+                await push(prom.body, prom.title, prom.path, chapters.length);
+              }
+            }
+          }
+          return s;
+        }
+      }
+      return -1;
+    }
+
     for (let index = 0; index < toc.length && chapters.length < CHAPTER_CAP; index += 1) {
       options.onProgress?.(index + 1, toc.length);
       await yieldToUi();
@@ -1436,6 +1586,13 @@ export async function parseEpub(
             nextAnchor,
             lastSlice,
           });
+        } else if (multiChapterSplit) {
+          const recoveredAt = await recoverBrokenTocChapter(index, path, entry.title, true);
+          if (recoveredAt >= 0) {
+            lastResolvedSpineAt = Math.max(lastResolvedSpineAt, recoveredAt);
+          } else if (lastSlice && (await fileIsEmpty(body, path))) {
+            await recoverEmptyToc(path, entry.title);
+          }
         } else if (lastSlice && (await fileIsEmpty(body, path))) {
           await recoverEmptyToc(path, entry.title);
         }
@@ -1454,11 +1611,20 @@ export async function parseEpub(
         await push(holder, entry.title, path, chapters.length);
       }
       if (chapters.length === before) {
+        if (multiChapterSplit && lastSlice) {
+          const recoveredAt = await recoverBrokenTocChapter(index, path, entry.title, false);
+          if (recoveredAt >= 0) {
+            lastResolvedSpineAt = Math.max(lastResolvedSpineAt, recoveredAt);
+            continue;
+          }
+        }
         // A short heading is not empty, so its split files stay ordinary extras.
         // Only a file with zero paragraphs is filled, and the fill is an extra.
         if (lastSlice && (await fileIsEmpty(body, path))) await recoverEmptyToc(path, entry.title);
         continue;
       }
+      const resolvedAt = spineIndexByPath.get(path);
+      if (resolvedAt !== undefined) lastResolvedSpineAt = Math.max(lastResolvedSpineAt, resolvedAt);
       if (!lastSlice) continue;
       const last = chapters[chapters.length - 1];
       if (!last) continue;

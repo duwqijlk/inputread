@@ -2256,3 +2256,134 @@ test("segmentation 3 promotes an unlisted _split_001 that starts a new chapter w
   assert.match(governed.chapters[1].paragraphs[1], /begins chapter two/);
 });
 
+test("segmentation 3 recovers Calibre short title-only split pages without changing legacy", async () => {
+  const spec = {
+    title: "Horse Split",
+    toc: [],
+    ncx: [
+      { title: "Map", href: "book_split_001.xhtml" },
+      { title: "One", href: "book_split_003.xhtml" },
+      { title: "Two", href: "book_split_004.xhtml" },
+      { title: "Three", href: "book_split_006.xhtml" },
+    ],
+    spine: [
+      { id: "s1", href: "book_split_001.xhtml" },
+      { id: "s2", href: "book_split_002.xhtml" },
+      { id: "s3", href: "book_split_003.xhtml" },
+      { id: "s4", href: "book_split_004.xhtml" },
+      { id: "s5", href: "book_split_005.xhtml" },
+      { id: "s6", href: "book_split_006.xhtml" },
+    ],
+    files: {
+      "book_split_001.xhtml": `<p>Map</p>`,
+      "book_split_002.xhtml": `<p>The Horse</p>`,
+      "book_split_003.xhtml": `<p>First chapter opens in the quiet valley by the sea. ${LONG}</p>`,
+      "book_split_004.xhtml": `<p>Two</p>`,
+      "book_split_005.xhtml": `<p>Second chapter body sits in the unlisted next split file. ${LONG}</p>`,
+      "book_split_006.xhtml": `<p>Third chapter resumes normally in its own listed file. ${LONG}</p>`,
+    },
+  };
+  const legacy = await buildEpub(spec);
+  assert.deepEqual(legacy.chapters.map((c) => c.title), ["One", "Three"]);
+
+  const fixed = await buildEpub({ ...spec, segmentation: 3 });
+  assert.deepEqual(fixed.chapters.map((c) => c.title), ["One", "Two", "Three"]);
+  assert.match(fixed.chapters[1].paragraphs[0], /unlisted next split file/);
+  assert.equal(fixed.extras.some((ex) => ex.href.endsWith("book_split_005.xhtml")), false);
+});
+
+test("segmentation 3 recovers Calibre tail-anchor leftovers including consecutive shifts", async () => {
+  const spec = {
+    title: "Caspian Shift",
+    toc: [],
+    ncx: [
+      { title: "Map", href: "book_split_004.xhtml" },
+      { title: "One", href: "book_split_004.xhtml#filepos100" },
+      { title: "Two", href: "book_split_005.xhtml#filepos200" },
+      { title: "Three", href: "book_split_007.xhtml" },
+    ],
+    spine: [
+      { id: "s4", href: "book_split_004.xhtml" },
+      { id: "s5", href: "book_split_005.xhtml" },
+      { id: "s6", href: "book_split_006.xhtml" },
+      { id: "s7", href: "book_split_007.xhtml" },
+    ],
+    files: {
+      "book_split_004.xhtml": `<p>Map</p><p><a id="filepos100"></a></p>`,
+      "book_split_005.xhtml": `<p>One THE ISLAND. Four children stood on a quiet station platform. ${LONG}</p><p><a id="filepos200"></a></p>`,
+      "book_split_006.xhtml": `<p>Two THE TREASURE HOUSE. They walked down into the ruins together. ${LONG}</p>`,
+      "book_split_007.xhtml": `<p>Three THE DWARF. The worst of sleeping out of doors came early. ${LONG}</p>`,
+    },
+  };
+  const legacy = await buildEpub(spec);
+  assert.equal(legacy.chapters.length, 3); // <2 TOC chapters triggers spine fallback in small test; check real >=2 TOC case below
+  assert.deepEqual(
+    (await buildEpub({
+      ...spec,
+      ncx: [...spec.ncx, { title: "Four", href: "book_split_008.xhtml" }],
+      spine: [...spec.spine, { id: "s8", href: "book_split_008.xhtml" }],
+      files: {
+        ...spec.files,
+        "book_split_008.xhtml": `<p>Four THE DWARF TELLS HIS TALE. Caspian lived in a great castle. ${LONG}</p>`,
+      },
+    })).chapters.map((c) => c.title),
+    ["Three", "Four"],
+  );
+
+  const fullSpec = {
+    ...spec,
+    ncx: [...spec.ncx, { title: "Four", href: "book_split_008.xhtml" }],
+    spine: [...spec.spine, { id: "s8", href: "book_split_008.xhtml" }],
+    files: {
+      ...spec.files,
+      "book_split_008.xhtml": `<p>Four THE DWARF TELLS HIS TALE. Caspian lived in a great castle. ${LONG}</p>`,
+    },
+    segmentation: 3,
+  };
+  const recovered = await buildEpub(fullSpec);
+  assert.deepEqual(recovered.chapters.map((c) => c.title), ["One", "Two", "Three", "Four"]);
+  assert.match(recovered.chapters[0].paragraphs[0], /Four children stood/);
+  assert.match(recovered.chapters[1].paragraphs[0], /walked down into the ruins/);
+  assert.equal(recovered.extras.some((ex) => ex.href.endsWith("book_split_005.xhtml") || ex.href.endsWith("book_split_006.xhtml")), false);
+});
+
+test("segmentation 3 recovers dead-anchor and backwards-jumped TOC entries from bounded spine gaps", async () => {
+  const spec = {
+    title: "Dawn Treader Gap",
+    toc: [],
+    ncx: [
+      { title: "One", href: "book_split_001.xhtml" },
+      { title: "Two", href: "book_split_000.xhtml#filepos9999" },
+      { title: "Three", href: "book_split_003.xhtml" },
+      { title: "Other Books", href: "book_split_000.xhtml" },
+      { title: "Copyright", href: "book_split_005.xhtml" },
+    ],
+    spine: [
+      { id: "s0", href: "book_split_000.xhtml" },
+      { id: "s0b", href: "book_split_000b.xhtml" },
+      { id: "s1", href: "book_split_001.xhtml" },
+      { id: "s2", href: "book_split_002.xhtml" },
+      { id: "s3", href: "book_split_003.xhtml" },
+      { id: "s4", href: "book_split_004.xhtml" },
+      { id: "s5", href: "book_split_005.xhtml" },
+    ],
+    files: {
+      "book_split_000.xhtml": `<p>Title</p>`,
+      "book_split_000b.xhtml": `<p>Front title page that must never be pulled into the end of the book. ${LONG}</p>`,
+      "book_split_001.xhtml": `<p>First chapter sails east across the bright morning water. ${LONG}</p>`,
+      "book_split_002.xhtml": `<p>THE MAGICIAN BOOK. Second chapter text lives here between chapters one and three. ${LONG}</p>`,
+      "book_split_003.xhtml": `<p>Third chapter leaves the island behind under steady wind. ${LONG}</p>`,
+      "book_split_004.xhtml": `<p>Other books in this series include seven tales of Narnia. ${LONG}</p>`,
+      "book_split_005.xhtml": `<p>Copyright notice for this edition stays at the very back. ${LONG}</p>`,
+    },
+  };
+  const legacy = await buildEpub(spec);
+  assert.deepEqual(legacy.chapters.map((c) => c.title), ["One", "Three", "Copyright"]);
+
+  const recovered = await buildEpub({ ...spec, segmentation: 3 });
+  assert.deepEqual(recovered.chapters.map((c) => c.title), ["One", "Two", "Three", "Other Books", "Copyright"]);
+  assert.match(recovered.chapters[1].paragraphs[0], /Second chapter text lives here/);
+  assert.match(recovered.chapters[3].paragraphs[0], /seven tales of Narnia/);
+  assert.equal(paragraphs(recovered).flat().join("\n").includes("Front title page"), false);
+});
+

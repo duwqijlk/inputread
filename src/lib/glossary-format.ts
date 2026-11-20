@@ -109,7 +109,9 @@ export type GlossaryFile = {
   /**
    * Optional segmentation rule. `2` splits a chapter-wrapper blockquote (a calibre class,
    * or a blockquote that contains an h1–h4) into its headings and paragraphs.
-   * `3` also sub-splits multi-chapter spine files or coarse TOC slices on chapter headings.
+   * `3` also sub-splits multi-chapter spine files or coarse TOC slices on chapter headings
+   * and recovers chapters dropped by Calibre-broken TOC pointers (short title-only pages,
+   * tail-anchor leftovers, or dead/mispointed anchors with an unclaimed body file in order).
    * Omit it and every blockquote and chapter slice stays as before.
    */
   segmentation?: 2 | 3;
