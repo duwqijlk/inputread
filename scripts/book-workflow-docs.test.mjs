@@ -82,76 +82,6 @@ test('row list mode rejects another title and keeps live metadata, including for
   }
 }));
 
-const tapRank = patrol.match(/SELECT CASE WHEN catalog_id[\s\S]*?FROM book_word_taps[\s\S]*?;/)?.[0];
-const tapSelect = patrol.match(/SELECT book_id,[\s\S]*?FROM book_word_taps[\s\S]*?;/)?.[0];
-const tapUpdate = patrol.match(/UPDATE book_word_taps[\s\S]*?;/)?.[0];
-
-test('documented tap SQL resolves only the verified primary key and catalog snapshot', () => {
-  const db = new DatabaseSync(':memory:');
-  try {
-    for (const name of readdirSync(join(ROOT, 'migrations')).filter((s) => s.endsWith('.sql')).sort())
-      db.exec(readFileSync(join(ROOT, 'migrations', name), 'utf8'));
-    const insert = db.prepare(`INSERT INTO book_word_taps
-      (book_id, word, chapter, occurrence, catalog_id, book_title, glossary_rev, last_tapped_at)
-      VALUES (?, 'word', ?, ?, ?, 'Same Title', 'oldrev', 100)`);
-    for (const row of [
-      ['device-a', 1, 1, 'word-lists:a'], ['device-b', 1, 1, 'public-books:b'],
-      ['device-a', 2, 1, 'word-lists:a'], ['device-a', 1, 2, 'word-lists:a'], ['legacy', 1, 1, ''],
-    ]) insert.run(...row);
-    // Every open tap is reachable: rank the words (all of them recent here), then read each one's places.
-    const locate = preparePositional(db, tapSelect);
-    const ranked = preparePositional(db, tapRank).all(0);
-    const openTaps = () => preparePositional(db, tapRank).all(0).flatMap((w) => locate.all(w.book, w.word));
-    assert.deepEqual(ranked.map((w) => w.book).sort(), ['public-books:b', 'title:Same Title', 'word-lists:a']);
-    const selected = openTaps();
-    assert.equal(selected.length, 5);
-    const resolve = db.prepare(tapUpdate.replace(/\?[1-9]/g, '?'));
-    const apply = (r) => resolve.run(200, 'newrev', r.book_id, r.word, r.chapter, r.occurrence,
-      r.catalog_id, r.glossary_rev, r.last_tapped_at).changes;
-    const snapshot = selected.find((r) => r.book_id === 'device-a' && r.chapter === 1 && r.occurrence === 1);
-    for (const [column, value] of [['catalog_id', 'word-lists:changed'], ['glossary_rev', 'changed'], ['last_tapped_at', 101]]) {
-      db.prepare(`UPDATE book_word_taps SET ${column} = ? WHERE book_id = ? AND chapter = 1 AND occurrence = 1`)
-        .run(value, snapshot.book_id);
-      assert.equal(apply(snapshot), 0, `${column} snapshot must guard new reports`);
-      db.prepare(`UPDATE book_word_taps SET ${column} = ? WHERE book_id = ? AND chapter = 1 AND occurrence = 1`)
-        .run(snapshot[column], snapshot.book_id);
-    }
-    assert.equal(apply(snapshot), 1);
-    assert.equal(apply(snapshot), 0);
-    const legacy = selected.find((r) => r.book_id === 'legacy');
-    assert.equal(apply({ ...legacy, catalog_id: 'word-lists:a' }), 0, 'keep original empty ref');
-    assert.equal(apply(legacy), 1);
-    const pending = openTaps();
-    assert.equal(pending.length, 3);
-    assert.ok(pending.some((r) => r.catalog_id === 'public-books:b'));
-    assert.ok(pending.some((r) => r.chapter === 2));
-    assert.ok(pending.some((r) => r.occurrence === 2));
-  } finally { db.close(); }
-});
-
-test('the tap ranking skips an old single tap, keeps it pending, and lifts it when another reader taps', () => {
-  const db = new DatabaseSync(':memory:');
-  try {
-    for (const name of readdirSync(join(ROOT, 'migrations')).filter((s) => s.endsWith('.sql')).sort())
-      db.exec(readFileSync(join(ROOT, 'migrations', name), 'utf8'));
-    const DAY = 86_400_000;
-    const now = 100 * DAY;
-    const tap = db.prepare(`INSERT INTO book_word_taps
-      (book_id, word, chapter, occurrence, catalog_id, book_title, tap_count, last_tapped_at)
-      VALUES (?, ?, 1, 1, 'word-lists:a', 'A', ?, ?)`);
-    tap.run('device-1', 'lonely', 1, now - 30 * DAY); // one reader, once, a month ago
-    tap.run('device-1', 'shared', 1, now - 30 * DAY); // two readers
-    tap.run('device-2', 'shared', 1, now - 20 * DAY);
-    tap.run('device-3', 'again', 3, now - 30 * DAY); // one reader, three taps
-    tap.run('device-4', 'fresh', 1, now - 2 * DAY); // one recent tap
-    const words = () => preparePositional(db, tapRank).all(now - 14 * DAY).map((w) => w.word);
-    assert.deepEqual(words(), ['shared', 'again', 'fresh'], 'most readers first; the old single tap waits');
-    assert.equal(db.prepare("SELECT status FROM book_word_taps WHERE word = 'lonely'").get().status, 'pending');
-    tap.run('device-5', 'lonely', 1, now - 1 * DAY);
-    assert.equal(words()[0], 'lonely', 'a second reader lifts it to the top');
-  } finally { db.close(); }
-});
-
 test('find-book stops with actionable ids for missing legacy catalog titles', () => staging((dir) => {
   writeFileSync(join(dir, 'public-catalog.json'), JSON.stringify({ packs: [] }));
   for (const title of [undefined, null, '', 123]) {
@@ -345,7 +275,7 @@ test('playbooks distinguish source provenance, feedback lifecycles and the CPU-g
   }
   assert.match(patrol, /Passage inserts are always\s+`pending`, not `reopened`/);
   assert.match(patrol, /does \*\*not\*\* separate `catalog_id`/);
-  assert.match(patrol, /Missing-word taps do not currently reopen automatically/);
+  assert.match(patrol, /book_word_taps.*retired/i);
   assert.doesNotMatch(passageUpdate, /WHERE topic\s*=/);
   assert.match(passageUpdate, /WHERE id = \?3 AND topic = \?4 AND id <= \?5/);
   const publicEpub = upload.slice(upload.indexOf('**Public-domain book: the implemented API'));
