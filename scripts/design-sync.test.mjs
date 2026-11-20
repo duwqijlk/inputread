@@ -93,7 +93,7 @@ test("depth: raised and floating levels come from per-theme tokens; floating lay
   assert.match(config, /lift: "var\(--elev-3\)"/);
   assert.match(config, /hero: "var\(--elev-2\)"/);
   assert.match(css, /\.bg-float \{\s*--sheet: var\(--float-sheet\);/);
-  assert.match(read("src/components/ui.tsx"), /overscroll-contain bg-float text-ink/);
+  assert.match(read("src/components/ui.tsx"), /panel-sheet fixed z-50 flex flex-col overflow-hidden bg-float text-ink/, "the shared sheet is a floating layer");
   assert.match(read("src/components/word-card.tsx"), /border-float-edge bg-float/);
   assert.match(read("src/components/notebook.tsx"), /launcher grid[^"]*shadow-hero/);
 });

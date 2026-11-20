@@ -219,7 +219,7 @@ export function ReaderSettings() {
         </Dialog.Trigger>
         <Dialog.Portal>
           <Dialog.Overlay className={panel.overlay} />
-          <Dialog.Content ref={sheet} className={cn(panel.content, "max-sm:gap-3")} aria-describedby={undefined}>
+          <Dialog.Content ref={sheet} className={panel.content} aria-describedby={undefined}>
             <PanelHandle />
             <div className={panel.head}>
               <Dialog.Title className="m-0 text-lg font-bold tracking-[-0.02em]">{t("rs.title")}</Dialog.Title>
@@ -227,7 +227,9 @@ export function ReaderSettings() {
                 <X className={panel.closeIcon} strokeWidth={2.5} aria-hidden />
               </Dialog.Close>
             </div>
-            <SettingsBody />
+            <div className={cn(panel.body, "max-sm:gap-3")}>
+              <SettingsBody />
+            </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>

@@ -910,6 +910,10 @@
     margin-left: -10px;
     margin-right: -10px;
     padding: 10px;
+    /* A line scrolled up fades into the header's edge instead of being cut in half (inside the
+       body's own 10px padding, so a body at rest is not faded). */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 10px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 10px);
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1023,11 +1027,13 @@
     [data-word-card] summary {
       touch-action: none;
     }
+    /* A short drag bar: the whole header pulls the sheet too, and a 44px strip here left a large
+       empty band above the word. */
     [data-word-card] [data-sheet-handle] {
       display: flex;
       align-items: center;
       justify-content: center;
-      height: 44px;
+      height: 22px;
       margin-left: -1.25rem;
       margin-right: -1.25rem;
       touch-action: none;
@@ -2062,30 +2068,35 @@
 
 /* Dialog scrollbars: a slim overlay-style pill inset from the rounded corners, not the platform's
    full-height gutter (which cut through the 20px corner on Windows). WebKit/Blink use the pseudo
-   elements; engines without them get the standard thin scrollbar. */
+   elements; engines without them get the standard thin scrollbar. A sheet's .panel-body (the one
+   part of a sheet that scrolls) gets the same pill. */
 [role="dialog"]::-webkit-scrollbar,
 [role="alertdialog"]::-webkit-scrollbar,
 [data-word-card]::-webkit-scrollbar,
-[data-para-panel]::-webkit-scrollbar {
+[data-para-panel]::-webkit-scrollbar,
+.panel-body::-webkit-scrollbar {
   width: 14px;
 }
 [role="dialog"]::-webkit-scrollbar-button,
 [role="alertdialog"]::-webkit-scrollbar-button,
 [data-word-card]::-webkit-scrollbar-button,
-[data-para-panel]::-webkit-scrollbar-button {
+[data-para-panel]::-webkit-scrollbar-button,
+.panel-body::-webkit-scrollbar-button {
   display: none;
 }
 [role="dialog"]::-webkit-scrollbar-track,
 [role="alertdialog"]::-webkit-scrollbar-track,
 [data-word-card]::-webkit-scrollbar-track,
-[data-para-panel]::-webkit-scrollbar-track {
+[data-para-panel]::-webkit-scrollbar-track,
+.panel-body::-webkit-scrollbar-track {
   background: transparent;
-  margin-block: 20px;
+  margin-block: 12px;
 }
 [role="dialog"]::-webkit-scrollbar-thumb,
 [role="alertdialog"]::-webkit-scrollbar-thumb,
 [data-word-card]::-webkit-scrollbar-thumb,
-[data-para-panel]::-webkit-scrollbar-thumb {
+[data-para-panel]::-webkit-scrollbar-thumb,
+.panel-body::-webkit-scrollbar-thumb {
   min-height: 40px;
   background-color: rgb(var(--ink-rgb) / 0.16);
   border: 5px solid transparent;
@@ -2095,17 +2106,19 @@
 [role="dialog"]:hover::-webkit-scrollbar-thumb,
 [role="alertdialog"]:hover::-webkit-scrollbar-thumb,
 [data-word-card]:hover::-webkit-scrollbar-thumb,
-[data-para-panel]:hover::-webkit-scrollbar-thumb {
+[data-para-panel]:hover::-webkit-scrollbar-thumb,
+.panel-body:hover::-webkit-scrollbar-thumb {
   background-color: rgb(var(--ink-rgb) / 0.28);
 }
 [role="dialog"]::-webkit-scrollbar-corner,
 [role="alertdialog"]::-webkit-scrollbar-corner,
 [data-word-card]::-webkit-scrollbar-corner,
-[data-para-panel]::-webkit-scrollbar-corner {
+[data-para-panel]::-webkit-scrollbar-corner,
+.panel-body::-webkit-scrollbar-corner {
   background: transparent;
 }
-/* The word card and paragraph help carry .scroll-thin, whose standard scrollbar properties would
-   switch the pill above off in Blink: hand those two back to the pseudo-elements. */
+/* The word card carries .scroll-thin, whose standard scrollbar properties would switch the pill
+   above off in Blink: hand it back to the pseudo-elements. */
 @supports selector(::-webkit-scrollbar) {
   [data-word-card].scroll-thin,
   [data-para-panel].scroll-thin {
@@ -2115,65 +2128,60 @@
 }
 @supports not selector(::-webkit-scrollbar) {
   [role="dialog"],
-  [role="alertdialog"] {
+  [role="alertdialog"],
+  .panel-body {
     scrollbar-width: thin;
     scrollbar-color: rgb(var(--ink-rgb) / 0.22) transparent;
   }
 }
 
-/* The pinned panel header (ui.tsx panel.head): the same frosted material as its panel, and a
-   hairline that fades in over the first 24px of scroll where scroll-driven animations exist. */
-.panel-head {
-  background: rgb(var(--surface-3-rgb) / 0.86);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
+/* Sheets (ui.tsx panel.content and the dialogs built the same way): a column of drag bar, header
+   and .panel-body, which alone scrolls. The header never moves, so nothing passes under it and the
+   body's scrollbar starts below it. Two details:
+   - the body's first pixels fade out, so a line scrolled up leaves softly instead of being cut;
+   - a hairline shows under the header once the body is scrolled (a named scroll timeline the
+     sheet shares with its header; where those are missing the header simply has none). */
+.panel-body {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 10px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 10px);
 }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .panel-head {
-    background: var(--surface-3);
-  }
+[data-theme="eink"] .panel-body {
+  -webkit-mask-image: none;
+  mask-image: none;
 }
-@media (prefers-reduced-transparency: reduce) {
-  .panel-head {
-    background: var(--surface-3);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-[data-theme="eink"] .panel-head {
-  background: var(--surface-3);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-/* At rest the header is clear (a second frosted layer over the panel read as a whiter band); it
-   frosts and gains its hairline as content scrolls under it. */
-/* 0% and 1% both hold `none`: interpolating from none already yields an active filter
-   (saturate(1) blur(0)), which paints the lighter band even at rest. */
-@keyframes panel-head-line {
-  0%,
-  1% {
-    background-color: rgb(var(--surface-3-rgb) / 0);
+@keyframes sheet-head-line {
+  from {
     box-shadow: 0 1px 0 transparent;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
   }
-  100% {
-    background-color: rgb(var(--surface-3-rgb) / 0.72);
+  to {
     box-shadow: 0 1px 0 var(--line);
-    -webkit-backdrop-filter: saturate(180%) blur(20px);
-    backdrop-filter: saturate(180%) blur(20px);
   }
 }
-@supports (animation-timeline: scroll()) {
-  /* Also the resting look when the panel does not scroll at all (an inactive timeline applies no keyframes). */
-  .panel-head:not([data-theme="eink"] *) {
-    /* A resting blur over the already-frosted panel paints a lighter band in Blink: blur only once scrolled. */
-    background-color: transparent;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    animation: panel-head-line linear both;
-    animation-timeline: scroll(nearest);
-    animation-range: 0 24px;
+/* The word card: the same hairline under its header once its body scrolls. */
+@supports (timeline-scope: --word-body) {
+  [data-word-card] {
+    timeline-scope: --word-body;
+  }
+  [data-word-card] [data-word-body] {
+    scroll-timeline: --word-body block;
+  }
+  [data-word-card] [data-word-header] {
+    animation: sheet-head-line linear both;
+    animation-timeline: --word-body;
+    animation-range: 0 16px;
+  }
+}
+@supports (timeline-scope: --sheet-body) {
+  .panel-sheet {
+    timeline-scope: --sheet-body;
+  }
+  .panel-sheet .panel-body {
+    scroll-timeline: --sheet-body block;
+  }
+  .panel-sheet .panel-head {
+    animation: sheet-head-line linear both;
+    animation-timeline: --sheet-body;
+    animation-range: 0 16px;
   }
 }
 

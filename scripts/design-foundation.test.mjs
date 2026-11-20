@@ -194,3 +194,20 @@ test("multi-action dialog footers and admin feedback toolbars wrap instead of ov
   assert.match(feedbackAdmin, /className="grid gap-3[^"]*" data-admin-feedback-toolbar/, "feedback search row and filter pills stack cleanly");
   assert.doesNotMatch(feedbackAdmin, /inline-flex rounded-xl border border-line\/80 bg-paper\/60/, "segmented filter groups allow wrapping");
 });
+
+test("sheets keep their header still and scroll only the body under it", () => {
+  // A sticky header inside one scrolling sheet left a strip beside the scrollbar it could not
+  // cover (a gap at the header's top right) and let text pass half-cut under it.
+  const ui = read("src/components/ui.tsx");
+  assert.match(ui, /content:\s*"panel-in panel-sheet fixed z-50 flex flex-col overflow-hidden/);
+  assert.match(ui, /head: "panel-head relative z-10 flex shrink-0/);
+  assert.match(ui, /body: "panel-body grid min-h-0 flex-1 content-start gap-4 overflow-y-auto/);
+  for (const file of ["account-dialog", "share-dialog", "reader-settings", "sponsor-dialog", "shelf-book-info", "help-panels"]) {
+    const body = read(`src/components/${file}.tsx`);
+    assert.doesNotMatch(body, /panel-head sticky|sticky top-0 z-10 -mx/, `${file}: no sticky header`);
+    assert.match(body, /panel\.body|"panel-body /, `${file}: the body scrolls`);
+  }
+  assert.match(css, /\.panel-sheet \.panel-head \{\s*animation: sheet-head-line linear both;\s*animation-timeline: --sheet-body;/, "a hairline once the body scrolls");
+  assert.match(css, /\.panel-body \{\s*-webkit-mask-image: linear-gradient\(to bottom, transparent 0, #000 10px\);/, "a soft top edge");
+  assert.match(css, /\[data-word-card\] \[data-sheet-handle\] \{[\s\S]*?height: 22px;/, "a short drag bar above the word");
+});

@@ -746,10 +746,18 @@ export function StatRow({
  */
 export const panel = {
   overlay: "fixed inset-0 z-50 bg-black/[0.32]",
+  /**
+   * The sheet is a column: the drag bar, the header (never scrolls), and panel.body, the only part
+   * that scrolls. The header used to be sticky inside one scrolling sheet: the sheet's scrollbar then
+   * took a strip the header could not cover (a gap at its top right), and text passed half-cut under
+   * the header. Put everything after the header in panel.body.
+   */
   content:
-    "panel-in fixed z-50 grid content-start gap-4 overflow-y-auto overscroll-contain bg-float text-ink max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[92dvh] max-sm:rounded-t-sheet max-sm:border-t max-sm:border-float-edge max-sm:px-4 max-sm:pb-[calc(20px+env(safe-area-inset-bottom))] max-sm:shadow-[0_-8px_32px_-12px_rgb(0_0_0/0.25)] sm:top-1/2 sm:left-1/2 sm:max-h-[90dvh] sm:w-[min(30rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:gap-5 sm:rounded-2xl sm:border sm:border-float-edge sm:px-6 sm:pt-0 sm:pb-6 sm:shadow-lift",
-  /** Pinned while the panel scrolls: frosted, with a hairline once content passes under it (styles.css). */
-  head: "panel-head sticky top-0 z-10 -mx-4 flex items-center justify-between gap-3 px-4 py-2 sm:-mx-6 sm:px-6 sm:pt-5 sm:pb-3",
+    "panel-in panel-sheet fixed z-50 flex flex-col overflow-hidden bg-float text-ink max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[92dvh] max-sm:rounded-t-sheet max-sm:border-t max-sm:border-float-edge max-sm:shadow-[0_-8px_32px_-12px_rgb(0_0_0/0.25)] sm:top-1/2 sm:left-1/2 sm:max-h-[90dvh] sm:w-[min(30rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border sm:border-float-edge sm:shadow-lift",
+  /** The sheet's header: does not scroll; a hairline under it once the body scrolls (styles.css). */
+  head: "panel-head relative z-10 flex shrink-0 items-center justify-between gap-3 px-4 pt-1 pb-3 sm:px-6 sm:pt-5 sm:pb-3",
+  /** Everything under the header; the one part of the sheet that scrolls. */
+  body: "panel-body grid min-h-0 flex-1 content-start gap-4 overflow-y-auto overscroll-contain px-4 pt-2 pb-[calc(20px+env(safe-area-inset-bottom))] sm:gap-5 sm:px-6 sm:pb-6",
   title: "m-0 text-2xl leading-tight font-bold tracking-[-0.02em]",
   /** iOS sheet close: a small tinted circle; the hit area stays 44px. */
   close:
@@ -766,10 +774,10 @@ export const panel = {
   rowIcon: "size-[17px] shrink-0 text-faint/80",
 } as const;
 
-/** The drag bar at the top of a phone sheet; hidden on a wide screen. */
+/** The drag bar at the top of a phone sheet; hidden on a wide screen. The whole header drags too. */
 export function PanelHandle() {
   return (
-    <div className="-mb-2 flex h-7 items-center justify-center sm:hidden" aria-hidden>
+    <div className="flex h-5 shrink-0 items-end justify-center sm:hidden" aria-hidden>
       <i className="block h-1 w-10 rounded-full bg-line" />
     </div>
   );

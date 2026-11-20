@@ -57,7 +57,7 @@ export function ShelfBookInfo({
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/[0.32]" />
         <Dialog.Content
           ref={sheet}
-          className="panel-in fixed z-50 grid content-start gap-4 border-float-edge bg-float text-ink shadow-lift max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[88vh] max-sm:rounded-t-sheet max-sm:border-t max-sm:px-5 max-sm:pt-2 max-sm:pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:top-1/2 sm:left-1/2 sm:w-[calc(100vw-2rem)] sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border sm:px-5 sm:pt-0 sm:pb-5 max-h-[calc(100vh-2rem)] overflow-y-auto overscroll-contain"
+          className="panel-in panel-sheet fixed z-50 flex flex-col overflow-hidden border-float-edge bg-float text-ink shadow-lift max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[88vh] max-sm:rounded-t-sheet max-sm:border-t sm:top-1/2 sm:left-1/2 sm:w-[calc(100vw-2rem)] sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border max-h-[calc(100vh-2rem)]"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             onReturnFocus();
@@ -65,7 +65,7 @@ export function ShelfBookInfo({
           data-shelf-book-info=""
         >
           <PanelHandle />
-          <div className="panel-head sticky top-0 z-10 -mx-5 grid gap-1 px-5 py-2 sm:pt-5 sm:pb-3">
+          <div className="panel-head relative z-10 grid shrink-0 gap-1 px-5 pt-1 pb-3 sm:pt-5">
             <div className="flex items-center justify-between gap-3">
               <Dialog.Title className="m-0 font-bold tracking-[-0.02em] text-xl">{t("shelf.info")}</Dialog.Title>
               <Dialog.Close type="button" className={panel.close} aria-label={t("common.close")}>
@@ -76,6 +76,7 @@ export function ShelfBookInfo({
               {t("shelf.infoLocal")}
             </Dialog.Description>
           </div>
+          <div className="panel-body grid min-h-0 flex-1 content-start gap-4 overflow-y-auto overscroll-contain px-5 pt-1 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:pb-5">
           {book.title.trim() ? (
             <h3 className="m-0 break-words font-display text-lg leading-snug font-semibold" lang="en">
               {book.title}
@@ -154,6 +155,7 @@ export function ShelfBookInfo({
               ) : null}
             </dl>
           ) : null}
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
