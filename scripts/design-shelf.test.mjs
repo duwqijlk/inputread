@@ -78,3 +78,12 @@ test("adding a book: a ring with the real progress, then a +1 to the Shelf tab a
   assert.match(read("src/components/margin-app.tsx"), /data-nav=\{id\}/);
   assert.match(read("src/components/margin-app.tsx"), /data-nav=\{tab\.id\}/);
 });
+
+test("shelf card titles clamp to two lines on a span, never on the button itself", () => {
+  // On a <button> engines drop display:-webkit-box (Chrome clips with no ellipsis, iPhone Safari
+  // may not clamp), so a long speech title ran on and the rows lost their even height.
+  const shelf = read("src/components/shelf.tsx");
+  assert.match(shelf, /<span className=\{cardTitleClass\} data-shelf-title>\s*\{book\.title\}\s*<\/span>/);
+  assert.doesNotMatch(shelf, /<button[^>]*className=\{cn\(cardTitleClass/, "the clamp is not on the button");
+  assert.match(read("src/components/list-filters.tsx"), /cardTitleClass =\s*"min-h-\[2\.5em\][^"]*\[-webkit-line-clamp:2\]/, "two lines, same height for short titles");
+});
