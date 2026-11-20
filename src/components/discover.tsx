@@ -9,7 +9,8 @@ import {
   type SeriesChoice,
 } from "@/components/list-filters";
 import { btn, cn, field, subTabs, TabInk } from "@/components/ui";
-import { listPackRecords, loadBookExtras, type PackRecord } from "@/lib/book-db";
+import { listPackRecords, loadBookExtras, savePackRecord, type PackRecord } from "@/lib/book-db";
+import { relinkMislabelled } from "@/lib/catalog-shelf-identity";
 import { coverAddress } from "@/lib/covers";
 import { BUNDLED_CATALOG_URL, loadCatalog, resolveAgainst } from "@/lib/packs";
 import { useAccount } from "@/lib/account-store";
@@ -236,7 +237,7 @@ export function DiscoverScreen({
     const ticket = discoverSnapshot.begin();
     void (async () => {
       try {
-        const [catalog, lists, shelfMarks, railFile] = await Promise.all([
+        const [catalog, lists, firstMarks, railFile] = await Promise.all([
           loadCatalog(BUNDLED_CATALOG_URL),
           // A word-list catalog that cannot be loaded must not hide the classics.
           // Those lists are not kept in the service worker.
@@ -286,6 +287,28 @@ export function DiscoverScreen({
           list: pack,
         })) : discoverSnapshot.read()?.rows.filter((row) => row.kind === "list") ?? [];
         const next = { rows: [...classics, ...words], rails: railFile === undefined ? discoverSnapshot.read()?.rails ?? null : railFile, complete: Boolean(lists) };
+        // Put back cards an older rule re-labelled as another volume (catalog-shelf-identity.ts),
+        // before the cards are drawn. Only with the word-list catalog in hand: it names the volumes.
+        let shelfMarks = firstMarks;
+        if (lists) {
+          const fixes = relinkMislabelled(
+            useVocab.getState().books,
+            shelfMarks.records,
+            next.rows.map((row) => ({ id: row.id, title: row.title, author: row.author, isbn: row.isbn, catalog: (row.kind === "classic" ? "public-books" : "word-lists") as CatalogName })),
+          );
+          if (fixes.length > 0) {
+            try {
+              for (const fix of fixes) {
+                const { catalog: _catalog, listSource: _listSource, ...record } = fix.record;
+                await savePackRecord({ ...record, packId: fix.packId });
+              }
+              shelfMarks = await loadDiscoverRecords();
+            } catch {
+              // The cards still show; the next visit tries again.
+            }
+            if (!alive) return;
+          }
+        }
         if (!discoverSnapshot.publish(ticket, next)) return;
         setRows((prev) => (sameDiscoverRows(prev, next.rows) ? prev : next.rows));
         setRailSpecs((prev) => (sameRailSpecs(prev, next.rails) ? prev : next.rails));

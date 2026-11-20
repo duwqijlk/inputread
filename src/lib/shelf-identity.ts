@@ -44,6 +44,9 @@ export function sameAuthor(a: string, b: string): boolean {
   return short.every((word) => long.includes(word));
 }
 
+/** The numbers in a title, in order ("Vol 3 (Lessons 141-210)" gives 3, 141, 210). */
+const titleNumbers = (title: string): string => (title.match(/\d+/g) ?? []).map((n) => String(Number(n))).join(" ");
+
 /** Do these two descriptions name the same book? Different authors never match. */
 export function sameBook(a: Identity, b: Identity): boolean {
   const isbnA = isbnDigits(a.isbn ?? "");
@@ -52,6 +55,15 @@ export function sameBook(a: Identity, b: Identity): boolean {
   const keysA = titleKeys(a.title);
   const keysB = titleKeys(b.title);
   if (!keysA.some((key) => keysB.includes(key))) return false;
+  // Matched only on the main title (subtitle and brackets dropped): when both titles carry numbers
+  // and they differ, those are two volumes, not one book. "EnglishPod - ... Vol 2 (Lessons 71-140)"
+  // and "... Vol 3 (Lessons 141-210)" both shorten to "EnglishPod". A number on one side only is a
+  // series tail one copy adds ("Ghost Town at Sundown (Magic Tree House #10)"), still the same book.
+  if (keysA[0] !== keysB[0]) {
+    const numbersA = titleNumbers(a.title);
+    const numbersB = titleNumbers(b.title);
+    if (numbersA && numbersB && numbersA !== numbersB) return false;
+  }
   return sameAuthor(a.author, b.author);
 }
 
