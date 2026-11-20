@@ -249,8 +249,8 @@ function AloudOptions() {
   const setRate = useTtsSettings((state) => state.setRate);
   const setAutoNext = useTtsSettings((state) => state.setAutoNext);
   return (
-    <div className="grid gap-3" data-aloud-options>
-      <div className="grid gap-1.5">
+    <div className="grid min-w-0 grid-cols-1 gap-3" data-aloud-options>
+      <div className="grid min-w-0 gap-1.5 [&>[role=group]]:!grid">
         <span className="px-0.5 text-[13px] font-semibold text-faint">{t("tts.voice")}</span>
         <Segmented<MimoVoice>
           layout="wrap"
@@ -268,7 +268,7 @@ function AloudOptions() {
           }))}
         />
       </div>
-      <div className="grid gap-1.5">
+      <div className="grid min-w-0 gap-1.5">
         <span className="px-0.5 text-[13px] font-semibold text-faint">{t("aloud.speedTitle")}</span>
         <Segmented<AloudRate>
           label={t("aloud.speedTitle")}

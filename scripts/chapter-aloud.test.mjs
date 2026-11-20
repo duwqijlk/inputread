@@ -117,6 +117,10 @@ test("the reader: top-bar button, a speaker after every paragraph, the bar, and 
   assert.doesNotMatch(header, /startChapterAloud|onStart/, "the top button does not start reading");
   assert.match(ui, /data-aloud-ready/);
   assert.match(ui, /function AloudOptions/);
+  // The options never grow past their card: the column is minmax(0, 1fr), and the four voices stay
+  // a 2x2 grid on wide screens too (one row of four long labels was wider than the card).
+  assert.match(ui, /<div className="grid min-w-0 grid-cols-1 gap-3" data-aloud-options>/);
+  assert.ok(ui.includes("[&>[role=group]]:!grid"), "voices stay a 2x2 grid on wide screens");
   assert.match(ui, /data-aloud-play/);
   // Following: a real move of the page we did not make stops it (a tap does not); it comes back
   // by itself once the reader stops and the paragraph is on screen; the highlight stays.
