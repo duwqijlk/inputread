@@ -29,8 +29,8 @@ import {
   isSyncKind,
   isLive,
   itemKey,
-  lemmaKey,
   mergeSnapshots,
+  wordCardKey,
   wordbookItemId,
   wordbookShard,
   type SyncItem,
@@ -331,18 +331,18 @@ function alignMeta(items: SyncItem[]) {
     } else if (item.kind === "wordbook" && !item.deleted) {
       const blob = asWordbookBlob(item.data);
       for (const word of blob.words) {
-        const lemma = lemmaKey(word.lemma);
-        meta.wordTouched[lemma] = Math.max(meta.wordTouched[lemma] ?? 0, word.updatedAt);
-        delete meta.wordRemoved[lemma];
+        const key = wordCardKey(word);
+        meta.wordTouched[key] = Math.max(meta.wordTouched[key] ?? 0, word.updatedAt);
+        delete meta.wordRemoved[key];
         const gone: Record<string, number> = {};
         for (const source of word.sources) if (!isLive(source)) gone[source.k] = source.removed;
-        if (Object.keys(gone).length > 0) meta.sourceRemoved[lemma] = { ...(meta.sourceRemoved[lemma] ?? {}), ...gone };
+        if (Object.keys(gone).length > 0) meta.sourceRemoved[key] = { ...(meta.sourceRemoved[key] ?? {}), ...gone };
       }
       for (const row of blob.removed) {
-        const lemma = lemmaKey(row.lemma);
-        meta.wordRemoved[lemma] = Math.max(meta.wordRemoved[lemma] ?? 0, row.updatedAt);
-        delete meta.wordTouched[lemma];
-        delete meta.sourceRemoved[lemma];
+        const key = wordCardKey(row);
+        meta.wordRemoved[key] = Math.max(meta.wordRemoved[key] ?? 0, row.updatedAt);
+        delete meta.wordTouched[key];
+        delete meta.sourceRemoved[key];
       }
     } else if (item.kind === "settings") {
       meta.settingsUpdatedAt = Math.max(meta.settingsUpdatedAt, item.updatedAt);
@@ -360,15 +360,15 @@ function recordToSource(source: Extract<WordbookRecord["sources"][number], { boo
 function mergeWordbook(local: VocabEntry[], items: SyncItem[], books: Book[]): VocabEntry[] {
   const shards = items.filter((item) => item.kind === "wordbook");
   if (shards.length === 0) return local;
-  const byLemma = new Map(local.map((word) => [lemmaKey(word.lemma), word]));
+  const byKey = new Map(local.map((word) => [wordCardKey(word), word]));
   const seen = new Set<string>();
   const out: VocabEntry[] = [];
   for (const item of shards) {
     if (item.deleted) continue;
     for (const record of asWordbookBlob(item.data).words) {
-      const lemma = lemmaKey(record.lemma);
-      const prior = byLemma.get(lemma);
-      seen.add(lemma);
+      const key = wordCardKey(record);
+      const prior = byKey.get(key);
+      seen.add(key);
       const { sources, updatedAt: _updatedAt, ...rest } = record;
       const live = sources.filter(isLive).map(recordToSource);
       const home = books.find((book) => live.some((source) => source.book === bookSyncKey(book)));
@@ -385,7 +385,7 @@ function mergeWordbook(local: VocabEntry[], items: SyncItem[], books: Book[]): V
     }
   }
   const shardIds = new Set(shards.map((item) => item.itemId));
-  const kept = local.filter((word) => !seen.has(lemmaKey(word.lemma)) && !shardIds.has(wordbookItemId(wordbookShard(word.lemma))));
+  const kept = local.filter((word) => !seen.has(wordCardKey(word)) && !shardIds.has(wordbookItemId(wordbookShard(word.lemma))));
   return rehomeForeignSources([...out, ...kept]);
 }
 

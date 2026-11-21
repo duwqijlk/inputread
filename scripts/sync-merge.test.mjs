@@ -684,3 +684,84 @@ test("an item larger than the target still goes, alone", () => {
   const small = { kind: "settings", itemId: "main", updatedAt: 1, deleted: false, data: {} };
   assert.deepEqual(syncBatches([huge, small]).map((batch) => batch.map((item) => item.itemId)), [["main"], ["w-x"]]);
 });
+
+test("wordbook sync merges distinct senseIds in the same shard without clobbering, and tombstones stay sense-scoped", () => {
+  const pos1 = "a".repeat(64);
+  const pos2 = "b".repeat(64);
+  const srcCoil = {
+    k: sourceKey({ book: BOOK_A, positionKey: pos1, surface: "spring" }),
+    book: BOOK_A,
+    title: "Alice",
+    author: "Lewis Carroll",
+    sentence: "The clock spring snapped.",
+    surface: "spring",
+    meaning: "elastic metal device",
+    savedAt: 50,
+    senseId: "oewn-coil-n",
+    standardLemma: "spring",
+    positionKey: pos1,
+  };
+  const srcJump = {
+    k: sourceKey({ book: BOOK_A, positionKey: pos2, surface: "sprang" }),
+    book: BOOK_A,
+    title: "Alice",
+    author: "Lewis Carroll",
+    sentence: "She sprang to her feet.",
+    surface: "sprang",
+    meaning: "leap suddenly",
+    savedAt: 60,
+    senseId: "oewn-jump-v",
+    standardLemma: "spring",
+    positionKey: pos2,
+  };
+  const deviceA = shard("spring", [
+    rec("spring", [srcCoil], { id: "id-coil", senseId: "oewn-coil-n", standardLemma: "spring", updatedAt: 100 }),
+  ], [], 100);
+  const deviceB = shard("spring", [
+    rec("spring", [srcJump], { id: "id-jump", senseId: "oewn-jump-v", standardLemma: "spring", updatedAt: 120 }),
+  ], [], 120);
+
+  const merged = mergeSnapshots([deviceA], [deviceB]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].itemId, "w-s");
+  const blob = asWordbookBlob(merged[0].data);
+  assert.equal(blob.words.length, 2);
+  assert.deepEqual(blob.words.map((w) => w.senseId).sort(), ["oewn-coil-n", "oewn-jump-v"]);
+  assert.equal(blob.words.find((w) => w.senseId === "oewn-coil-n").sources[0].positionKey, pos1);
+
+  // Deleting ONLY sense coil on device A leaves sense jump untouched after merge
+  const deviceADeleted = shard("spring", [], [{ lemma: "spring", senseId: "oewn-coil-n", updatedAt: 200 }], 200);
+  const afterDelete = asWordbookBlob(mergeSnapshots([merged[0]], [deviceADeleted])[0].data);
+  assert.equal(afterDelete.words.length, 1);
+  assert.equal(afterDelete.words[0].senseId, "oewn-jump-v");
+
+  // Unanchored entry-level ref + positionKey distinguishes Ch 1 vs Ch 2 instead of colliding
+  const k1 = sourceKey({ book: BOOK_A, ref: { list: "alice" }, positionKey: pos1, surface: "spring" });
+  const k2 = sourceKey({ book: BOOK_A, ref: { list: "alice" }, positionKey: pos2, surface: "spring" });
+  assert.notEqual(k1, k2);
+});
+
+test("noteChanges and buildSyncItems track distinct senses of the same lemma independently", () => {
+  const coil = rec("spring", [{ book: BOOK_A, sentence: "A coil spring.", surface: "spring", savedAt: 10, senseId: "oewn-coil-n", positionKey: "a".repeat(64) }], {
+    id: "id-coil",
+    senseId: "oewn-coil-n",
+    standardLemma: "spring",
+  });
+  const jump = rec("spring", [{ book: BOOK_A, sentence: "She sprang up.", surface: "sprang", savedAt: 20, senseId: "oewn-jump-v", positionKey: "b".repeat(64) }], {
+    id: "id-jump",
+    senseId: "oewn-jump-v",
+    standardLemma: "spring",
+  });
+  const before = captureSnapshot({ books: [], words: [coil, jump], progress: {}, settings: {} });
+  const after = captureSnapshot({ books: [], words: [jump], progress: {}, settings: {} });
+  const meta = noteChanges(emptyMeta(), before, after, 500);
+  const items = buildSyncItems(after, meta);
+  const shardS = items.find((item) => item.kind === "wordbook" && item.itemId === "w-s");
+  assert.ok(shardS);
+  const blob = asWordbookBlob(shardS.data);
+  assert.equal(blob.words.length, 1);
+  assert.equal(blob.words[0].senseId, "oewn-jump-v");
+  assert.equal(blob.removed.length, 1);
+  assert.equal(blob.removed[0].lemma, "spring");
+  assert.equal(blob.removed[0].senseId, "oewn-coil-n");
+});

@@ -36,6 +36,8 @@ export type WordRecord = {
   id: string;
   surface: string;
   lemma: string;
+  senseId?: string;
+  standardLemma?: string;
   pos: string;
   meaning: string;
   whyHard: string;
@@ -52,7 +54,7 @@ export type WordRecord = {
   updatedAt: number;
 };
 
-export type WordTombstone = { lemma: string; updatedAt: number };
+export type WordTombstone = { lemma: string; senseId?: string; updatedAt: number };
 
 /** Where a word was met, as stored on the server. `k` is `sourceKey`. */
 export type SourceLive = {
@@ -70,6 +72,12 @@ export type SourceLive = {
   savedAt: number;
   /** Word-list pointer. The meaning is read from that list. The sentence stays so the notebook can show the paragraph. */
   ref?: GlossPoint;
+  /** Standard OEWN sense identifier when known. */
+  senseId?: string;
+  /** Exact OEWN lookup key paired with `senseId` for live R2 dictionary meaning refresh. */
+  standardLemma?: string;
+  /** 64-hex exact L1 position key (`dictionary-positions.ts`) when known. */
+  positionKey?: string;
 };
 /** The reader took this source away at `removed`. Kept for a while so an older copy cannot bring it back. */
 export type SourceGone = { k: string; removed: number };
@@ -81,21 +89,44 @@ export type WordbookBlob = { words: WordbookRecord[]; removed: WordTombstone[] }
 export const MAX_LIVE_SOURCES = 12;
 const GONE_KEEP_MS = 90 * 86_400_000;
 
+const POSITION_KEY_HEX = /^[0-9a-f]{64}$/;
+
+function asSenseId(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 120 || /[\s#]/.test(trimmed)) return "";
+  return trimmed;
+}
+
+function asPositionKey(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const lower = value.trim().toLowerCase();
+  return POSITION_KEY_HEX.test(lower) ? lower : "";
+}
+
 /**
  * The same save on two devices has the same key.
- * A word-list pointer uses the list place. An older save uses the book plus the start of the sentence.
+ * A word-list pointer uses the list place. A positional OEWN save uses its exact positionKey.
+ * An older save uses the book plus the start of the sentence.
  */
 export function sourceKey(source: {
   book: string;
   sentence?: string;
   surface?: string;
   ref?: GlossPoint | null;
+  positionKey?: string | null;
 }): string {
   const ref = source.ref;
+  const posKey = asPositionKey(source.positionKey);
   if (ref?.list) {
     const form = (ref.form ?? "").trim().toLowerCase();
+    const anchored = ref.chapter !== undefined || ref.occurrence !== undefined || Boolean(ref.mark);
+    if (!anchored && !ref.phrase && posKey) {
+      return `${source.book}#${ref.list}#w#pos#${posKey.slice(0, 16)}`;
+    }
     return `${source.book}#${ref.list}#${ref.phrase ? "p" : "w"}#${ref.chapter ?? ""}#${ref.occurrence ?? ""}#${form}#${ref.mark ?? ""}`;
   }
+  if (posKey) return `${source.book}#pos#${posKey.slice(0, 16)}`;
   const sentence = normalizeQuote(source.sentence ?? "");
   if (sentence) return `${source.book}#${sentence.slice(0, 48)}`;
   return `${source.book}#${(source.surface ?? "").trim().toLowerCase()}`;
@@ -265,6 +296,10 @@ export function asWord(value: unknown): WordRecord | null {
     lapses: integer(raw.lapses, 0, 1_000_000),
     updatedAt: time(raw.updatedAt) || time(raw.lastReviewedAt) || time(raw.createdAt),
   };
+  const senseId = asSenseId(raw.senseId);
+  if (senseId) word.senseId = senseId;
+  const standardLemma = text(raw.standardLemma, 80);
+  if (standardLemma) word.standardLemma = standardLemma;
   const seen = integer(raw.seen, 0, 1_000_000, -1);
   if (seen >= 0 && raw.seen !== undefined) word.seen = seen;
   const uses = text(raw.uses, 200);
@@ -291,13 +326,24 @@ export function asWordBlob(data: unknown): WordBlob {
       const row = entry as Record<string, unknown>;
       const lemma = text(row.lemma, 80);
       if (!lemma) continue;
-      removed.push({ lemma, updatedAt: time(row.updatedAt) });
+      const senseId = asSenseId(row.senseId);
+      removed.push({ lemma, ...(senseId ? { senseId } : {}), updatedAt: time(row.updatedAt) });
       if (removed.length >= 5000) break;
     }
   }
   return { words, removed };
 }
 
+
+function attachStandardFields(source: SourceLive, raw: Record<string, unknown>): SourceLive {
+  const senseId = asSenseId(raw.senseId);
+  if (senseId) source.senseId = senseId;
+  const standardLemma = text(raw.standardLemma, 80);
+  if (standardLemma) source.standardLemma = standardLemma;
+  const posKey = asPositionKey(raw.positionKey);
+  if (posKey) source.positionKey = posKey;
+  return source;
+}
 
 function asSource(value: unknown): SourceRecord | null {
   if (!value || typeof value !== "object") return null;
@@ -318,6 +364,7 @@ function asSource(value: unknown): SourceRecord | null {
       savedAt: time(raw.savedAt),
       ref,
     };
+    attachStandardFields(source, raw);
     source.k = sourceKey(source);
     if (typeof raw.chapter === "number") source.chapter = integer(raw.chapter, 0, 100_000);
     const chapterTitle = text(raw.chapterTitle, 200);
@@ -344,6 +391,7 @@ function asSource(value: unknown): SourceRecord | null {
       surface,
       savedAt: time(raw.savedAt),
     };
+    attachStandardFields(bare, raw);
     bare.k = sourceKey(bare);
     const title = text(raw.title, 300);
     if (title) bare.title = title;
@@ -354,10 +402,12 @@ function asSource(value: unknown): SourceRecord | null {
     if (chapterTitle) bare.chapterTitle = chapterTitle;
     const pos = text(raw.pos, 60);
     if (pos) bare.pos = pos;
+    const meaning = text(raw.meaning, 400);
+    if (meaning) bare.meaning = meaning;
     return bare;
   }
   const source: SourceLive = {
-    k: sourceKey({ book, sentence }),
+    k: "",
     book,
     title: text(raw.title, 300),
     author: text(raw.author, 200),
@@ -365,6 +415,8 @@ function asSource(value: unknown): SourceRecord | null {
     surface: text(raw.surface, 80),
     savedAt: time(raw.savedAt),
   };
+  attachStandardFields(source, raw);
+  source.k = sourceKey(source);
   if (typeof raw.chapter === "number") source.chapter = integer(raw.chapter, 0, 100_000);
   const chapterTitle = text(raw.chapterTitle, 200);
   if (chapterTitle) source.chapterTitle = chapterTitle;
@@ -430,6 +482,9 @@ function keepParagraph(chosen: SourceRecord, other: SourceRecord): SourceRecord 
   if (next.chapter === undefined && other.chapter !== undefined) next.chapter = other.chapter;
   if (!next.pos && other.pos) next.pos = other.pos;
   if (!next.at && other.at) next.at = other.at;
+  if (!next.senseId && other.senseId) next.senseId = other.senseId;
+  if (!next.standardLemma && other.standardLemma) next.standardLemma = other.standardLemma;
+  if (!next.positionKey && other.positionKey) next.positionKey = other.positionKey;
   return next;
 }
 
@@ -466,14 +521,20 @@ function detailOf(source: SourceLive): number {
 }
 
 /**
- * Union of two wordbook shards. The same lemma keeps the later card (schedule, meaning); a later tombstone
- * drops the word; the sources of a word are united from both sides.
+ * Union of two wordbook shards. Cards are keyed by `wordCardKey` (`lemma#senseId` when an OEWN
+ * senseId is present, or plain `lemma` for legacy/phrase/coined cards), so different senses of
+ * one word keep independent review schedules while identical senses merge cleanly across devices.
  */
 export function mergeWordbookBlobs(base: WordbookBlob, preferred: WordbookBlob): WordbookBlob {
-  type Slot = { winner: { kind: "word"; word: WordbookRecord } | { kind: "removed"; lemma: string; updatedAt: number }; words: WordbookRecord[] };
+  type Slot = {
+    winner:
+      | { kind: "word"; word: WordbookRecord }
+      | { kind: "removed"; lemma: string; senseId?: string; updatedAt: number };
+    words: WordbookRecord[];
+  };
   const map = new Map<string, Slot>();
   const consider = (entry: Slot["winner"]) => {
-    const key = lemmaKey(entry.kind === "word" ? entry.word.lemma : entry.lemma);
+    const key = wordCardKey(entry.kind === "word" ? entry.word : entry);
     const slot = map.get(key) ?? { winner: entry, words: [] };
     if (entry.kind === "word") slot.words.push(entry.word);
     const at = entry.kind === "word" ? entry.word.updatedAt : entry.updatedAt;
@@ -482,21 +543,25 @@ export function mergeWordbookBlobs(base: WordbookBlob, preferred: WordbookBlob):
     map.set(key, slot);
   };
   for (const word of base.words) consider({ kind: "word", word });
-  for (const row of base.removed) consider({ kind: "removed", lemma: row.lemma, updatedAt: row.updatedAt });
+  for (const row of base.removed) consider({ kind: "removed", lemma: row.lemma, senseId: row.senseId, updatedAt: row.updatedAt });
   for (const word of preferred.words) consider({ kind: "word", word });
-  for (const row of preferred.removed) consider({ kind: "removed", lemma: row.lemma, updatedAt: row.updatedAt });
+  for (const row of preferred.removed) consider({ kind: "removed", lemma: row.lemma, senseId: row.senseId, updatedAt: row.updatedAt });
   const words: WordbookRecord[] = [];
   const removed: WordTombstone[] = [];
   for (const slot of map.values()) {
     if (slot.winner.kind === "removed") {
-      removed.push({ lemma: slot.winner.lemma, updatedAt: slot.winner.updatedAt });
+      removed.push({
+        lemma: slot.winner.lemma,
+        ...(slot.winner.senseId ? { senseId: slot.winner.senseId } : {}),
+        updatedAt: slot.winner.updatedAt,
+      });
       continue;
     }
     const sources = mergeSourceRecords(...slot.words.map((word) => word.sources));
     words.push({ ...slot.winner.word, sources });
   }
-  words.sort((a, b) => lemmaKey(a.lemma).localeCompare(lemmaKey(b.lemma)));
-  removed.sort((a, b) => lemmaKey(a.lemma).localeCompare(lemmaKey(b.lemma)));
+  words.sort((a, b) => wordCardKey(a).localeCompare(wordCardKey(b)));
+  removed.sort((a, b) => wordCardKey(a).localeCompare(wordCardKey(b)));
   return { words, removed };
 }
 
@@ -672,7 +737,26 @@ export function mergeReviewLogs(
 }
 
 export function lemmaKey(lemma: string): string {
-  return lemma.toLowerCase();
+  return lemma.trim().toLowerCase();
+}
+
+/**
+ * Canonical card identity across the global wordbook and account sync.
+ * Sense-typed cards (`lemma#senseId`) keep independent SRS schedules per OEWN sense;
+ * legacy cards, phrases, and coined entries without `senseId` keep plain `lemma`.
+ */
+export function wordCardKey(entry: { lemma: string; senseId?: string | null }): string {
+  const lemma = lemmaKey(entry.lemma);
+  const sense = asSenseId(entry.senseId);
+  return sense ? `${lemma}#${sense}` : lemma;
+}
+
+export function parseWordCardKey(key: string): { lemma: string; senseId?: string } {
+  const cut = key.indexOf("#");
+  if (cut < 0) return { lemma: lemmaKey(key) };
+  const lemma = lemmaKey(key.slice(0, cut));
+  const senseId = asSenseId(key.slice(cut + 1));
+  return senseId ? { lemma, senseId } : { lemma };
 }
 
 /** Union of two word books. The same lemma keeps the later updatedAt. A later tombstone drops the word. */

@@ -9,12 +9,16 @@ import {
   countFromBook,
   countsByBookKey,
   hasSourceFrom,
+  matchSavedWord,
   mergeCards,
   mergeSources,
   migrateWords,
   rehomeForeignSources,
   savedFromCard,
+  sourceKey,
   withoutBook,
+  withoutSource,
+  wordCardKey,
   MAX_SOURCES,
 } from "../src/lib/wordbook.ts";
 
@@ -345,4 +349,155 @@ test("countsByBookKey counts each word at most once per book and matches due sch
   const counts = countsByBookKey(words, now);
   assert.deepEqual(counts.get(keyA), { words: 3, due: 1 });
   assert.deepEqual(counts.get(keyP), { words: 1, due: 1 });
+});
+
+test("distinct OEWN senses of the same lemma stay independent cards with separate SRS schedules", () => {
+  const springCoil = {
+    ...old("a1", "spring", {
+      id: "spring-coil",
+      senseId: "oewn-04287965-n",
+      standardLemma: "spring",
+      pos: "noun",
+      meaning: "a metal elastic device",
+      stage: 7,
+      reps: 8,
+      dueAt: Number.MAX_SAFE_INTEGER,
+    }),
+    sources: [
+      source(keyA, "The mattress had a broken spring.", {
+        surface: "spring",
+        chapter: 0,
+        senseId: "oewn-04287965-n",
+        standardLemma: "spring",
+        positionKey: "1".repeat(64),
+      }),
+    ],
+  };
+  const springJump = {
+    ...old("a1", "spring", {
+      id: "spring-jump",
+      senseId: "oewn-01963942-v",
+      standardLemma: "spring",
+      pos: "verb",
+      meaning: "move forward by leaps and bounds",
+      stage: 0,
+      reps: 0,
+      dueAt: 1000,
+    }),
+    sources: [
+      source(keyA, "He sprang across the ditch.", {
+        surface: "sprang",
+        chapter: 1,
+        senseId: "oewn-01963942-v",
+        standardLemma: "spring",
+        positionKey: "2".repeat(64),
+      }),
+    ],
+  };
+  assert.equal(wordCardKey(springCoil), "spring#oewn-04287965-n");
+  assert.equal(wordCardKey(springJump), "spring#oewn-01963942-v");
+  const migrated = migrateWords([springCoil, springJump], [alice]);
+  assert.equal(migrated.length, 2);
+  // Irregular form "sprang" with standardLemma "spring" stays on its card instead of being displaced.
+  const jumpCard = migrated.find((c) => c.senseId === "oewn-01963942-v");
+  assert.equal(jumpCard.stage, 0);
+  assert.equal(jumpCard.sources.length, 1);
+  assert.equal(jumpCard.sources[0].surface, "sprang");
+});
+
+test("matchSavedWord distinguishes saved-here, saved-in-book, saved-other-book, different senses, and legacy cards", () => {
+  const posCh1 = "a".repeat(64);
+  const posCh2 = "b".repeat(64);
+  const coilCard = {
+    ...old("a1", "spring", { id: "c-coil", senseId: "oewn-coil-n", standardLemma: "spring" }),
+    sources: [
+      source(keyA, "The rusty spring snapped.", {
+        title: alice.title,
+        surface: "spring",
+        chapter: 0,
+        senseId: "oewn-coil-n",
+        standardLemma: "spring",
+        positionKey: posCh1,
+      }),
+    ],
+  };
+  const legacyCard = {
+    ...old("a1", "curious", { id: "c-legacy" }),
+    sources: [source(keyA, "Curiouser and curiouser.", { title: alice.title, surface: "curious", chapter: 1 })],
+  };
+  const words = [coilCard, legacyCard];
+
+  // Exact position -> saved-here
+  const here = matchSavedWord(words, {
+    bookKey: keyA,
+    lemma: "spring",
+    senseId: "oewn-coil-n",
+    positionKey: posCh1,
+    sentence: "The rusty spring snapped.",
+    surface: "spring",
+  });
+  assert.equal(here.status, "saved-here");
+  assert.equal(here.card.id, "c-coil");
+  assert.equal(here.hereSourceKey, sourceKey(coilCard.sources[0]));
+
+  // Same senseId in Ch 2 -> saved-in-book with Ch 1 priorSource
+  const inBook = matchSavedWord(words, {
+    bookKey: keyA,
+    lemma: "spring",
+    senseId: "oewn-coil-n",
+    positionKey: posCh2,
+    sentence: "Another spring popped out of the clock.",
+    surface: "spring",
+  });
+  assert.equal(inBook.status, "saved-in-book");
+  assert.equal(inBook.priorSource.chapter, 0);
+
+  // Different senseId of same lemma -> none (never collides!)
+  const diffSense = matchSavedWord(words, {
+    bookKey: keyA,
+    lemma: "spring",
+    senseId: "oewn-jump-v",
+    positionKey: "c".repeat(64),
+    sentence: "He sprang over the fence.",
+    surface: "sprang",
+  });
+  assert.equal(diffSense.status, "none");
+
+  // Same senseId in another book -> saved-other-book
+  const otherBook = matchSavedWord(words, {
+    bookKey: keyP,
+    lemma: "spring",
+    senseId: "oewn-coil-n",
+    positionKey: "d".repeat(64),
+    sentence: "The watch spring broke.",
+    surface: "spring",
+  });
+  assert.equal(otherBook.status, "saved-other-book");
+  assert.equal(otherBook.priorSource.title, alice.title);
+
+  // Legacy unsensed card fallback still works for sensed queries when no sensed card exists
+  const legacyHit = matchSavedWord(words, {
+    bookKey: keyA,
+    lemma: "curious",
+    senseId: "oewn-curious-a",
+    positionKey: "e".repeat(64),
+    sentence: "She felt quite curious about the door.",
+    surface: "curious",
+  });
+  assert.equal(legacyHit.status, "saved-in-book");
+  assert.equal(legacyHit.card.id, "c-legacy");
+});
+
+test("withoutSource removes only the targeted chapter source and preserves earlier chapters", () => {
+  const ch1 = source(keyA, "First chapter spring.", { chapter: 0, positionKey: "a".repeat(64), savedAt: 10 });
+  const ch2 = source(keyA, "Second chapter spring.", { chapter: 1, positionKey: "b".repeat(64), savedAt: 20 });
+  const card = {
+    ...old("a1", "spring", { senseId: "oewn-coil-n" }),
+    sources: [ch1, ch2],
+  };
+  const afterCh2 = withoutSource(card, sourceKey(ch2));
+  assert.ok(afterCh2);
+  assert.equal(afterCh2.sources.length, 1);
+  assert.equal(afterCh2.sources[0].chapter, 0);
+  assert.equal(withoutSource(afterCh2, sourceKey(ch1)), null);
 });

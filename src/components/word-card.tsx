@@ -81,6 +81,21 @@ export type StandardSaveFallback = {
   lemma: string;
   pos: string;
   meaning: string;
+  senseId?: string;
+  standardLemma?: string;
+  positionKey?: string;
+  /** True only when the word has no community glossary entry and falls back to OEWN meaning. */
+  fallbackOnly?: boolean;
+};
+
+export type WordSaveIndicator = {
+  saved: boolean;
+  status: "saved-here" | "saved-in-book" | "saved-other-book" | "none";
+  cardId?: string;
+  hereSourceKey?: string;
+  recallLabel?: string;
+  recallScope?: "chapter" | "book";
+  mastered?: boolean;
 };
 
 const LOOKUP_LABEL = {
@@ -145,6 +160,7 @@ export function CoinedBadge() {
 export function WordCard({
   state,
   saved,
+  resolveSaved,
   phrase,
   targetMode,
   phrasePending,
@@ -161,6 +177,7 @@ export function WordCard({
   anchor,
   onClose,
   onToggle,
+  onAddSentence,
   meaningContent,
   sensePanel,
   compactLookups = true,
@@ -182,9 +199,13 @@ export function WordCard({
   noteChapter?: number | string;
   noList: boolean;
   saved: boolean;
+  /** Sense-aware save resolver (evaluates exact `senseId` + irregular OEWN lemma + prior chapter/book recall). */
+  resolveSaved?: (resolved?: StandardSaveFallback) => WordSaveIndicator;
   anchor: HTMLElement | null;
   onClose: (restoreFocus?: boolean) => void;
-  onToggle: (fallback?: StandardSaveFallback) => void;
+  onToggle: (fallback?: StandardSaveFallback, saveInfo?: WordSaveIndicator) => void;
+  /** Append the current sentence onto an already-saved sense card without touching its SRS schedule. */
+  onAddSentence?: (resolved?: StandardSaveFallback, saveInfo?: WordSaveIndicator) => void;
   /** Backend-independent view data and actions, already resolved for this exact target. */
   sensePanel?: WordSensePanelProps;
   /** Optional demo presentation; normal readers use sensePanel or the existing community meaning. */
@@ -324,15 +345,38 @@ export function WordCard({
           },
         }
       : undefined;
-  const standardSaveSense =
-    !activePhrase && !state.ready
-      ? fixedSense ??
+  const mappedOrVotedSense =
+    !activePhrase
+      ? (fixedSense ??
         (choiceActions.vote.selectedId && standardLookup?.kind === "unmapped"
           ? standardLookup.senses.find((s) => s.id === choiceActions.vote.selectedId)
-          : undefined) ??
-        (standardLookup?.kind === "unmapped" ? standardLookup.senses[0] : undefined)
+          : undefined))
       : undefined;
-  const effectiveCanSave = canSave || (!phrasePending && Boolean(standardSaveSense));
+  const standardSaveSense =
+    !activePhrase
+      ? (mappedOrVotedSense ??
+        (!state.ready && standardLookup?.kind === "unmapped" ? standardLookup.senses[0] : undefined))
+      : undefined;
+  const savePayload: StandardSaveFallback | undefined = standardSaveSense
+    ? {
+        lemma: (standardSaveSense.source?.lemma ?? state.key).toLowerCase(),
+        pos: standardSaveSense.pos,
+        meaning: standardSaveSense.meaning,
+        senseId: standardSaveSense.id,
+        standardLemma: standardSaveSense.source?.lemma,
+        positionKey: mapping?.positionKey,
+        fallbackOnly: !state.ready,
+      }
+    : undefined;
+  const effectiveCanSave = canSave || (!phrasePending && Boolean(!state.ready && standardSaveSense));
+  const resolvedSave: WordSaveIndicator = resolveSaved
+    ? resolveSaved(savePayload)
+    : { saved, status: saved ? "saved-here" : "none" };
+  const isSaved = !phrasePending && resolvedSave.saved;
+  const showRecallStrip =
+    !phrasePending &&
+    Boolean(resolvedSave.recallLabel) &&
+    (resolvedSave.status === "saved-in-book" || resolvedSave.status === "saved-other-book");
   return (
     <FloatingAside
       anchor={anchor}
@@ -377,27 +421,17 @@ export function WordCard({
               type="button"
               className={cn(
                 "inline-flex size-11 shrink-0 items-center justify-center rounded-full transition-[background-color,color,transform] duration-100 hover:bg-ink/[0.06] active:scale-[0.92] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
-                saved ? "text-accent" : "text-ink/80 hover:text-ink",
+                isSaved ? "text-accent" : "text-ink/80 hover:text-ink",
               )}
-              disabled={!saved && !effectiveCanSave}
-              onClick={() =>
-                onToggle(
-                  !activePhrase && !state.ready && standardSaveSense
-                    ? {
-                        lemma: (standardSaveSense.source?.lemma ?? state.key).toLowerCase(),
-                        pos: standardSaveSense.pos,
-                        meaning: standardSaveSense.meaning,
-                      }
-                    : undefined,
-                )
-              }
-              aria-pressed={saved}
-              aria-label={t(saved ? "card.savedTarget" : "card.addTarget", { word: target })}
-              title={t(saved ? "card.savedTarget" : "card.addTarget", { word: target })}
+              disabled={!isSaved && !effectiveCanSave}
+              onClick={() => onToggle(savePayload, resolvedSave)}
+              aria-pressed={isSaved}
+              aria-label={t(isSaved ? "card.savedTarget" : "card.addTarget", { word: target })}
+              title={t(isSaved ? "card.savedTarget" : "card.addTarget", { word: target })}
               data-word-save
             >
               {/* A heart: outline to save, filled brand once the word is in the notebook. */}
-              <Heart className={cn("size-5 stroke-[1.8]", saved && "fill-current")} aria-hidden />
+              <Heart className={cn("size-5 stroke-[1.8]", isSaved && "fill-current")} aria-hidden />
             </button>
             {/* The shared sheet close (a small tinted circle, 44px hit area), centred in a 44px slot so
                 the row of actions keeps its rhythm. */}
@@ -460,6 +494,30 @@ export function WordCard({
       </div>
       <div ref={bodyRef} className={cn("mb-1.5", compactLookups && "!mb-0 !pb-3")} data-word-body>
         <div className="grid gap-3" data-word-content>
+          {showRecallStrip ? (
+            <div
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-ink/[0.04] px-2.5 py-1.5 font-sans text-xs text-muted"
+              data-word-recall
+              data-recall-status={resolvedSave.status}
+            >
+              <span className="min-w-0 truncate">
+                {resolvedSave.recallScope === "book"
+                  ? t("card.recall.book", { title: resolvedSave.recallLabel ?? "" })
+                  : t("card.recall.chapter", { place: resolvedSave.recallLabel ?? "" })}
+                {resolvedSave.mastered ? ` · ${t("card.recall.mastered")}` : ""}
+              </span>
+              {resolvedSave.status === "saved-in-book" && onAddSentence && effectiveCanSave ? (
+                <button
+                  type="button"
+                  className="shrink-0 font-semibold text-accent hover:underline"
+                  onClick={() => onAddSentence(savePayload, resolvedSave)}
+                  data-word-add-sentence
+                >
+                  {t("card.recall.addSentence")}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {activePhrase ? (
             <WordIpa key={`${selectionId}:${target}`} word={target} phrase />
           ) : localIpaVersion ? (

@@ -308,6 +308,7 @@ function displaySource(source: WordSource, lemma: string, files: ReadonlyMap<str
       whyHard: hit.whyHard,
     };
   }
+  if (source.senseId) return { source, fromList: false, whyHard: "" };
   const file = files.get(bookGlossKey(source.book));
   if (!file) return { source, fromList: false, whyHard: "" };
   const point = pointFromStored(undefined, lemma, source.surface, source.sentence, file);
@@ -365,7 +366,7 @@ export function adoptWord(
 ): VocabEntry | null {
   let changed = false;
   const sources = word.sources.map((source) => {
-    if (source.ref) return source;
+    if (source.ref || source.senseId) return source;
     const info = lists.get(source.book);
     if (!info) return source;
     const point = pointFromStored(info.list, word.lemma, source.surface, source.sentence, info.file);

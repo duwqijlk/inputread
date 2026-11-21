@@ -13,8 +13,13 @@ import { btn, cn, Highlighted } from "@/components/ui";
 function sourceRowKey(source: WordSource): string {
   const ref = source.ref;
   if (ref?.list) {
+    const anchored = ref.chapter !== undefined || ref.occurrence !== undefined || Boolean(ref.mark);
+    if (!anchored && !ref.phrase && source.positionKey) {
+      return `${source.book}|${ref.list}|pos|${source.positionKey.slice(0, 16)}`;
+    }
     return `${source.book}|${ref.list}|${ref.phrase ? "p" : "w"}|${ref.chapter ?? ""}|${ref.occurrence ?? ""}|${ref.form ?? ""}|${ref.mark ?? ""}`;
   }
+  if (source.positionKey) return `${source.book}|pos|${source.positionKey.slice(0, 16)}`;
   return `${source.book}|${source.savedAt}|${source.chapter ?? ""}|${source.surface}`;
 }
 

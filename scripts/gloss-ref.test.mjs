@@ -440,6 +440,44 @@ test("sync keeps the pointer and the paragraph, and drops the stored meaning", (
   assert.equal(blob.includes('"ref"'), true);
 });
 
+test("an OEWN-sensed source without a community ref is never overwritten or adopted by an unrelated book entry", () => {
+  const oewnCard = {
+    id: "oewn-1",
+    lemma: "curious",
+    surface: "curious",
+    senseId: "oewn-00656207-a",
+    standardLemma: "curious",
+    pos: "adjective",
+    meaning: "Eager to investigate and learn.",
+    whyHard: "",
+    recommend: true,
+    sentence: "A curious cat peeked inside.",
+    stage: 0,
+    dueAt: 10,
+    createdAt: 10,
+    reps: 0,
+    lapses: 0,
+    sources: [
+      {
+        book: BOOK,
+        title: "Alice",
+        author: "Lewis Carroll",
+        sentence: "A curious cat peeked inside.",
+        surface: "curious",
+        meaning: "Eager to investigate and learn.",
+        pos: "adjective",
+        savedAt: 5,
+        senseId: "oewn-00656207-a",
+        standardLemma: "curious",
+      },
+    ],
+  };
+  const shown = presentWord(oewnCard, new Map([[bookGlossKey(BOOK), file]]));
+  assert.equal(shown.meaning, "Eager to investigate and learn.");
+  assert.equal(shown.sources[0].meaning, "Eager to investigate and learn.");
+  assert.equal(adoptWord(oewnCard, new Map([[BOOK, { list: "alice", file }]])), null);
+});
+
 test("a missing paragraph is filled from the chapter that holds that occurrence", () => {
   const chapters = [
     { paragraphs: ["Nothing here.", "Alice was curious. Then she was curious again about the rabbit."] },

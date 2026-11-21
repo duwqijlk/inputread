@@ -74,10 +74,23 @@ export type WordSource = {
   savedAt: number;
   /** Where this word sits in a word list. The list, not this field, holds the snippet. */
   ref?: GlossPoint;
+  /** Standard OEWN sense identifier (e.g. `spring%1:17:00::`) when resolved at save time. */
+  senseId?: string;
+  /** Exact OEWN lookup key (case-preserved lemma) used to refresh the live R2 standard meaning. */
+  standardLemma?: string;
+  /** 64-hex exact L1 positional coordinate (`dictionary-positions.ts`) when known. */
+  positionKey?: string;
 };
 
 export type VocabEntry = AnalyzedWord & {
   id: string;
+  /**
+   * Standard OEWN sense identifier when this card represents one specific sense of a word.
+   * Omitted on legacy cards, phrases, and coined/proper entries (which key by `lemma`).
+   */
+  senseId?: string;
+  /** Exact OEWN lookup key paired with `senseId` for live R2 dictionary meaning refresh. */
+  standardLemma?: string;
   /**
    * Old per-book field, kept so an older build of the app still shows the word. The wordbook is global:
    * the books a word came from are in `sources`.

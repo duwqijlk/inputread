@@ -24,6 +24,8 @@ import {
   rehomeForeignSources,
   sourceKey,
   withoutBook,
+  withoutSource,
+  wordCardKey,
 } from "@/lib/wordbook";
 import { isbnDigits, seriesName, seriesNumber } from "@/lib/book-meta";
 import { lexileMeasure } from "@/lib/lexile";
@@ -130,13 +132,22 @@ type VocabState = {
   deleteBook: (id: string) => void;
   addDemo: () => string;
   /**
-   * Save a word to the global wordbook. A lemma that is already saved keeps its card and review state and gains
-   * the new source; otherwise a new card starts at stage 0.
+   * Save a word to the global wordbook. Cards key by `wordCardKey` (`lemma#senseId` when an OEWN
+   * senseId is known, else plain `lemma`), so distinct senses keep independent SRS schedules while
+   * repeated encounters of the same sense keep their schedule and accumulate sources.
    */
-  saveWord: (word: AnalyzedWord, source: WordSource) => { added: boolean };
+  saveWord: (
+    word: AnalyzedWord & { senseId?: string; standardLemma?: string },
+    source: WordSource,
+    targetCardId?: string,
+  ) => { added: boolean };
   removeWord: (id: string) => void;
-  /** Forget where a word was met in one book. The word goes too when that was its only source. */
-  removeWordFromBook: (bookKey: string, lemma: string) => void;
+  /** Forget one exact saved source on a card. Removes the card when that was its last source. */
+  removeWordSource: (id: string, targetSourceKey: string) => void;
+  /** Forget all sources from one book on a specific card (by id). Removes the card when empty. */
+  removeCardFromBook: (id: string, bookKey: string) => void;
+  /** Forget where a word (or specific senseId) was met in one book. The word goes too when that was its only source. */
+  removeWordFromBook: (bookKey: string, lemma: string, senseId?: string) => void;
   /**
    * Replace one saved sentence with a longer clip that still contains the word.
    * Used when an older save cut the sentence off before the word.
@@ -329,27 +340,55 @@ export const useVocab = create<VocabState>()(
         }
         return id;
       },
-      saveWord: (word, source) => {
+      saveWord: (word, source, targetCardId) => {
         const now = Date.now();
-        const key = lemmaKey(word.lemma);
+        const senseId = (word.senseId ?? source.senseId ?? "").trim() || undefined;
+        const standardLemma = (word.standardLemma ?? source.standardLemma ?? "").trim() || undefined;
+        const normalizedSource: WordSource = {
+          ...source,
+          ...(senseId && !source.senseId ? { senseId } : {}),
+          ...(standardLemma && !source.standardLemma ? { standardLemma } : {}),
+        };
+        const key = wordCardKey({ lemma: word.lemma, senseId });
         let added = false;
         set((state) => {
-          const at = state.words.findIndex((card) => lemmaKey(card.lemma) === key);
+          const explicitAt = targetCardId
+            ? state.words.findIndex(
+                (card) =>
+                  card.id === targetCardId &&
+                  (!card.senseId || !senseId || card.senseId === senseId),
+              )
+            : -1;
+          const at =
+            explicitAt >= 0
+              ? explicitAt
+              : state.words.findIndex((card) => wordCardKey(card) === key);
           const books = state.books.map((book) =>
-            bookSyncKey(book) === source.book ? { ...book, updatedAt: now } : book,
+            bookSyncKey(book) === normalizedSource.book ? { ...book, updatedAt: now } : book,
           );
           if (at >= 0) {
             const words = state.words.slice();
-            words[at] = addSourceTo(words[at] as VocabEntry, source);
+            const existing = words[at] as VocabEntry;
+            const updated = addSourceTo(existing, normalizedSource);
+            // Preserve a legacy unsensed card's wordCardKey when appending a new source to it,
+            // so cloud sync does not split an unsensed card across devices.
+            const keepLegacyUnsensed = explicitAt >= 0 && !existing.senseId;
+            words[at] = {
+              ...updated,
+              ...(!keepLegacyUnsensed && senseId && !updated.senseId ? { senseId } : {}),
+              ...(standardLemma && !updated.standardLemma ? { standardLemma } : {}),
+            };
             return { words: rehomeForeignSources(words), books };
           }
           added = true;
-          const home = state.books.find((book) => bookSyncKey(book) === source.book);
+          const home = state.books.find((book) => bookSyncKey(book) === normalizedSource.book);
           const card: VocabEntry = {
             ...word,
+            ...(senseId ? { senseId } : {}),
+            ...(standardLemma ? { standardLemma } : {}),
             id: crypto.randomUUID(),
             ...(home ? { bookId: home.id } : {}),
-            sources: [source],
+            sources: [normalizedSource],
             stage: 0,
             dueAt: now,
             createdAt: now,
@@ -363,11 +402,31 @@ export const useVocab = create<VocabState>()(
       removeWord: (id) => {
         set((state) => ({ words: state.words.filter((word) => word.id !== id) }));
       },
-      removeWordFromBook: (bookKey, lemma) => {
-        const key = lemmaKey(lemma);
+      removeWordSource: (id, targetSourceKey) => {
         set((state) => ({
           words: state.words.flatMap((card) => {
-            if (lemmaKey(card.lemma) !== key) return [card];
+            if (card.id !== id) return [card];
+            const next = withoutSource(card, targetSourceKey);
+            return next ? [next] : [];
+          }),
+        }));
+      },
+      removeCardFromBook: (id, bookKey) => {
+        set((state) => ({
+          words: state.words.flatMap((card) => {
+            if (card.id !== id) return [card];
+            const next = withoutBook(card, bookKey);
+            return next ? [next] : [];
+          }),
+        }));
+      },
+      removeWordFromBook: (bookKey, lemma, senseId) => {
+        const cleanSense = (senseId ?? "").trim();
+        const key = cleanSense ? wordCardKey({ lemma, senseId: cleanSense }) : lemmaKey(lemma);
+        set((state) => ({
+          words: state.words.flatMap((card) => {
+            const matches = cleanSense ? wordCardKey(card) === key : lemmaKey(card.lemma) === key;
+            if (!matches) return [card];
             const next = withoutBook(card, bookKey);
             return next ? [next] : [];
           }),

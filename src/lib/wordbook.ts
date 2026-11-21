@@ -6,15 +6,15 @@
  * with both sources. Pure: no store, no DOM. Used by the store, by the one-time migration of per-book data, by the
  * sync merge and by the tests.
  */
-import { bookSyncKey, sourceKey } from "./sync-merge.ts";
-import { isDue, type VocabEntry, type WordSource } from "./vocab-model.ts";
+import { bookSyncKey, sourceKey, wordCardKey } from "./sync-merge.ts";
+import { isDue, type GlossPoint, type VocabEntry, type WordSource } from "./vocab-model.ts";
 
 /** A word keeps at most this many sources. The newest ones stay. */
 export const MAX_SOURCES = 12;
 
 export const lemmaKey = (lemma: string): string => lemma.trim().toLowerCase();
 
-export { sourceKey };
+export { sourceKey, wordCardKey };
 
 export const hasSourceFrom = (word: Pick<VocabEntry, "sources">, bookKey: string): boolean =>
   word.sources.some((source) => source.book === bookKey);
@@ -69,6 +69,9 @@ function withSense(winner: WordSource, other: WordSource | undefined): WordSourc
   const next = { ...winner };
   if (!next.sentence?.trim() && other.sentence?.trim()) next.sentence = other.sentence;
   if (!next.pos && other.pos) next.pos = other.pos;
+  if (!next.senseId && other.senseId) next.senseId = other.senseId;
+  if (!next.standardLemma && other.standardLemma) next.standardLemma = other.standardLemma;
+  if (!next.positionKey && other.positionKey) next.positionKey = other.positionKey;
   if (winner.ref) return next;
   if (!next.meaning && other.meaning) next.meaning = other.meaning;
   return next;
@@ -152,7 +155,7 @@ export function migrateWords(
       ...raw,
       sources: sources ?? [legacySource({ ...raw, sources: [] }, raw.bookId ? byId.get(raw.bookId) : undefined)],
     };
-    const key = lemmaKey(card.lemma);
+    const key = wordCardKey(card);
     const prior = out.get(key);
     if (!prior) {
       out.set(key, card);
@@ -197,9 +200,16 @@ function sameWord(lemma: string, surface: string): boolean {
  * A place whose sentence and meaning are another word's ("fortunately" on "queer") does not.
  */
 export function sourceBelongsTo(
-  card: Pick<VocabEntry, "lemma" | "surface" | "meaning" | "sources">,
+  card: Pick<VocabEntry, "lemma" | "senseId" | "standardLemma" | "surface" | "meaning" | "sources">,
   source: WordSource,
 ): boolean {
+  if (card.senseId && source.senseId && card.senseId !== source.senseId) return false;
+  if (source.standardLemma) {
+    const std = lemmaKey(source.standardLemma);
+    if (std === lemmaKey(card.lemma) || (card.standardLemma && std === lemmaKey(card.standardLemma))) {
+      return true;
+    }
+  }
   if (source.ref) return true;
   const lemma = card.lemma.trim();
   const sentence = source.sentence ?? "";
@@ -244,11 +254,14 @@ function alignCard(card: VocabEntry): VocabEntry {
 
 function cardForDisplaced(source: WordSource): VocabEntry {
   const surface = source.surface.trim();
+  const lemma = (source.standardLemma ?? "").trim() || surface;
   const now = source.savedAt || Date.now();
   return {
     id: crypto.randomUUID(),
-    surface,
-    lemma: surface,
+    surface: surface || lemma,
+    lemma,
+    ...(source.senseId ? { senseId: source.senseId } : {}),
+    ...(source.standardLemma ? { standardLemma: source.standardLemma } : {}),
     pos: source.pos ?? "",
     meaning: source.meaning ?? "",
     whyHard: "",
@@ -290,10 +303,10 @@ export function rehomeForeignSources(words: readonly VocabEntry[]): VocabEntry[]
   }
   if (!changed) return words as VocabEntry[];
   for (const source of displaced) {
-    const surface = source.surface.trim();
-    if (!surface) continue;
-    const key = lemmaKey(surface);
-    const at = kept.findIndex((word) => lemmaKey(word.lemma) === key);
+    const targetLemma = (source.standardLemma ?? "").trim() || source.surface.trim();
+    if (!targetLemma) continue;
+    const key = wordCardKey({ lemma: targetLemma, senseId: source.senseId });
+    const at = kept.findIndex((word) => wordCardKey(word) === key);
     if (at >= 0) {
       kept[at] = addSourceTo(kept[at] as VocabEntry, source);
       continue;
@@ -335,6 +348,15 @@ export function addSourceTo(card: VocabEntry, source: WordSource): VocabEntry {
   return { ...card, sources: mergeSources(card.sources, [source]) };
 }
 
+/** Take away one exact saved place from a card. Returns null when no source is left. */
+export function withoutSource(card: VocabEntry, targetSourceKey: string): VocabEntry | null {
+  const sources = card.sources.filter((source) => sourceKey(source) !== targetSourceKey);
+  if (sources.length === card.sources.length) return card;
+  if (sources.length === 0) return null;
+  const first = sources[0];
+  return { ...card, sources, sentence: first?.sentence || card.sentence };
+}
+
 /** Take away the sources from one book. Returns null when no source is left (the word goes with it). */
 export function withoutBook(card: VocabEntry, bookKey: string): VocabEntry | null {
   const sources = card.sources.filter((source) => source.book !== bookKey);
@@ -342,6 +364,81 @@ export function withoutBook(card: VocabEntry, bookKey: string): VocabEntry | nul
   if (sources.length === 0) return null;
   const first = sources[0];
   return { ...card, sources, sentence: first?.sentence || card.sentence };
+}
+
+export type SaveMatchQuery = {
+  bookKey: string;
+  lemma: string;
+  senseId?: string;
+  positionKey?: string;
+  sentence?: string;
+  surface?: string;
+  ref?: GlossPoint;
+};
+
+export type SaveMatchStatus = "saved-here" | "saved-in-book" | "saved-other-book" | "none";
+
+export type SaveMatch = {
+  status: SaveMatchStatus;
+  card?: VocabEntry;
+  hereSourceKey?: string;
+  priorSource?: WordSource;
+};
+
+/**
+ * Resolve whether a tapped word/sense is already saved at this exact occurrence,
+ * earlier in the same book, or in another book in the global wordbook.
+ *
+ * When `senseId` is known, a different `senseId` of the same lemma never collides;
+ * an exact `senseId` card wins, with a legacy unsensed card of the same lemma as fallback.
+ */
+export function matchSavedWord(words: readonly VocabEntry[], query: SaveMatchQuery): SaveMatch {
+  const lemma = lemmaKey(query.lemma);
+  if (!lemma) return { status: "none" };
+  const sense = (query.senseId ?? "").trim();
+  const exactKey = wordCardKey({ lemma, senseId: sense || undefined });
+  let card = words.find((item) => wordCardKey(item) === exactKey);
+  if (!card && sense) {
+    card = words.find((item) => !item.senseId && lemmaKey(item.lemma) === lemma);
+  }
+  if (!card) return { status: "none" };
+
+  if (query.bookKey) {
+    const probeKey = sourceKey({
+      book: query.bookKey,
+      ref: query.ref,
+      positionKey: query.positionKey,
+      sentence: query.sentence,
+      surface: query.surface,
+    });
+    const sentenceProbe = query.sentence ? sourceKey({ book: query.bookKey, sentence: query.sentence }) : "";
+    const here = card.sources.find((source) => {
+      if (source.book !== query.bookKey) return false;
+      if (sourceKey(source) === probeKey) return true;
+      if (query.positionKey && source.positionKey && source.positionKey === query.positionKey) return true;
+      if (sentenceProbe && source.sentence && sourceKey({ book: query.bookKey, sentence: source.sentence }) === sentenceProbe) {
+        return true;
+      }
+      return false;
+    });
+    if (here) {
+      const hereKey = sourceKey(here);
+      const other =
+        card.sources.find((source) => source.book === query.bookKey && sourceKey(source) !== hereKey) ??
+        card.sources.find((source) => source.book !== query.bookKey);
+      return { status: "saved-here", card, hereSourceKey: hereKey, priorSource: other };
+    }
+    const sameBook = card.sources.find((source) => source.book === query.bookKey);
+    if (sameBook) {
+      return { status: "saved-in-book", card, priorSource: sameBook };
+    }
+  }
+
+  const otherBook = card.sources[0];
+  if (otherBook) {
+    return { status: "saved-other-book", card, priorSource: otherBook };
+  }
+  return { status: "none" };
 }
 
 /** The shelf card a source belongs to, if that book is on this shelf (matched by title and author, like sync). */

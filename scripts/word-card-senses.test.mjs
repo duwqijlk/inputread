@@ -149,6 +149,119 @@ test("real WordCard retains community identity and accepts a typed sense panel",
     });
     assert.ok(container.querySelector("[data-test-panel]"), "mounts panel once position mapping settles");
     assert.equal(received.panel.resolution.kind, "mapped", "goes straight to mapped resolution without flashing unmapped");
+
+    // Regression: irregular OEWN fallback ("ran" -> "run") passes senseId/standardLemma/positionKey
+    // to resolveSaved, onToggle, and renders recall strips with + Save sentence cleanly.
+    const posKeyCh1 = "a".repeat(64);
+    const runResult = {
+      kind: "unmapped",
+      senses: [{ id: "oewn-run-v", pos: "verb", meaning: "Move fast by using one's feet.", source: { lemma: "run", release: "oewn-test" } }],
+    };
+    stubs["@/lib/dictionary-positions"].dictionaryPosition = async () => ({ paragraphIndex: 0, offset: 4, surface: "ran" });
+    stubs["@/lib/dictionary-positions"].mappedPosition = async () => ({ lemma: "run", senseId: "oewn-run-v", positionKey: posKeyCh1 });
+    let lastResolvedArg = null;
+    let toggled = null;
+    let addedSentence = null;
+    let fakeStatus = { saved: false, status: "none" };
+    await render({
+      state: {
+        ...state,
+        surface: "ran",
+        key: "ran",
+        meaning: "",
+        pos: "",
+        ready: false,
+        status: "unknown",
+        positionParagraphs: ["She ran down the hall."],
+        positionOffset: 4,
+      },
+      canSave: false,
+      selectionId: 20,
+      resolveSaved: (payload) => {
+        lastResolvedArg = payload;
+        return fakeStatus;
+      },
+      onToggle: (fallback, info) => {
+        toggled = { fallback, info };
+      },
+      onAddSentence: (payload, info) => {
+        addedSentence = { payload, info };
+      },
+    });
+    await act(async () => pending.get("ran")(runResult));
+    assert.equal(lastResolvedArg.lemma, "run");
+    assert.equal(lastResolvedArg.senseId, "oewn-run-v");
+    assert.equal(lastResolvedArg.standardLemma, "run");
+    assert.equal(lastResolvedArg.positionKey, posKeyCh1);
+    assert.equal(lastResolvedArg.fallbackOnly, true);
+    const saveBtn = container.querySelector("[data-word-save]");
+    assert.equal(saveBtn.disabled, false, "irregular OEWN fallback enables Heart");
+    assert.equal(saveBtn.getAttribute("aria-pressed"), "false");
+    await click(saveBtn);
+    assert.equal(toggled.fallback.lemma, "run");
+    assert.equal(toggled.fallback.senseId, "oewn-run-v");
+    assert.equal(toggled.info.status, "none");
+
+    // Same sense already saved in Ch 1 -> filled Heart + quiet recall strip + "+ Save sentence"
+    fakeStatus = { saved: true, status: "saved-in-book", cardId: "card-run", recallScope: "chapter", recallLabel: "Chapter 1" };
+    await render({
+      state: {
+        ...state,
+        surface: "ran",
+        key: "ran",
+        meaning: "",
+        pos: "",
+        ready: false,
+        status: "unknown",
+        positionParagraphs: ["She ran down the hall."],
+        positionOffset: 4,
+      },
+      canSave: false,
+      selectionId: 20,
+      resolveSaved: () => fakeStatus,
+      onToggle: (fallback, info) => {
+        toggled = { fallback, info };
+      },
+      onAddSentence: (payload, info) => {
+        addedSentence = { payload, info };
+      },
+    });
+    assert.equal(container.querySelector("[data-word-save]").getAttribute("aria-pressed"), "true");
+    const recall = container.querySelector("[data-word-recall]");
+    assert.ok(recall, "shows recall strip when saved earlier in the same book");
+    assert.equal(recall.getAttribute("data-recall-status"), "saved-in-book");
+    const addSentenceBtn = container.querySelector("[data-word-add-sentence]");
+    assert.ok(addSentenceBtn, "offers + Save sentence action");
+    await click(addSentenceBtn);
+    assert.equal(addedSentence.payload.senseId, "oewn-run-v");
+    assert.equal(addedSentence.info.cardId, "card-run");
+
+    // Same sense saved in another book & mastered -> outline Heart + recall strip with mastered note
+    fakeStatus = { saved: false, status: "saved-other-book", cardId: "card-run", recallScope: "book", recallLabel: "Alice", mastered: true };
+    await render({
+      state: {
+        ...state,
+        surface: "ran",
+        key: "ran",
+        meaning: "",
+        pos: "",
+        ready: false,
+        status: "unknown",
+        positionParagraphs: ["She ran down the hall."],
+        positionOffset: 4,
+      },
+      canSave: false,
+      selectionId: 20,
+      resolveSaved: () => fakeStatus,
+      onToggle: () => {},
+      onAddSentence: () => {},
+    });
+    assert.equal(container.querySelector("[data-word-save]").getAttribute("aria-pressed"), "false");
+    const otherRecall = container.querySelector("[data-word-recall]");
+    assert.ok(otherRecall);
+    assert.equal(otherRecall.getAttribute("data-recall-status"), "saved-other-book");
+    assert.ok(otherRecall.textContent.includes("card.recall.mastered"));
+    assert.equal(container.querySelector("[data-word-add-sentence]"), null, "other-book recall uses main Heart rather than duplicate button");
   } finally {
     await act(async () => root.unmount());
     dom.window.close();

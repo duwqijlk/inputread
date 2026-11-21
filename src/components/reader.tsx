@@ -55,8 +55,8 @@ import {
 } from "@/lib/position";
 import { legacyChapter, overallProgress, samePlace, useProgress } from "@/lib/progress-store";
 import { bookSyncKey } from "@/lib/sync-merge";
-import type { WordSource } from "@/lib/vocab-model";
-import { hasSourceFrom, savedFromCard } from "@/lib/wordbook";
+import { isMastered, type WordSource } from "@/lib/vocab-model";
+import { hasSourceFrom, matchSavedWord, savedFromCard } from "@/lib/wordbook";
 import { extractAnchorContext } from "@/lib/word-taps-collector";
 import { readerVars, usePrefs } from "@/lib/reader-prefs";
 import {
@@ -69,7 +69,12 @@ import {
 import { useVocab } from "@/lib/vocab-store";
 import { flowCutOffsets, flowPoint, flowText, flowTextBefore } from "@/lib/flow-text";
 import { AloudBar, AloudHeaderButton, ParagraphSpeakers, readFromParagraph, useChapterAloudBridge } from "@/components/chapter-aloud";
-import { warmDictionaryMappings } from "@/lib/dictionary-positions";
+import {
+  loadBookMappings,
+  textSha256,
+  warmDictionaryMappings,
+  type PositionMapping,
+} from "@/lib/dictionary-positions";
 import {
   mergeSignedGlossary,
   mergeSignedPhrases,
@@ -96,6 +101,8 @@ import {
   WordCard,
   type CardState,
   type PhraseHit,
+  type StandardSaveFallback,
+  type WordSaveIndicator,
   locateSentence,
   wholeSentence,
 } from "@/components/word-card";
@@ -162,6 +169,8 @@ export function ReaderScreen({
   const quoteTools = useRef<QuoteToolsHandle | null>(null);
   const shelfBook = useVocab((state) => state.books.find((item) => item.id === bookId));
   const saveWord = useVocab((state) => state.saveWord);
+  const removeWordSource = useVocab((state) => state.removeWordSource);
+  const removeCardFromBook = useVocab((state) => state.removeCardFromBook);
   const removeWordFromBook = useVocab((state) => state.removeWordFromBook);
   const setSourcePlaces = useVocab((state) => state.setSourcePlaces);
   const fillPrepared = useVocab((state) => state.fillPrepared);
@@ -620,15 +629,98 @@ export function ReaderScreen({
   }
 
   const bookKey = shelfBook ? bookSyncKey(shelfBook) : "";
-  const savedKeys = useMemo(
-    () =>
-      new Set(
-        words
-          .filter((word) => bookKey !== "" && hasSourceFrom(word, bookKey))
-          .map((word) => word.lemma.toLowerCase()),
-      ),
-    [words, bookKey],
-  );
+  const [bookMappings, setBookMappings] = useState<{ catalogId: string; entries: readonly PositionMapping[] }>({
+    catalogId: "",
+    entries: [],
+  });
+  useEffect(() => {
+    let alive = true;
+    if (!catalogId) {
+      setBookMappings({ catalogId: "", entries: [] });
+      return;
+    }
+    void loadBookMappings(catalogId).then((entries) => {
+      if (alive) setBookMappings({ catalogId, entries });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [catalogId]);
+
+  const savedBookIndex = useMemo(() => {
+    const unsensedKeys = new Set<string>();
+    const unsensedSurfaces = new Set<string>();
+    const senseIds = new Set<string>();
+    const allKeys = new Set<string>();
+    const allSurfaces = new Set<string>();
+    if (bookKey !== "") {
+      for (const word of words) {
+        if (!hasSourceFrom(word, bookKey)) continue;
+        const lem = word.lemma.toLowerCase();
+        allKeys.add(lem);
+        if (word.senseId) {
+          senseIds.add(word.senseId);
+        } else {
+          unsensedKeys.add(lem);
+        }
+        for (const source of word.sources) {
+          if (source.book !== bookKey) continue;
+          const surf = source.surface.trim().toLowerCase();
+          if (surf) {
+            allSurfaces.add(surf);
+            if (!word.senseId) unsensedSurfaces.add(surf);
+          }
+          if (source.senseId) senseIds.add(source.senseId);
+        }
+      }
+    }
+    return { unsensedKeys, unsensedSurfaces, senseIds, allKeys, allSurfaces };
+  }, [words, bookKey]);
+  const savedKeys = savedBookIndex.allKeys;
+
+  const [chapterSenseMap, setChapterSenseMap] = useState<{ key: string; byToken: Map<string, string> }>({
+    key: "",
+    byToken: new Map(),
+  });
+  useEffect(() => {
+    let alive = true;
+    const entries = bookMappings.catalogId === catalogId ? bookMappings.entries : [];
+    const posCh = renderedPositionChapter();
+    if (!catalogId || entries.length === 0 || !posCh || posCh.texts.length === 0) {
+      setChapterSenseMap({ key: chapterKey, byToken: new Map() });
+      return;
+    }
+    void textSha256(JSON.stringify(posCh.texts)).then(async (chHash) => {
+      if (!alive || !chHash) return;
+      const byToken = new Map<string, string>();
+      for (const row of entries) {
+        if (row.chapterSha256 === chHash) {
+          byToken.set(`${row.paragraphIndex}:${row.offset}:${row.surface}`, row.senseId);
+        }
+      }
+      if (byToken.size === 0) {
+        // Cross-edition fallback: match unchanged paragraphs by paragraphSha256 when chapterSha256 differs.
+        const byPara = new Map<string, PositionMapping[]>();
+        for (const row of entries) {
+          const list = byPara.get(row.paragraphSha256) ?? [];
+          list.push(row);
+          byPara.set(row.paragraphSha256, list);
+        }
+        const hashes = await Promise.all(posCh.texts.map((p) => textSha256(p)));
+        if (!alive) return;
+        hashes.forEach((pHash, pIdx) => {
+          if (!pHash) return;
+          for (const row of byPara.get(pHash) ?? []) {
+            byToken.set(`${pIdx}:${row.offset}:${row.surface}`, row.senseId);
+          }
+        });
+      }
+      if (alive) setChapterSenseMap({ key: chapterKey, byToken });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [bookMappings, catalogId, chapterKey, linkedHtml]);
 
   // Paint saved words straight onto the page, without rebuilding its HTML.
   // Selection is separate: tapping a word must not repeat every saved-phrase match.
@@ -636,13 +728,36 @@ export function ReaderScreen({
   useLayoutEffect(() => {
     const root = articleRef.current;
     if (!root) return;
+    const activeSenseMap = chapterSenseMap.key === chapterKey ? chapterSenseMap.byToken : null;
+    const posCh = activeSenseMap && activeSenseMap.size > 0 ? renderedPositionChapter() : null;
+    const blockIndex = posCh ? new Map(posCh.blocks.map((b, i) => [b, i])) : null;
+    const selBlock = "p, li, blockquote, h1, h2, h3, h4, div[data-para]";
     for (const button of root.querySelectorAll<HTMLElement>("[role=button][data-word]")) {
-      const key = resolveKey(button.dataset.word ?? "");
+      const surface = button.dataset.word ?? "";
+      const surfaceLower = surface.toLowerCase();
+      const key = resolveKey(surface);
       const sparseOff =
         marked.sparse.has(key) &&
         !button.classList.contains("book-hard") &&
         !button.classList.contains("book-tricky");
-      button.classList.toggle("book-saved", savedKeys.has(key) && !sparseOff);
+      let isWordSaved = false;
+      let mappedSenseId: string | undefined;
+      if (activeSenseMap && posCh && blockIndex) {
+        const block = button.closest(selBlock);
+        const pIdx = block ? blockIndex.get(block) : undefined;
+        if (block && pIdx !== undefined) {
+          const offset = Array.from(flowTextBefore(block, button)).length;
+          mappedSenseId = activeSenseMap.get(`${pIdx}:${offset}:${surface}`);
+        }
+      }
+      if (mappedSenseId) {
+        isWordSaved =
+          savedBookIndex.senseIds.has(mappedSenseId) ||
+          ((savedBookIndex.unsensedKeys.has(key) || savedBookIndex.unsensedSurfaces.has(surfaceLower)) && !sparseOff);
+      } else {
+        isWordSaved = (savedKeys.has(key) || savedBookIndex.allSurfaces.has(surfaceLower)) && !sparseOff;
+      }
+      button.classList.toggle("book-saved", isWordSaved);
     }
     // A saved phrase marks its own words, not the single easy word that was tapped.
     const savedPhrases = Object.fromEntries(
@@ -669,7 +784,7 @@ export function ReaderScreen({
         }
       }
     }
-  }, [linkedHtml, savedKeys, resolveKey, marked, effectivePhraseList]);
+  }, [linkedHtml, savedKeys, savedBookIndex, chapterSenseMap, chapterKey, resolveKey, marked, effectivePhraseList]);
 
   const selectedButton = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
@@ -1768,6 +1883,152 @@ export function ReaderScreen({
     ? savedKeys.has(saveAs.lemma.toLowerCase()) &&
       (activePhrase != null || !(marked.sparse.has(pickedKey) && card?.status !== "ready"))
     : false;
+  const buildCurrentRef = (targetLemma: string, useCommunity: boolean) => {
+    if (!picked || !useCommunity) return undefined;
+    const listId = book?.bundled || listSource;
+    if (activePhrase) {
+      const basePhrase = phraseList[activePhrase.key] ?? phraseList[activePhrase.key.toLowerCase()];
+      const effectivePhrase =
+        effectivePhraseList[activePhrase.key] ?? effectivePhraseList[activePhrase.key.toLowerCase()];
+      return basePhrase && basePhrase === effectivePhrase ? phrasePoint(listId) : undefined;
+    }
+    const rawBaseGloss = book?.glossary[targetLemma] ?? book?.glossary[targetLemma.toLowerCase()];
+    const rawEffectiveGloss =
+      effectiveGlossary[targetLemma] ?? effectiveGlossary[targetLemma.toLowerCase()];
+    const baseGloss =
+      rawBaseGloss && rawBaseGloss === rawEffectiveGloss ? rawBaseGloss : undefined;
+    if (!baseGloss) return undefined;
+    return pointFromEntry(listId, targetLemma, baseGloss, {
+      chapter: viewChapter,
+      surface: picked.surface,
+      occurrence: picked.nth,
+      paragraph: picked.paragraph,
+      before: picked.before,
+    });
+  };
+  const resolveCurrentSave = (resolved?: StandardSaveFallback): WordSaveIndicator => {
+    if (!card || !picked || phrasePending) return { saved: false, status: "none" };
+    const useFallback = !activePhrase && !card.ready;
+    const targetLemma = (useFallback && resolved?.lemma) || saveAs.lemma;
+    if (!targetLemma) return { saved: false, status: "none" };
+    const targetSenseId = !activePhrase ? resolved?.senseId : undefined;
+    const targetPositionKey = !activePhrase ? resolved?.positionKey : undefined;
+    if (useFallback && !targetSenseId && marked.sparse.has(pickedKey) && card.status !== "ready") {
+      return { saved: false, status: "none" };
+    }
+    const ref = buildCurrentRef(targetLemma, Boolean(activePhrase || card.ready));
+    const sentence = card.fullSentence || card.sentence;
+    const match = matchSavedWord(words, {
+      bookKey,
+      lemma: targetLemma,
+      senseId: targetSenseId,
+      positionKey: targetPositionKey,
+      sentence,
+      surface: saveAs.surface,
+      ref,
+    });
+    if (match.status === "none" || !match.card) {
+      return { saved: false, status: "none" };
+    }
+    const mastered = isMastered(match.card);
+    if (match.status === "saved-here") {
+      return {
+        saved: true,
+        status: "saved-here",
+        cardId: match.card.id,
+        hereSourceKey: match.hereSourceKey,
+        mastered,
+      };
+    }
+    if (match.status === "saved-in-book") {
+      const prior = match.priorSource;
+      const place =
+        prior?.chapterTitle ||
+        (prior?.chapter !== undefined ? t("src.chapterN", { n: prior.chapter + 1 }) : "");
+      return {
+        saved: true,
+        status: "saved-in-book",
+        cardId: match.card.id,
+        recallScope: "chapter",
+        recallLabel: place || undefined,
+        mastered,
+      };
+    }
+    const otherTitle = match.priorSource?.title?.trim() || "";
+    return {
+      saved: false,
+      status: "saved-other-book",
+      cardId: match.card.id,
+      recallScope: "book",
+      recallLabel: otherTitle || undefined,
+      mastered,
+    };
+  };
+  const saveCurrentWord = (fallback?: StandardSaveFallback, targetCardId?: string) => {
+    if (!card || !picked || !shelfBook || phrasePending) return;
+    const useFallback = !activePhrase && !card.ready;
+    if (useFallback && !fallback) return;
+    const targetLemma = (useFallback && fallback?.lemma) || saveAs.lemma;
+    const targetPos = (useFallback && fallback?.pos) || saveAs.pos;
+    const targetMeaning = (useFallback && fallback?.meaning) || saveAs.meaning;
+    const targetSenseId = !activePhrase ? fallback?.senseId : undefined;
+    const targetStandardLemma = !activePhrase ? fallback?.standardLemma : undefined;
+    const targetPositionKey = !activePhrase ? fallback?.positionKey : undefined;
+    const ref = buildCurrentRef(targetLemma, Boolean(activePhrase || card.ready));
+    const sentence = card.fullSentence || card.sentence;
+    const source: WordSource = ref
+      ? {
+          book: bookKey,
+          title: shelfBook.title,
+          author: shelfBook.author,
+          chapter: ref.chapter ?? safeIndex,
+          ...(chapter.title ? { chapterTitle: chapter.title } : {}),
+          sentence,
+          surface: saveAs.surface,
+          savedAt: Date.now(),
+          ref,
+          ...(targetPos ? { pos: targetPos } : {}),
+          ...(targetSenseId ? { senseId: targetSenseId } : {}),
+          ...(targetStandardLemma ? { standardLemma: targetStandardLemma } : {}),
+          ...(targetPositionKey ? { positionKey: targetPositionKey } : {}),
+        }
+      : {
+          book: bookKey,
+          title: shelfBook.title,
+          author: shelfBook.author,
+          chapter: safeIndex,
+          ...(chapter.title ? { chapterTitle: chapter.title } : {}),
+          sentence,
+          surface: saveAs.surface,
+          savedAt: Date.now(),
+          ...(targetMeaning ? { meaning: targetMeaning } : {}),
+          ...(targetPos ? { pos: targetPos } : {}),
+          ...(targetSenseId ? { senseId: targetSenseId } : {}),
+          ...(targetStandardLemma ? { standardLemma: targetStandardLemma } : {}),
+          ...(targetPositionKey ? { positionKey: targetPositionKey } : {}),
+        };
+    saveWord(
+      {
+        surface: saveAs.surface,
+        lemma: targetLemma,
+        pos: targetPos,
+        meaning: ref ? "" : targetMeaning,
+        whyHard: "",
+        recommend: !isEasyKey(targetLemma),
+        sentence,
+        ...(targetSenseId ? { senseId: targetSenseId } : {}),
+        ...(targetStandardLemma ? { standardLemma: targetStandardLemma } : {}),
+      },
+      source,
+      targetCardId,
+    );
+    // The heart bumps, the word gets its highlighter, and "+1" flies to the notebook icon.
+    celebrateSave({
+      heart: document.querySelector("[data-word-card] [data-word-save]"),
+      word: anchor,
+      notebook: document.querySelector("[data-reader-notebook]"),
+    });
+  };
   const noList = Object.keys(effectiveGlossary).length === 0;
   const fraction = overallProgress({
     chapter: safeIndex,
@@ -2161,6 +2422,7 @@ export function ReaderScreen({
         <WordCard
           state={card}
           saved={!phrasePending && alreadySaved}
+          resolveSaved={resolveCurrentSave}
           phrase={shownPhrase}
           selectionId={picked?.selectionId ?? 0}
           targetMode={activePhrase ? "phrase" : "word"}
@@ -2181,85 +2443,26 @@ export function ReaderScreen({
           noteChapter={activeExtra?.fromToc ? activeExtra.id : viewChapter}
           anchor={anchor}
           onClose={closeWordCard}
-          onToggle={(fallback) => {
+          onAddSentence={(fallback, saveInfo) => {
+            saveCurrentWord(fallback, saveInfo?.cardId);
+          }}
+          onToggle={(fallback, saveInfo) => {
             if (!picked || !shelfBook || phrasePending) return;
-            if (!activePhrase && !card.ready && !fallback) return;
-            const targetLemma = (!activePhrase && !card.ready && fallback?.lemma) || saveAs.lemma;
-            const targetPos = (!activePhrase && !card.ready && fallback?.pos) || saveAs.pos;
-            const targetMeaning = (!activePhrase && !card.ready && fallback?.meaning) || saveAs.meaning;
-            if (alreadySaved || savedKeys.has(targetLemma.toLowerCase())) {
-              removeWordFromBook(bookKey, targetLemma);
+            const info = saveInfo ?? resolveCurrentSave(fallback);
+            if (info.status === "saved-here" && info.cardId && info.hereSourceKey) {
+              removeWordSource(info.cardId, info.hereSourceKey);
               return;
             }
-            const listId = book?.bundled || listSource;
-            const rawBaseGloss =
-              book?.glossary[targetLemma] ?? book?.glossary[targetLemma.toLowerCase()];
-            const rawEffectiveGloss =
-              effectiveGlossary[targetLemma] ?? effectiveGlossary[targetLemma.toLowerCase()];
-            const baseGloss =
-              rawBaseGloss && rawBaseGloss === rawEffectiveGloss ? rawBaseGloss : undefined;
-            const basePhrase = activePhrase
-              ? (phraseList[activePhrase.key] ?? phraseList[activePhrase.key.toLowerCase()])
-              : undefined;
-            const effectivePhrase = activePhrase
-              ? (effectivePhraseList[activePhrase.key] ??
-                effectivePhraseList[activePhrase.key.toLowerCase()])
-              : undefined;
-            const ref = activePhrase
-              ? (basePhrase && basePhrase === effectivePhrase ? phrasePoint(listId) : undefined)
-              : baseGloss
-                ? pointFromEntry(listId, targetLemma, baseGloss, {
-                    chapter: viewChapter,
-                    surface: picked.surface,
-                    occurrence: picked.nth,
-                    paragraph: picked.paragraph,
-                    before: picked.before,
-                  })
-                : undefined;
-            const sentence = card.fullSentence || card.sentence;
-            const source: WordSource = ref
-              ? {
-                  book: bookKey,
-                  title: shelfBook.title,
-                  author: shelfBook.author,
-                  chapter: ref.chapter ?? safeIndex,
-                  ...(chapter.title ? { chapterTitle: chapter.title } : {}),
-                  sentence,
-                  surface: saveAs.surface,
-                  savedAt: Date.now(),
-                  ref,
-                  ...(targetPos ? { pos: targetPos } : {}),
-                }
-              : {
-                  book: bookKey,
-                  title: shelfBook.title,
-                  author: shelfBook.author,
-                  chapter: safeIndex,
-                  ...(chapter.title ? { chapterTitle: chapter.title } : {}),
-                  sentence,
-                  surface: saveAs.surface,
-                  savedAt: Date.now(),
-                  ...(targetMeaning ? { meaning: targetMeaning } : {}),
-                  ...(targetPos ? { pos: targetPos } : {}),
-                };
-            saveWord(
-              {
-                surface: saveAs.surface,
-                lemma: targetLemma,
-                pos: targetPos,
-                meaning: ref ? "" : targetMeaning,
-                whyHard: "",
-                recommend: !isEasyKey(targetLemma),
-                sentence,
-              },
-              source,
-            );
-            // The heart bumps, the word gets its highlighter, and "+1" flies to the notebook icon.
-            celebrateSave({
-              heart: document.querySelector("[data-word-card] [data-word-save]"),
-              word: anchor,
-              notebook: document.querySelector("[data-reader-notebook]"),
-            });
+            if (info.status === "saved-in-book") {
+              if (info.cardId) {
+                removeCardFromBook(info.cardId, bookKey);
+              } else {
+                const targetLemma = (!activePhrase && !card.ready && fallback?.lemma) || saveAs.lemma;
+                removeWordFromBook(bookKey, targetLemma, !activePhrase ? fallback?.senseId : undefined);
+              }
+              return;
+            }
+            saveCurrentWord(fallback, info.status === "saved-other-book" ? info.cardId : undefined);
           }}
         />
       ) : null}

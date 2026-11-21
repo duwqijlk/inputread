@@ -3,10 +3,67 @@ import { loadStoredBook } from "@/lib/book-db";
 import { bookListSnapshot, glossSettled, glossSnapshot, requestBookGloss, requestGloss, subscribeGloss } from "@/lib/gloss-cache";
 import { bookGlossKey, glossCacheKey } from "@/lib/gloss-point";
 import { presentWord, readPoint, type GlossFileView } from "@/lib/gloss-ref";
+import { lookupStandardWord } from "@/lib/standard-dictionary";
 import { restoreParagraph } from "@/lib/text";
 import type { Book, VocabEntry, WordSource } from "@/lib/vocab-model";
 import { useVocab } from "@/lib/vocab-store";
 import { bookForSource } from "@/lib/wordbook";
+
+type StandardSenseText = { meaning: string; pos: string };
+const liveStandardCache = new Map<string, Map<string, StandardSenseText>>();
+const liveStandardPending = new Set<string>();
+const liveStandardListeners = new Set<() => void>();
+
+function notifyLiveStandard(): void {
+  for (const listener of liveStandardListeners) listener();
+}
+
+function requestLiveStandardLemma(standardLemma: string): void {
+  const key = standardLemma.normalize("NFC").trim();
+  if (!key || liveStandardCache.has(key) || liveStandardPending.has(key)) return;
+  liveStandardPending.add(key);
+  void lookupStandardWord(key)
+    .then((result) => {
+      if (!result) return;
+      if (result.kind === "unmapped" && result.senses.length > 0) {
+        const bySense = new Map<string, StandardSenseText>();
+        for (const sense of result.senses) {
+          if (sense.id && sense.meaning) bySense.set(sense.id, { meaning: sense.meaning, pos: sense.pos });
+        }
+        liveStandardCache.set(key, bySense);
+        notifyLiveStandard();
+      } else if (result.kind === "missing" || result.kind === "ambiguous") {
+        liveStandardCache.set(key, new Map());
+      }
+    })
+    .catch(() => {
+      // Offline or transient failure: fall back cleanly to the saved meaning string.
+    })
+    .finally(() => {
+      liveStandardPending.delete(key);
+    });
+}
+
+function applyLiveStandard(word: VocabEntry): VocabEntry {
+  const cardLemma = (word.standardLemma ?? "").normalize("NFC").trim();
+  const cardSense = (word.senseId ?? "").trim();
+  const cardLive = cardLemma && cardSense ? liveStandardCache.get(cardLemma)?.get(cardSense) : undefined;
+  let sourcesChanged = false;
+  const sources = word.sources.map((source) => {
+    if (source.ref) return source;
+    const sLemma = (source.standardLemma ?? cardLemma).normalize("NFC").trim();
+    const sId = (source.senseId ?? cardSense).trim();
+    const live = sLemma && sId ? liveStandardCache.get(sLemma)?.get(sId) : undefined;
+    if (!live || (source.meaning === live.meaning && (!live.pos || source.pos === live.pos))) return source;
+    sourcesChanged = true;
+    return { ...source, meaning: live.meaning, ...(live.pos ? { pos: live.pos } : {}) };
+  });
+  const hasAnyRef = word.sources.some((source) => Boolean(source.ref));
+  const nextMeaning = !hasAnyRef && cardLive ? cardLive.meaning : word.meaning;
+  const nextPos = !hasAnyRef && cardLive?.pos ? cardLive.pos : word.pos;
+  if (!sourcesChanged && nextMeaning === word.meaning && nextPos === word.pos) return word;
+  return { ...word, meaning: nextMeaning, pos: nextPos, sources };
+}
 
 /** The word lists loaded for the notebook. A later edit to a list replaces the copy. */
 export function useGlossFiles(): ReadonlyMap<string, GlossFileView> {
@@ -15,17 +72,34 @@ export function useGlossFiles(): ReadonlyMap<string, GlossFileView> {
   return useMemo(() => glossSnapshot(), [tick]);
 }
 
-/** The word as the notebook shows it: the saved paragraph stays, and the meaning comes from the current word list. */
+/** The word as the notebook shows it: the saved paragraph stays, and meanings refresh live from the word list or R2 OEWN. */
 export function usePresentedWord(word: VocabEntry | undefined, books: readonly Book[]): VocabEntry | undefined {
   const files = useGlossFiles();
+  const [stdTick, setStdTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setStdTick((value) => value + 1);
+    liveStandardListeners.add(bump);
+    return () => {
+      liveStandardListeners.delete(bump);
+    };
+  }, []);
   useEffect(() => {
     if (!word) return;
+    if (word.senseId && word.standardLemma) requestLiveStandardLemma(word.standardLemma);
     for (const source of word.sources) {
       if (source.ref) requestGloss(source.ref, source.book, books);
-      else requestBookGloss(source.book, books);
+      else {
+        requestBookGloss(source.book, books);
+        if (source.senseId && (source.standardLemma || word.standardLemma)) {
+          requestLiveStandardLemma(source.standardLemma ?? word.standardLemma ?? "");
+        }
+      }
     }
   }, [word, books, files]);
-  return word ? presentWord(word, files) : undefined;
+  return useMemo(() => {
+    if (!word) return undefined;
+    return applyLiveStandard(presentWord(word, files));
+  }, [word, files, stdTick]);
 }
 
 /**

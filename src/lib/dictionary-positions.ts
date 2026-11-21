@@ -83,6 +83,12 @@ export async function warmDictionaryMappings(catalogId: string): Promise<void> {
   try { await loadMappings(catalogId); } catch { /* A later lookup can retry. */ }
 }
 
+/** Read-only access to the cached book-level L1 position mappings (never throws). */
+export async function loadBookMappings(catalogId: string): Promise<readonly PositionMapping[]> {
+  if (!cleanCatalogRef(catalogId)) return [];
+  try { return await loadMappings(catalogId); } catch { return []; }
+}
+
 export async function mappedPosition(catalogId: string, position: DictionaryPosition): Promise<PositionMapping | null> {
   if (!cleanCatalogRef(catalogId)) return null;
   const [entries, key] = await Promise.all([loadMappings(catalogId), positionKey(catalogId, position)]);
