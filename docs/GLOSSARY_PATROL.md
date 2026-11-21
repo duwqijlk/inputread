@@ -18,7 +18,7 @@ Every live book consists of **three strictly separated layers**:
 
 | Layer | R2 Key (`margin-words-books`) | Cache-Control | Hard Cap | Purpose & Patrol Rule |
 |---|---|---|---:|---|
-| **L1 Standard Mappings** | `dictionary/positions/<catalog>/<id>/mappings.json` | `public, max-age=300` | `192 KiB` | Static OEWN `senseId + lemma` position proofs (`oewn-position-mappings-v1`) + `matchedBy` (max 3 public IDs). Never truncate old rows. |
+| **L1 Standard Mappings** | `dictionary/positions/<catalog>/<id>/mappings.json` | `private, max-age=300` (API) | `8 MiB` (`v2`) / `192 KiB` (`v1`) | Static OEWN `senseId + lemma` position proofs (`oewn-position-mappings-v2` compact or legacy `v1`) + `matchedBy` (max 3 public IDs). Served via protected `/api/dictionary/positions/:catalog/:id`. Never truncate old rows. |
 | **L2 Base Glossary** | `word-lists/<id>/glossary.json` *(or `public-books/<id>/glossary.json`)* | `no-store` | `16,000,000 B` | Clean community/Agent base (`glossary`, `phrases`, `paragraphs`, `sentences`). **Zero inline `credit` fields** (`countCreditsInGlossary().total === 0`). Auto-compact JSON (`separators=(',', ':')`) when pretty output `> 12 MiB`. |
 | **L3 Reader Credits** | `dictionary/credits/<catalog>/<id>/credits.json` | `public, max-age=300` | — | **All adopted reader-submitted `credit` entries** (`words`, `phrases`, `sentences`, `paragraphs`). Isolates reader credits so future on-demand L2 upgrades never overwrite user contributions. |
 
@@ -78,7 +78,7 @@ Run the Reader verification scripts against every modified book:
 2. `node --experimental-strip-types scripts/validate-glossary.mjs --json --bundled <book.epub> <glossary.json>` → `ok: true`, `0` errors, `0` `"grammar" uses words outside` warnings, `bytes <= 16_000_000`.
 3. `node --experimental-strip-types scripts/check-no-cjk.mjs <glossary.json>` → exit `0`.
 4. `node --experimental-strip-types scripts/check-definition-words.mjs <glossary.json>` → `0` outside.
-5. `node --experimental-strip-types scripts/positions-verify.mjs --catalog-id <cat:id> --epub <book.epub> --glossary <glossary.json> --mappings <mappings.json> --dictionary-root <dict-root>` (whenever L1 or L2 changed) → `ok: true`, `mappings.json <= 192 KiB`.
+5. `node --experimental-strip-types scripts/positions-verify.mjs --catalog-id <cat:id> --epub <book.epub> --glossary <glossary.json> --mappings <mappings.json> --dictionary-root <dict-root>` (whenever L1 or L2 changed) → `ok: true`, `mappings.json <= 8 MiB` (`v2`) or `<= 192 KiB` (`v1`).
 
 ### Step 4 — Atomic Publish → Readback → D1 Close → Contributors
 

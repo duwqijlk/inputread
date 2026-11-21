@@ -260,3 +260,28 @@ test("CLI exclusive outputs, required catalog syntax, report and failure exit", 
   assert.equal(run.status, 1);
   assert.match(run.stderr, /catalog identity/);
 });
+
+test("v2 compact format builds, preserves matchedBy/overrides, and verifies cleanly via API and CLI", async t => {
+  const f = await fixture(t);
+  const d1 = { ...(await decisionAt(f, "lantern")), matchedBy: ["abcdef012345"] };
+  const built = await buildPositionMappings({ ...f, format: "v2" }, { entries: [d1] });
+  assert.equal(built.mappings.schema, "oewn-position-mappings-v2");
+  assert.equal(built.mappings.senses.length, 1);
+  assert.equal(built.report.ok, true);
+  assert.equal(built.report.mappingSchema, "oewn-position-mappings-v2");
+  assert.equal(built.report.checkedRows, 1);
+
+  const decisions = join(f.dir, "decisions-v2.json");
+  const outV2 = join(f.dir, "mappings-v2.json");
+  const repBuild = join(f.dir, "report-v2-build.json");
+  const repVerify = join(f.dir, "report-v2-verify.json");
+  json(decisions, { entries: [d1] });
+  const base = ["--epub", f.epub, "--glossary", f.glossary, "--catalog-id", f.catalogId, "--dictionary-root", f.dictionaryRoot];
+  const cli = (name, args) => spawnSync(process.execPath, [join(ROOT, `scripts/positions-${name}.mjs`), ...args], { encoding: "utf8" });
+  let run = cli("build", [...base, "--format", "v2", "--decisions", decisions, "--out", outV2, "--report", repBuild]);
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(JSON.parse(readFileSync(outV2, "utf8")).schema, "oewn-position-mappings-v2");
+  run = cli("verify", [...base, "--mappings", outV2, "--report", repVerify]);
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(JSON.parse(readFileSync(repVerify, "utf8")).ok, true);
+});

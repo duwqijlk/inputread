@@ -770,3 +770,39 @@ export async function loadCachedText(key: string): Promise<string> {
   await done;
   return typeof value === "string" ? value : "";
 }
+
+export type StoredPositionMappingsCache = { text: string; etag?: string; savedAt: number };
+
+const posMapKey = (catalogId: string) => `posmap:${catalogId}`;
+
+/** Offline cache for one book's protected L1 OEWN position mappings (stored in existing `notes` store). */
+export async function loadPositionMappingsCache(
+  catalogId: string,
+): Promise<StoredPositionMappingsCache | null> {
+  const db = await openDb();
+  const tx = db.transaction(NOTES, "readonly");
+  const done = finish(tx, db);
+  const value = await requestToPromise(
+    tx.objectStore(NOTES).get(posMapKey(catalogId)) as IDBRequest<unknown>,
+  );
+  await done;
+  if (!value || typeof value !== "object") return null;
+  const row = value as { text?: unknown; etag?: unknown; savedAt?: unknown };
+  if (typeof row.text !== "string" || !row.text || typeof row.savedAt !== "number") return null;
+  return {
+    text: row.text,
+    ...(typeof row.etag === "string" && row.etag ? { etag: row.etag } : {}),
+    savedAt: row.savedAt,
+  };
+}
+
+export async function savePositionMappingsCache(
+  catalogId: string,
+  record: StoredPositionMappingsCache,
+): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(NOTES, "readwrite");
+  const done = finish(tx, db);
+  tx.objectStore(NOTES).put(record, posMapKey(catalogId));
+  await done;
+}

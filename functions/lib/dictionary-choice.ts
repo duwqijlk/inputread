@@ -5,6 +5,8 @@ import { DAILY_USER_CHOICE_BUDGET, DAILY_WRITE_BUDGET } from "./rate-limit.ts";
 
 export const CHOICE_REQUEST_BYTES = 8192;
 const ENTRY_BYTES = 32 * 1024;
+const MAPPINGS_V1_BYTES = 192 * 1024;
+const MAPPINGS_V2_BYTES = 8 * 1024 * 1024;
 const RELEASE = /^[a-z0-9][a-z0-9-]{0,79}$/;
 const encoder = new TextEncoder();
 
@@ -163,13 +165,110 @@ export async function checkChoiceMembership(env: Env, choice: DictionaryChoice):
   if (!ids.has(choice.id)) throw new HttpError(400, "dictionary-choice");
 }
 
+async function boundedText(stream: ReadableStream<Uint8Array> | null, max: number, status: number, code: string): Promise<string> {
+  if (!stream) throw new HttpError(status, code);
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > max) {
+        await reader.cancel();
+        throw new HttpError(status, code);
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+    catch { throw new HttpError(status, code); }
+  } finally { reader.releaseLock(); }
+}
+
+async function sourceText(object: R2ObjectLike, max: number, code = "dictionary-unavailable"): Promise<string> {
+  if (object.size > max) {
+    await object.body.cancel();
+    throw new HttpError(503, code);
+  }
+  return boundedText(object.body, max, 503, code);
+}
+
+/**
+ * Extract one chapter's JSON object from an `oewn-position-mappings-v2` payload without parsing
+ * the entire whole-book file, keeping Worker CPU well inside Free-plan bounds even on 100k-row books.
+ */
+function extractV2ChapterSlice(rawText: string, chapterSha256: string): string | null {
+  const chaptersAt = rawText.indexOf('"chapters"');
+  if (chaptersAt < 0) throw new HttpError(503, "mapping-unavailable");
+  const needle = `"${chapterSha256}"`;
+  let pos = rawText.indexOf(needle, chaptersAt);
+  while (pos >= 0) {
+    let cur = pos + needle.length;
+    while (cur < rawText.length && /\s/.test(rawText[cur]!)) cur += 1;
+    if (rawText[cur] === ":") {
+      cur += 1;
+      while (cur < rawText.length && /\s/.test(rawText[cur]!)) cur += 1;
+      if (rawText[cur] === "{") {
+        const start = cur;
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+        for (let i = start; i < rawText.length; i += 1) {
+          const ch = rawText[i]!;
+          if (inString) {
+            if (escaped) escaped = false;
+            else if (ch === "\\") escaped = true;
+            else if (ch === '"') inString = false;
+          } else if (ch === '"') {
+            inString = true;
+          } else if (ch === "{") {
+            depth += 1;
+          } else if (ch === "}") {
+            depth -= 1;
+            if (depth === 0) return rawText.slice(start, i + 1);
+          }
+        }
+        throw new HttpError(503, "mapping-unavailable");
+      }
+    }
+    pos = rawText.indexOf(needle, pos + needle.length);
+  }
+  return null;
+}
+
 /** A published, exact matching source position is read-only, never reopened by a stale thumb. */
 export async function assertChoiceUnfixed(env: Env, target: ChoiceTarget): Promise<void> {
   if (!target.position || !target.catalogId || !env.BOOKS) return;
   const [catalog, id] = target.catalogId.split(":");
   const object = await env.BOOKS.get(`dictionary/positions/${catalog}/${id}/mappings.json`);
   if (!object) return;
-  const raw = await sourceJson(object, 192 * 1024);
+  const rawText = await sourceText(object, MAPPINGS_V2_BYTES, "mapping-unavailable");
+  const header = rawText.slice(0, 512);
+  if (/"schema"\s*:\s*"oewn-position-mappings-v2"/.test(header)) {
+    const idMatch = header.match(/"catalogId"\s*:\s*"([^"]+)"/);
+    if (!idMatch || idMatch[1] !== target.catalogId) throw new HttpError(503, "mapping-unavailable");
+    const p = target.position;
+    const chapterSlice = extractV2ChapterSlice(rawText, p.chapterSha256);
+    if (!chapterSlice) return;
+    let ch: unknown;
+    try { ch = JSON.parse(chapterSlice); }
+    catch { throw new HttpError(503, "mapping-unavailable"); }
+    if (!record(ch) || !record(ch.p) || !Array.isArray(ch.r)) throw new HttpError(503, "mapping-unavailable");
+    if (ch.p[String(p.paragraphIndex)] !== p.paragraphSha256) return;
+    const match = ch.r.some(
+      (row) => Array.isArray(row) && row[0] === p.paragraphIndex && row[1] === p.offset && row[2] === p.surface,
+    );
+    if (match) throw new HttpError(409, "fixed");
+    return;
+  }
+  if (encoder.encode(rawText).byteLength > MAPPINGS_V1_BYTES) throw new HttpError(503, "mapping-unavailable");
+  let raw: unknown;
+  try { raw = JSON.parse(rawText); }
+  catch { throw new HttpError(503, "mapping-unavailable"); }
   if (!record(raw) || raw.schema !== "oewn-position-mappings-v1" || raw.catalogId !== target.catalogId || !Array.isArray(raw.entries)) throw new HttpError(503, "mapping-unavailable");
   const p = target.position;
   const key = await sha256Hex(JSON.stringify([target.catalogId, p.chapterSha256, p.paragraphIndex, p.paragraphSha256, p.offset, p.surface]));

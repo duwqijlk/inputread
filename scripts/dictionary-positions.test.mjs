@@ -195,3 +195,82 @@ test('cross-edition paragraph fingerprint fallback matches shifted chapter and f
  }finally{globalThis.fetch=native;}
 });
 
+test('compact v2 mappings resolve O(1) exact and cross-edition hits, preserve matchedBy/overrides, and route books host via protected API',async()=>{
+ const m=load();
+ const paragraphs=['The 😀 bank.','She sprang over the bank.'];
+ const p0=await m.dictionaryPosition(paragraphs,0,6,'bank');
+ const p1=await m.dictionaryPosition(paragraphs,1,4,'sprang');
+ assert.ok(p0&&p1);
+ const v2Payload={
+  schema:'oewn-position-mappings-v2',
+  catalogId,
+  release:'oewn-2025-test',
+  reviewedAt:1794355200,
+  senses:[['bank','bank%1:17:01::'],['spring','spring%2:38:01::']],
+  chapters:{
+   [p0.chapterSha256]:{
+    p:{'0':p0.paragraphSha256,'1':p1.paragraphSha256},
+    r:[
+     [0,6,'bank',0],
+     [1,4,'sprang',1,{m:['abcdef012345'],r:'oewn-2025-custom',t:1794359999}],
+    ],
+   },
+  },
+ };
+ const native=globalThis.fetch;
+ try{
+  globalThis.fetch=async()=>new Response(JSON.stringify(v2Payload),{headers:{etag:'"v2-etag"'}});
+  const hit0=await m.mappedPosition(catalogId,p0);
+  assert.equal(hit0?.senseId,'bank%1:17:01::');
+  assert.equal(hit0?.lemma,'bank');
+  assert.equal(hit0?.release,'oewn-2025-test');
+  assert.equal(hit0?.positionKey,await m.positionKey(catalogId,p0));
+
+  const hit1=await m.mappedPosition(catalogId,p1);
+  assert.equal(hit1?.senseId,'spring%2:38:01::');
+  assert.equal(hit1?.lemma,'spring');
+  assert.deepEqual(hit1?.matchedBy,['abcdef012345']);
+  assert.equal(hit1?.release,'oewn-2025-custom');
+  assert.equal(hit1?.reviewedAt,1794359999);
+
+  // O(1) chapter mapping loader
+  const chMap=await m.loadChapterMappings(catalogId,paragraphs);
+  assert.equal(chMap.hasBookMappings,true);
+  assert.equal(chMap.byToken.get('0:6:bank')?.senseId,'bank%1:17:01::');
+  assert.equal(chMap.byToken.get('1:4:sprang')?.lemma,'spring');
+
+  // Cross-edition fallback on v2
+  const shifted=['Editor intro.',paragraphs[0]];
+  const shiftedPos=await m.dictionaryPosition(shifted,1,6,'bank');
+  const crossHit=await m.mappedPosition(catalogId,shiftedPos);
+  assert.equal(crossHit?.senseId,'bank%1:17:01::');
+ }finally{globalThis.fetch=native;}
+
+ // Production books host automatically routes to /api/dictionary/positions/:catalog/:id with credentials:same-origin
+ const prodMod={exports:{}};
+ new Function('module','exports','require',ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(
+  prodMod,prodMod.exports,id=>id==='@/lib/books-base'?{booksUrl:p=>`https://books.inputread.site/${p}`}:{cleanCatalogRef:s=>s},
+ );
+ const seenReq=[];
+ const cacheStore=new Map();
+ prodMod.exports.setPositionMappingsCache({
+  load:async k=>cacheStore.get(k)??null,
+  save:async(k,v)=>{cacheStore.set(k,v);},
+ });
+ try{
+  globalThis.fetch=async(url,init)=>{seenReq.push({url,init});return new Response(JSON.stringify(v2Payload),{headers:{etag:'"v2-prod"'}});};
+  const prodHit=await prodMod.exports.mappedPosition(catalogId,p0);
+  assert.equal(prodHit?.senseId,'bank%1:17:01::');
+  assert.equal(seenReq.length,1);
+  assert.equal(seenReq[0].url,'/api/dictionary/positions/word-lists/test');
+  assert.equal(seenReq[0].init?.credentials,'same-origin');
+  assert.equal(cacheStore.get(catalogId)?.etag,'"v2-prod"');
+
+  // Offline / fresh cache hit serves from persistent cache with 0 network requests
+  prodMod.exports.clearPositionMappingsMemoryCache();
+  globalThis.fetch=async()=>{throw new Error('offline');};
+  const offlineHit=await prodMod.exports.mappedPosition(catalogId,p1);
+  assert.equal(offlineHit?.senseId,'spring%2:38:01::');
+ }finally{globalThis.fetch=native;}
+});
+

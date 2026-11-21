@@ -424,3 +424,47 @@ test("account export includes pending raw choices and account deletion cascades"
   f.raw.prepare("DELETE FROM users WHERE id = 'reader'").run();
   assert.equal(f.rows().length, 0);
 });
+
+test("compact v2 mappings reject already-fixed choices with 409 fixed without blocking unmapped coordinates", async () => {
+  const f = await fixture();
+  const paragraphText = "The Cafés were busy.";
+  const position = {
+    chapterSha256: await sha256Hex(JSON.stringify([paragraphText])),
+    paragraphIndex: 3,
+    paragraphSha256: await sha256Hex(paragraphText),
+    offset: 4,
+    surface: "Cafés",
+  };
+  const target = { ...TARGET, paragraphText, position };
+  const v2 = {
+    schema: "oewn-position-mappings-v2",
+    catalogId: target.catalogId,
+    release: RELEASE,
+    reviewedAt: NOW,
+    senses: [[CHOICE.lemma, CHOICE.id]],
+    chapters: {
+      [position.chapterSha256]: {
+        p: { "3": position.paragraphSha256 },
+        r: [[3, 4, "Cafés", 0]],
+      },
+    },
+  };
+  f.files.set("dictionary/positions/word-lists/book/mappings.json", v2);
+  // Exact fixed coordinate in v2 -> 409 fixed
+  await error(await f.call(payload(SECOND, target)), 409, "fixed");
+
+  // Different unmapped chapter -> succeeds cleanly
+  const otherText = "The Cafés stayed open late.";
+  const otherPos = {
+    chapterSha256: await sha256Hex(JSON.stringify([otherText])),
+    paragraphIndex: 0,
+    paragraphSha256: await sha256Hex(otherText),
+    offset: 4,
+    surface: "Cafés",
+  };
+  await success(await f.call(payload(CHOICE, { ...TARGET, paragraph: 0, paragraphText: otherText, position: otherPos })), CHOICE);
+
+  // Tampered catalogId in v2 header -> fails closed with 503
+  f.files.set("dictionary/positions/word-lists/book/mappings.json", { ...v2, catalogId: "word-lists:other" });
+  await error(await f.call(payload(SECOND, target)), 503, "mapping-unavailable");
+});

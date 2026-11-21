@@ -31,11 +31,19 @@ export function buildBudgetReport({ mappingsRoot, requestLog, platformLog, syncP
   if (mappingsRoot) {
     report.mappingFiles = walk(resolve(mappingsRoot)).map(path => {
       const stat = lstatSync(path);
-      if (stat.size > 4 * 1024 * 1024) throw Error('Mapping inspection input exceeds 4 MiB');
+      if (stat.size > 10 * 1024 * 1024) throw Error('Mapping inspection input exceeds 10 MiB');
       const data = JSON.parse(readFileSync(path, 'utf8'));
-      if (data.schema !== 'oewn-position-mappings-v1' || !Array.isArray(data.entries)) throw Error('Invalid mapping artifact');
-      return { path, bytes: stat.size, entries: data.entries.length, limitBytes: 192 * 1024,
-        limitUsedPercent: +(100 * stat.size / (192 * 1024)).toFixed(2), exceedsReaderLimit: stat.size > 192 * 1024 };
+      if (data.schema === 'oewn-position-mappings-v1' && Array.isArray(data.entries)) {
+        return { path, bytes: stat.size, entries: data.entries.length, limitBytes: 192 * 1024,
+          limitUsedPercent: +(100 * stat.size / (192 * 1024)).toFixed(2), exceedsReaderLimit: stat.size > 192 * 1024 };
+      }
+      if (data.schema === 'oewn-position-mappings-v2' && data.chapters && typeof data.chapters === 'object') {
+        const entries = Object.values(data.chapters).reduce((sum, ch) => sum + (Array.isArray(ch?.r) ? ch.r.length : 0), 0);
+        const limitBytes = 8 * 1024 * 1024;
+        return { path, bytes: stat.size, entries, limitBytes,
+          limitUsedPercent: +(100 * stat.size / limitBytes).toFixed(2), exceedsReaderLimit: stat.size > limitBytes };
+      }
+      throw Error('Invalid mapping artifact');
     });
   }
   if (requestLog) {

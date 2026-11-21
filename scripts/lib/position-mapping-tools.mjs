@@ -6,8 +6,10 @@ import { loadAppModules, loadFreshAppModule } from "./app-modules.mjs";
 
 const HEX = /^[0-9a-f]{64}$/;
 const RELEASE = /^[a-z0-9][a-z0-9-]{0,79}$/;
-const SCHEMA = "oewn-position-mappings-v1";
-const MAX_BYTES = 192 * 1024;
+const SCHEMA_V1 = "oewn-position-mappings-v1";
+const SCHEMA_V2 = "oewn-position-mappings-v2";
+const MAX_BYTES_V1 = 192 * 1024;
+const MAX_BYTES_V2 = 8 * 1024 * 1024;
 export const sha256 = value => createHash("sha256").update(value).digest("hex");
 function need(ok, message) { if (!ok) throw new Error(message); }
 const integer = n => Number.isSafeInteger(n) && n >= 0;
@@ -73,13 +75,25 @@ export async function readPositionSource({ epub: epubPath, glossary: glossaryPat
       tokens.push({ paragraphIndex, offset: Array.from(app.flow.flowTextBefore(block, button)).length,
         surface: button.getAttribute("data-word"), occurrence: Number(button.getAttribute("data-n")) || 1 });
     }
-    return { chapterIndex, paragraphs, tokens, chapterSha256: sha256(JSON.stringify(paragraphs)),
+    const tokenCounts = new Map();
+    for (const t of tokens) {
+      const tk = `${t.paragraphIndex}:${t.offset}:${t.surface}`;
+      tokenCounts.set(tk, (tokenCounts.get(tk) ?? 0) + 1);
+    }
+    return { chapterIndex, paragraphs, tokens, tokenCounts, chapterSha256: sha256(JSON.stringify(paragraphs)),
       paragraphHashes: paragraphs.map(sha256) };
   };
   const chapters = book.chapters.map(render);
   // Unmerged files can be displayed as extras; identical text there is also ambiguous source proof.
   const extras = (book.extras ?? []).map(extra => render(extra, -1));
-  return { app, chapters, allSources: [...chapters, ...extras], evidence: {
+  const allSources = [...chapters, ...extras];
+  const sourcesByHash = new Map();
+  for (const ch of allSources) {
+    const list = sourcesByHash.get(ch.chapterSha256) ?? [];
+    list.push(ch);
+    sourcesByHash.set(ch.chapterSha256, list);
+  }
+  return { app, chapters, allSources, sourcesByHash, evidence: {
     epubSha256: sha256(bytes), glossarySha256: sha256(glossaryBytes),
     parseOptions, spineMerge: merge, chapterCount: chapters.length, extraCount: extras.length,
     chapters: chapters.map(({ chapterIndex, chapterSha256, paragraphHashes }) => ({ chapterIndex, chapterSha256, paragraphHashes })),
@@ -98,20 +112,28 @@ function validateRow(row) {
     row.matchedBy.every(id => typeof id === "string" && /^[0-9a-f]{12}$/.test(id)) && new Set(row.matchedBy).size === row.matchedBy.length, "Invalid matchedBy");
 }
 
-async function provePosition(source, catalogId, row) {
-  const matches = source.allSources.filter(chapter => chapter.chapterSha256 === row.chapterSha256);
+async function provePosition(source, catalogId, row, includeParagraphText = true) {
+  const matches = source.sourcesByHash
+    ? (source.sourcesByHash.get(row.chapterSha256) ?? [])
+    : source.allSources.filter(chapter => chapter.chapterSha256 === row.chapterSha256);
   need(matches.length === 1, matches.length ? "Ambiguous identical source chapters" : "Chapter hash not found in source");
   const chapter = matches[0];
   need(chapter.chapterIndex >= 0, "Unmerged extra positions are unsupported");
   const paragraph = chapter.paragraphs[row.paragraphIndex];
   need(typeof paragraph === "string", "Paragraph index out of range");
-  need(sha256(paragraph) === row.paragraphSha256, "Paragraph hash mismatch");
-  const position = await source.app.dictionaryPositions.dictionaryPosition(chapter.paragraphs, row.paragraphIndex, row.offset, row.surface);
-  need(position, "Code-point offset/surface mismatch or range error");
-  need(await source.app.dictionaryPositions.positionKey(catalogId, position) === row.positionKey, "Position key mismatch");
-  need(chapter.tokens.filter(token => token.paragraphIndex === row.paragraphIndex && token.offset === row.offset && token.surface === row.surface).length === 1,
+  need(chapter.paragraphHashes[row.paragraphIndex] === row.paragraphSha256, "Paragraph hash mismatch");
+  need(
+    Array.from(paragraph).slice(row.offset, row.offset + Array.from(row.surface).length).join("") === row.surface,
+    "Code-point offset/surface mismatch or range error",
+  );
+  const expectedKey = sha256(JSON.stringify([catalogId, row.chapterSha256, row.paragraphIndex, row.paragraphSha256, row.offset, row.surface]));
+  need(expectedKey === row.positionKey, "Position key mismatch");
+  const tokenCount = chapter.tokenCounts
+    ? (chapter.tokenCounts.get(`${row.paragraphIndex}:${row.offset}:${row.surface}`) ?? 0)
+    : chapter.tokens.filter(token => token.paragraphIndex === row.paragraphIndex && token.offset === row.offset && token.surface === row.surface).length;
+  need(tokenCount === 1,
     "Unsupported standard span: require one exact reader token (not a phrase, substring, or guessed occurrence)");
-  return { chapterIndex: chapter.chapterIndex, paragraphText: paragraph };
+  return includeParagraphText ? { chapterIndex: chapter.chapterIndex, paragraphText: paragraph } : { chapterIndex: chapter.chapterIndex };
 }
 
 let dictionaryBusy = false;
@@ -163,13 +185,19 @@ async function withLocalDictionary(rootPath, run) {
   }
 }
 
-async function candidateProof(dictionary, publication, row) {
+async function candidateProof(dictionary, publication, row, surfaceCache) {
   // The real reader does its complete exact/case/forms lookup. No copied morphology rules.
-  const result = await dictionary.lookupStandardWord(row.surface);
-  if (publication.formsIndex) {
-    const forms = await dictionary.lookupPublicationForms(publication, row.surface.normalize("NFC"));
-    need(forms.kind !== "error", "Dictionary forms enrichment failed (incomplete candidate evidence)");
+  let cached = surfaceCache?.get(row.surface);
+  if (!cached) {
+    const result = await dictionary.lookupStandardWord(row.surface);
+    if (publication.formsIndex) {
+      const forms = await dictionary.lookupPublicationForms(publication, row.surface.normalize("NFC"));
+      need(forms.kind !== "error", "Dictionary forms enrichment failed (incomplete candidate evidence)");
+    }
+    cached = result;
+    surfaceCache?.set(row.surface, cached);
   }
+  const result = cached;
   need(result?.kind === "unmapped", `Dictionary candidate lookup is ${result?.kind ?? "unavailable"}`);
   const candidates = result.senses.filter(sense => sense.id === row.senseId && sense.source.lemma === row.lemma);
   need(candidates.length === 1, "Full opaque senseId + lemma is not a legal surface candidate");
@@ -179,32 +207,139 @@ async function candidateProof(dictionary, publication, row) {
     mappingRelease: row.release, releaseMatchesCurrentEntry: row.release === candidate.source.release };
 }
 
+/** Expand either `oewn-position-mappings-v1` or compact `oewn-position-mappings-v2` into flat rows for verification. */
+export function expandPositionMappings(mappings, expectedCatalogId) {
+  need(mappings && typeof mappings === "object" && mappings.catalogId === expectedCatalogId, "Mapping schema/catalog identity mismatch");
+  if (mappings.schema === SCHEMA_V1) {
+    need(Array.isArray(mappings.entries), "Mapping schema/catalog identity mismatch");
+    need(Buffer.byteLength(JSON.stringify(mappings)) <= MAX_BYTES_V1, "Mapping exceeds reader's 192 KiB limit");
+    return { schema: SCHEMA_V1, entries: mappings.entries };
+  }
+  if (mappings.schema === SCHEMA_V2) {
+    need(
+      typeof mappings.release === "string" && RELEASE.test(mappings.release) &&
+      Number.isSafeInteger(mappings.reviewedAt) && mappings.reviewedAt > 0 &&
+      Array.isArray(mappings.senses) &&
+      mappings.chapters && typeof mappings.chapters === "object" && !Array.isArray(mappings.chapters),
+      "Mapping schema/catalog identity mismatch",
+    );
+    need(Buffer.byteLength(JSON.stringify(mappings)) <= MAX_BYTES_V2, "Mapping exceeds reader's 8 MiB v2 limit");
+    const entries = [];
+    for (const [chapterSha256, chObj] of Object.entries(mappings.chapters)) {
+      need(HEX.test(chapterSha256) && chObj && typeof chObj === "object" && !Array.isArray(chObj), "Invalid mapping row");
+      need(chObj.p && typeof chObj.p === "object" && !Array.isArray(chObj.p) && Array.isArray(chObj.r), "Invalid mapping row");
+      for (const tuple of chObj.r) {
+        need(Array.isArray(tuple) && (tuple.length === 4 || tuple.length === 5), "Invalid mapping row");
+        const [paragraphIndex, offset, surface, senseIdx, meta] = tuple;
+        const paragraphSha256 = chObj.p[String(paragraphIndex)];
+        const sensePair = mappings.senses[senseIdx];
+        need(typeof paragraphSha256 === "string" && Array.isArray(sensePair) && sensePair.length === 2, "Invalid mapping row");
+        const [lemma, senseId] = sensePair;
+        let release = mappings.release;
+        let reviewedAt = mappings.reviewedAt;
+        let matchedBy;
+        if (meta !== undefined) {
+          need(meta && typeof meta === "object" && !Array.isArray(meta), "Invalid mapping row");
+          if (meta.r !== undefined) release = meta.r;
+          if (meta.t !== undefined) reviewedAt = meta.t;
+          if (meta.m !== undefined) matchedBy = meta.m;
+        }
+        const positionKey = sha256(JSON.stringify([expectedCatalogId, chapterSha256, paragraphIndex, paragraphSha256, offset, surface]));
+        entries.push({
+          positionKey,
+          chapterSha256,
+          paragraphIndex,
+          paragraphSha256,
+          offset,
+          surface,
+          senseId,
+          lemma,
+          release,
+          reviewedAt,
+          ...(matchedBy !== undefined ? { matchedBy } : {}),
+        });
+      }
+    }
+    return { schema: SCHEMA_V2, entries };
+  }
+  throw new Error("Mapping schema/catalog identity mismatch");
+}
+
+/** Pack flat validated rows into deterministic compact `oewn-position-mappings-v2`. */
+export function packPositionMappingsV2(catalogId, entries) {
+  const releaseCounts = new Map();
+  const revCounts = new Map();
+  for (const row of entries) {
+    releaseCounts.set(row.release, (releaseCounts.get(row.release) ?? 0) + 1);
+    revCounts.set(row.reviewedAt, (revCounts.get(row.reviewedAt) ?? 0) + 1);
+  }
+  const defaultRelease = [...releaseCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? "oewn-2025-unknown";
+  const defaultReviewedAt = [...revCounts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]?.[0] ?? Math.floor(Date.now() / 1000);
+
+  const senseIndex = new Map();
+  const senses = [];
+  const chapters = {};
+  for (const row of entries) {
+    const sk = `${row.lemma}\u0000${row.senseId}`;
+    let sIdx = senseIndex.get(sk);
+    if (sIdx === undefined) {
+      sIdx = senses.length;
+      senseIndex.set(sk, sIdx);
+      senses.push([row.lemma, row.senseId]);
+    }
+    let ch = chapters[row.chapterSha256];
+    if (!ch) {
+      ch = { p: {}, r: [] };
+      chapters[row.chapterSha256] = ch;
+    }
+    ch.p[String(row.paragraphIndex)] = row.paragraphSha256;
+    const meta = {};
+    if (row.matchedBy !== undefined) meta.m = row.matchedBy;
+    if (row.release !== defaultRelease) meta.r = row.release;
+    if (row.reviewedAt !== defaultReviewedAt) meta.t = row.reviewedAt;
+    if (Object.keys(meta).length > 0) ch.r.push([row.paragraphIndex, row.offset, row.surface, sIdx, meta]);
+    else ch.r.push([row.paragraphIndex, row.offset, row.surface, sIdx]);
+  }
+  return {
+    schema: SCHEMA_V2,
+    catalogId,
+    release: defaultRelease,
+    reviewedAt: defaultReviewedAt,
+    senses,
+    chapters,
+  };
+}
+
 export async function verifyPositionMappings(options, mappings) {
   const source = await readPositionSource(options);
   const { cleanCatalogRef } = source.app.catalogId;
   need(cleanCatalogRef(options.catalogId) === options.catalogId && !!options.catalogId, "Invalid catalog identity syntax");
-  need(mappings?.schema === SCHEMA && mappings.catalogId === options.catalogId && Array.isArray(mappings.entries), "Mapping schema/catalog identity mismatch");
-  need(Buffer.byteLength(JSON.stringify(mappings)) <= MAX_BYTES, "Mapping exceeds reader's 192 KiB limit");
+  const expanded = expandPositionMappings(mappings, options.catalogId);
+  const includeParagraphText = expanded.entries.length <= 2000;
   return withLocalDictionary(options.dictionaryRoot, async (dictionary, publication) => {
-    const seen = new Set(), rows = [];
-    for (const [index, row] of mappings.entries.entries()) {
+    const seen = new Set(), rows = [], surfaceCache = new Map();
+    for (const [index, row] of expanded.entries.entries()) {
       try {
         validateRow(row);
         need(!seen.has(row.positionKey), "Duplicate position key");
         seen.add(row.positionKey);
-        const coordinate = await provePosition(source, options.catalogId, row);
-        const candidate = await candidateProof(dictionary, publication, row);
+        const coordinate = await provePosition(source, options.catalogId, row, includeParagraphText);
+        const candidate = await candidateProof(dictionary, publication, row, surfaceCache);
         rows.push({ index, ok: true, positionKey: row.positionKey, ...coordinate, ...candidate });
       } catch (error) { rows.push({ index, ok: false, positionKey: row?.positionKey, error: error.message }); }
     }
-    return { schema: "oewn-position-verification-v1", ok: rows.every(row => row.ok),
+    const ok = rows.every(row => row.ok);
+    const reportRows = expanded.entries.length <= 2000 ? rows : rows.filter(row => !row.ok);
+    return { schema: "oewn-position-verification-v1", mappingSchema: expanded.schema, ok,
       semanticReview: "operator-required", catalogId: options.catalogId, catalogProof: "syntax-only; no live catalog existence or EPUB binding established",
-      source: source.evidence, rows, checkedRows: rows.length };
+      source: source.evidence, rows: reportRows, checkedRows: rows.length };
   });
 }
 
 export async function buildPositionMappings(options, decisions) {
   need(decisions && Array.isArray(decisions.entries), "Decisions must be {entries:[explicit authored decisions]}");
+  const format = options.format ?? "v1";
+  need(format === "v1" || format === "v2", `Unsupported mapping format ${format}`);
   const source = await readPositionSource(options);
   need(source.app.catalogId.cleanCatalogRef(options.catalogId) === options.catalogId && !!options.catalogId, "Invalid catalog identity syntax");
   const entries = [];
@@ -215,14 +350,33 @@ export async function buildPositionMappings(options, decisions) {
     const chapter = source.chapters[decision.chapterIndex];
     need(chapter, `Decision ${index}: chapterIndex out of range`);
     need(typeof decision.surface === "string" && decision.surface, `Decision ${index}: invalid surface`);
-    const position = await source.app.dictionaryPositions.dictionaryPosition(chapter.paragraphs, decision.paragraphIndex, decision.offset, decision.surface);
-    need(position, `Decision ${index}: code-point offset/surface mismatch`);
-    const row = { positionKey: await source.app.dictionaryPositions.positionKey(options.catalogId, position), ...position,
-      senseId: decision.senseId, lemma: decision.lemma, release: decision.release, reviewedAt: decision.reviewedAt,
-      ...(decision.matchedBy !== undefined ? { matchedBy: decision.matchedBy } : {}) };
+    const paragraph = chapter.paragraphs[decision.paragraphIndex];
+    need(
+      typeof paragraph === "string" &&
+      Array.from(paragraph).slice(decision.offset, decision.offset + Array.from(decision.surface).length).join("") === decision.surface,
+      `Decision ${index}: code-point offset/surface mismatch`,
+    );
+    const position = {
+      chapterSha256: chapter.chapterSha256,
+      paragraphIndex: decision.paragraphIndex,
+      paragraphSha256: chapter.paragraphHashes[decision.paragraphIndex],
+      offset: decision.offset,
+      surface: decision.surface,
+    };
+    const row = {
+      positionKey: sha256(JSON.stringify([options.catalogId, position.chapterSha256, position.paragraphIndex, position.paragraphSha256, position.offset, position.surface])),
+      ...position,
+      senseId: decision.senseId,
+      lemma: decision.lemma,
+      release: decision.release,
+      reviewedAt: decision.reviewedAt,
+      ...(decision.matchedBy !== undefined ? { matchedBy: decision.matchedBy } : {}),
+    };
     entries.push(row);
   }
-  const mappings = { schema: SCHEMA, catalogId: options.catalogId, entries };
+  const mappings = format === "v2"
+    ? packPositionMappingsV2(options.catalogId, entries)
+    : { schema: SCHEMA_V1, catalogId: options.catalogId, entries };
   const report = await verifyPositionMappings(options, mappings);
   need(report.source.epubSha256 === source.evidence.epubSha256 && report.source.glossarySha256 === source.evidence.glossarySha256,
     "Source changed while building");
@@ -241,14 +395,15 @@ export function usage(mode) {
 }
 
 function parseArgs(mode, args) {
-  const allowed = new Set(["epub", "glossary", "catalog-id", "dictionary-root", "report", ...(mode === "build" ? ["decisions", "out"] : ["mappings"])]);
+  const required = new Set(["epub", "glossary", "catalog-id", "dictionary-root", "report", ...(mode === "build" ? ["decisions", "out"] : ["mappings"])]);
+  const allowed = new Set([...required, ...(mode === "build" ? ["format"] : [])]);
   const result = {};
   for (let at = 0; at < args.length; at += 2) {
     const key = args[at]?.replace(/^--/, "");
     need(args[at]?.startsWith("--") && allowed.has(key) && !Object.hasOwn(result, key) && args[at + 1] && !args[at + 1].startsWith("--"), `Invalid argument ${args[at]}`);
     result[key] = args[at + 1];
   }
-  for (const key of allowed) need(result[key], `Missing --${key}`);
+  for (const key of required) need(result[key], `Missing --${key}`);
   return result;
 }
 
@@ -280,19 +435,27 @@ export async function runPositionCli(mode, args = process.argv.slice(2)) {
     const inputPath = mode === "build" ? flags.decisions : flags.mappings;
     outputs = reserveOutputs(mode === "build" ? [flags.out, flags.report] : [flags.report],
       [flags.epub, flags.glossary, inputPath], flags["dictionary-root"]);
-    const options = { epub: flags.epub, glossary: flags.glossary, catalogId: flags["catalog-id"], dictionaryRoot: flags["dictionary-root"] };
+    const options = {
+      epub: flags.epub,
+      glossary: flags.glossary,
+      catalogId: flags["catalog-id"],
+      dictionaryRoot: flags["dictionary-root"],
+      ...(flags.format ? { format: flags.format } : {}),
+    };
     const inputBytes = readFileSync(inputPath);
     const input = JSON.parse(inputBytes.toString("utf8").replace(new RegExp("^" + String.fromCharCode(0xfeff)), ""));
     let report, mappings;
     if (mode === "build") ({ mappings, report } = await buildPositionMappings(options, input));
     else {
-      need(inputBytes.length <= MAX_BYTES, "Mapping file exceeds reader's 192 KiB limit");
+      const limit = input?.schema === SCHEMA_V2 ? MAX_BYTES_V2 : MAX_BYTES_V1;
+      need(inputBytes.length <= limit, limit === MAX_BYTES_V2 ? "Mapping file exceeds reader's 8 MiB v2 limit" : "Mapping file exceeds reader's 192 KiB limit");
       report = await verifyPositionMappings(options, input);
     }
     report.inputSha256 = sha256(inputBytes);
     if (mappings && report.ok) {
       const output = JSON.stringify(mappings) + "\n";
-      need(Buffer.byteLength(output) <= MAX_BYTES, "Mapping output exceeds reader's 192 KiB limit");
+      const limit = mappings.schema === SCHEMA_V2 ? MAX_BYTES_V2 : MAX_BYTES_V1;
+      need(Buffer.byteLength(output) <= limit, limit === MAX_BYTES_V2 ? "Mapping output exceeds reader's 8 MiB v2 limit" : "Mapping output exceeds reader's 192 KiB limit");
       report.mappingSha256 = sha256(output);
       writeFileSync(outputs[0].fd, output);
     }

@@ -22,7 +22,9 @@ import {
   loadBookExtras,
   loadBookMeta,
   loadPackRecord,
+  loadPositionMappingsCache,
   loadStoredBook,
+  savePositionMappingsCache,
   type Gloss,
   type StoredBook,
 } from "@/lib/book-db";
@@ -70,11 +72,18 @@ import { useVocab } from "@/lib/vocab-store";
 import { flowCutOffsets, flowPoint, flowText, flowTextBefore } from "@/lib/flow-text";
 import { AloudBar, AloudHeaderButton, ParagraphSpeakers, readFromParagraph, useChapterAloudBridge } from "@/components/chapter-aloud";
 import {
-  loadBookMappings,
-  textSha256,
+  loadChapterMappings,
+  setPositionMappingsCache,
   warmDictionaryMappings,
-  type PositionMapping,
+  type ChapterPositionMapping,
 } from "@/lib/dictionary-positions";
+
+if (typeof indexedDB !== "undefined") {
+  setPositionMappingsCache({
+    load: loadPositionMappingsCache,
+    save: savePositionMappingsCache,
+  });
+}
 import {
   mergeSignedGlossary,
   mergeSignedPhrases,
@@ -629,23 +638,6 @@ export function ReaderScreen({
   }
 
   const bookKey = shelfBook ? bookSyncKey(shelfBook) : "";
-  const [bookMappings, setBookMappings] = useState<{ catalogId: string; entries: readonly PositionMapping[] }>({
-    catalogId: "",
-    entries: [],
-  });
-  useEffect(() => {
-    let alive = true;
-    if (!catalogId) {
-      setBookMappings({ catalogId: "", entries: [] });
-      return;
-    }
-    void loadBookMappings(catalogId).then((entries) => {
-      if (alive) setBookMappings({ catalogId, entries });
-    });
-    return () => {
-      alive = false;
-    };
-  }, [catalogId]);
 
   const savedBookIndex = useMemo(() => {
     const unsensedKeys = new Set<string>();
@@ -681,71 +673,33 @@ export function ReaderScreen({
   const [chapterSenseMap, setChapterSenseMap] = useState<{
     key: string;
     ready: boolean;
-    byToken: Map<string, PositionMapping>;
+    hasBookMappings: boolean;
+    byToken: Map<string, ChapterPositionMapping>;
   }>({
     key: "",
     ready: false,
+    hasBookMappings: false,
     byToken: new Map(),
   });
   useEffect(() => {
     let alive = true;
     if (!catalogId) {
-      setChapterSenseMap({ key: chapterKey, ready: true, byToken: new Map() });
+      setChapterSenseMap({ key: chapterKey, ready: true, hasBookMappings: false, byToken: new Map() });
       return;
     }
-    if (bookMappings.catalogId !== catalogId) {
-      setChapterSenseMap({ key: "", ready: false, byToken: new Map() });
-      return;
-    }
-    const entries = bookMappings.entries;
     const posCh = renderedPositionChapter();
-    if (entries.length === 0 || !posCh || posCh.texts.length === 0) {
-      setChapterSenseMap({ key: chapterKey, ready: true, byToken: new Map() });
+    if (!posCh || posCh.texts.length === 0) {
+      setChapterSenseMap({ key: chapterKey, ready: true, hasBookMappings: false, byToken: new Map() });
       return;
     }
-    void textSha256(JSON.stringify(posCh.texts)).then(async (chHash) => {
-      if (!alive || !chHash) return;
-      const byToken = new Map<string, PositionMapping>();
-      for (const row of entries) {
-        if (row.chapterSha256 === chHash) {
-          byToken.set(`${row.paragraphIndex}:${row.offset}:${row.surface}`, row);
-        }
-      }
-      if (byToken.size === 0) {
-        // Cross-edition fallback: match unchanged paragraphs by paragraphSha256 when chapterSha256 differs.
-        // Fail closed if identical paragraphs in the book map the same token to conflicting senses.
-        const byPara = new Map<string, PositionMapping[]>();
-        for (const row of entries) {
-          const list = byPara.get(row.paragraphSha256) ?? [];
-          list.push(row);
-          byPara.set(row.paragraphSha256, list);
-        }
-        const hashes = await Promise.all(posCh.texts.map((p) => textSha256(p)));
-        if (!alive) return;
-        hashes.forEach((pHash, pIdx) => {
-          if (!pHash) return;
-          const byLocal = new Map<string, PositionMapping[]>();
-          for (const row of byPara.get(pHash) ?? []) {
-            const k = `${pIdx}:${row.offset}:${row.surface}`;
-            const list = byLocal.get(k) ?? [];
-            list.push(row);
-            byLocal.set(k, list);
-          }
-          for (const [k, rows] of byLocal) {
-            const first = rows[0];
-            if (!first) continue;
-            if (rows.some((r) => r.senseId !== first.senseId || r.lemma !== first.lemma)) continue;
-            rows.sort((a, b) => Math.abs(a.paragraphIndex - pIdx) - Math.abs(b.paragraphIndex - pIdx));
-            byToken.set(k, rows[0]!);
-          }
-        });
-      }
-      if (alive) setChapterSenseMap({ key: chapterKey, ready: true, byToken });
+    setChapterSenseMap({ key: "", ready: false, hasBookMappings: false, byToken: new Map() });
+    void loadChapterMappings(catalogId, posCh.texts).then(({ hasBookMappings, byToken }) => {
+      if (alive) setChapterSenseMap({ key: chapterKey, ready: true, hasBookMappings, byToken });
     });
     return () => {
       alive = false;
     };
-  }, [bookMappings, catalogId, chapterKey, linkedHtml]);
+  }, [catalogId, chapterKey, linkedHtml]);
 
   // Quietly prewarm exact OEWN word payloads for this chapter's L1 mapped lemmas, so tapping a
   // mapped word draws both community and standard meanings together on the very first frame.
@@ -1861,8 +1815,7 @@ export function ReaderScreen({
         ? preMapped
         : chapterSenseMap.ready &&
             chapterSenseMap.key === chapterKey &&
-            bookMappings.catalogId === catalogId &&
-            bookMappings.entries.length > 0
+            chapterSenseMap.hasBookMappings
           ? null
           : undefined;
     let gloss: Gloss | undefined = effectiveGlossary[key];

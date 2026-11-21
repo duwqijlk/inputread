@@ -10,7 +10,14 @@ import {
   type DictionaryLookup,
 } from "@/lib/standard-dictionary";
 import { useDictionaryChoices } from "@/lib/dictionary-choices";
-import { dictionaryPosition, mappedPosition, type DictionaryPosition, type PositionMapping } from "@/lib/dictionary-positions";
+import {
+  dictionaryPosition,
+  mappedPosition,
+  positionKey,
+  type ChapterPositionMapping,
+  type DictionaryPosition,
+  type PositionMapping,
+} from "@/lib/dictionary-positions";
 import { useT, type Key } from "@/lib/i18n";
 import { LOOKUP_SITES, lookupUrl, type LookupSite } from "@/lib/lookup-links";
 import { surfaceOffset } from "@/lib/text";
@@ -50,7 +57,7 @@ export type CardState = {
   positionParagraphs?: string[];
   positionOffset?: number;
   /** Pre-resolved L1 mapping from the active chapter (`null` = confirmed unmapped; `undefined` = unresolved). */
-  positionMapping?: PositionMapping | null;
+  positionMapping?: ChapterPositionMapping | null;
 };
 
 /** The whole sentence around a tapped word, and where that word starts inside it. */
@@ -315,7 +322,7 @@ export function WordCard({
   const [positionResult, setPositionResult] = useState<{ at: string; position: DictionaryPosition | null; mapping: PositionMapping | null } | null>(null);
   const positionSettled = !expectsPosition || positionResult?.at === dictionaryAt;
   const position = positionResult?.at === dictionaryAt ? positionResult.position : null;
-  const mapping = knownMapping ?? (positionResult?.at === dictionaryAt ? positionResult.mapping : null);
+  const mapping = (positionResult?.at === dictionaryAt ? positionResult.mapping : null) ?? knownMapping;
   useEffect(() => {
     let alive = true;
     if (!needsPositionLookup || !catalogId || !state.positionParagraphs || state.positionOffset === undefined) return;
@@ -324,6 +331,9 @@ export function WordCard({
       let map: PositionMapping | null = null;
       if (pos && preResolvedMapping === undefined) {
         try { map = await mappedPosition(catalogId, pos); } catch { /* Keep full candidates on an unavailable mapping. */ }
+      } else if (pos && preResolvedMapping) {
+        const pk = preResolvedMapping.positionKey ?? (await positionKey?.(catalogId, pos).catch(() => null));
+        if (pk) map = { ...preResolvedMapping, positionKey: pk };
       }
       if (alive) setPositionResult({ at: dictionaryAt, position: pos, mapping: map });
     });
