@@ -221,20 +221,26 @@ export function WordCard({
     void lookupStandardWord(dictionaryKey, receive).then(receive);
     return () => { alive = false; };
   }, [activePhrase, sensePanel, meaningContent, dictionaryKey, dictionaryAt]);
-  const [positionResult, setPositionResult] = useState<{ at: string; position: DictionaryPosition; mapping: PositionMapping | null } | null>(null);
+  const expectsPosition = Boolean(
+    !activePhrase && !sensePanel && !meaningContent && catalogId && state.positionParagraphs && state.positionOffset !== undefined,
+  );
+  const [positionResult, setPositionResult] = useState<{ at: string; position: DictionaryPosition | null; mapping: PositionMapping | null } | null>(null);
+  const positionSettled = !expectsPosition || positionResult?.at === dictionaryAt;
   const position = positionResult?.at === dictionaryAt ? positionResult.position : null;
   const mapping = positionResult?.at === dictionaryAt ? positionResult.mapping : null;
   useEffect(() => {
     let alive = true;
-    if (activePhrase || sensePanel || meaningContent || !catalogId || !state.positionParagraphs || state.positionOffset === undefined) return;
-    void dictionaryPosition(state.positionParagraphs, state.paragraph ?? 0, state.positionOffset, state.surface).catch(() => null).then(async position => {
-      if (!alive || !position) return;
-      let mapping: PositionMapping | null = null;
-      try { mapping = await mappedPosition(catalogId, position); } catch { /* Keep full candidates on an unavailable mapping. */ }
-      if (alive) setPositionResult({ at: dictionaryAt, position, mapping });
+    if (!expectsPosition || !catalogId || !state.positionParagraphs || state.positionOffset === undefined) return;
+    void dictionaryPosition(state.positionParagraphs, state.paragraph ?? 0, state.positionOffset, state.surface).catch(() => null).then(async pos => {
+      if (!alive) return;
+      let map: PositionMapping | null = null;
+      if (pos) {
+        try { map = await mappedPosition(catalogId, pos); } catch { /* Keep full candidates on an unavailable mapping. */ }
+      }
+      if (alive) setPositionResult({ at: dictionaryAt, position: pos, mapping: map });
     });
     return () => { alive = false; };
-  }, [dictionaryAt, activePhrase, sensePanel, meaningContent, catalogId, state.positionParagraphs, state.positionOffset, state.paragraph, state.surface]);
+  }, [dictionaryAt, expectsPosition, catalogId, state.positionParagraphs, state.positionOffset, state.paragraph, state.surface]);
   const fixedSense = mapping && standardLookup?.kind === "unmapped" ? standardLookup.senses.find(sense => sense.id === mapping.senseId && sense.source?.lemma === mapping.lemma) : undefined;
   const report = {
     bookId,
@@ -275,7 +281,7 @@ export function WordCard({
     </div>
   ) : null;
   const choiceActions = useDictionaryChoices(
-    !activePhrase && !fixedSense && !sensePanel && !meaningContent && standardLookup?.kind === "unmapped" ? {
+    !activePhrase && !phrasePending && positionSettled && !fixedSense && !sensePanel && !meaningContent && standardLookup?.kind === "unmapped" ? {
       bookId, catalogId, chapter: state.chapter ?? chapter, chapters: chapters ?? 0,
       paragraph: state.paragraph ?? 0, occurrence: state.occurrence ?? 1,
       word: dictionaryKey, sentence: state.fullSentence ?? state.sentence,
@@ -284,8 +290,11 @@ export function WordCard({
     } : null,
     standardLookup?.kind === "unmapped" ? standardLookup.senses : [],
   );
+  // Wait for both position mapping and phrase resolution before mounting the standard sense panel,
+  // so the mobile bottom sheet never expands with temporary unmapped tabs/candidates and then
+  // collapses back down once the mapped sense resolves.
   const staticSensePanel: WordSensePanelProps | undefined =
-    !activePhrase && standardLookup?.kind === "unmapped"
+    !activePhrase && !phrasePending && positionSettled && standardLookup?.kind === "unmapped"
       ? {
           resolution: fixedSense ? { kind: "mapped", sense: fixedSense } : standardLookup,
           community: legacyMeaning
@@ -498,7 +507,7 @@ export function WordCard({
               </div>
             ))
           )}
-          {!activePhrase && !sensePanel && !meaningContent && standardLookup && standardLookup.kind !== "unmapped" ? (
+          {!activePhrase && !phrasePending && positionSettled && !sensePanel && !meaningContent && standardLookup && standardLookup.kind !== "unmapped" ? (
             <p className="font-sans text-sm leading-5 text-muted" role={standardLookup.kind === "error" ? "alert" : "status"} data-dictionary-status>
               {t(standardLookup.kind === "ambiguous" ? "card.senses.ambiguous" : standardLookup.kind === "error" ? "card.senses.error" : "card.senses.missing")}
             </p>

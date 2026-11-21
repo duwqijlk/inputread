@@ -72,3 +72,13 @@ test("the sheet wires the guard on a non-passive touchmove and contains overscro
   assert.match(card, /if \(!panConsumed\(panBoxes\(guardFrom, el\), dy\)\) event\.preventDefault\(\);/);
   assert.match(phone, /\[data-word-card\] \{\s*touch-action: none;[^}]*overscroll-behavior: contain;/);
 });
+
+test("phone word sheet avoids dvh/wrap/overshoot jitter", () => {
+  const card = readFileSync(new URL("../src/components/floating-card.tsx", import.meta.url), "utf8");
+  assert.match(phone, /min-height:\s*min\(38svh,\s*19rem\);/, "keeps a steady mobile resting height");
+  assert.match(phone, /max-height:\s*80svh;/, "uses svh instead of dvh so URL-bar changes do not twitch height");
+  assert.doesNotMatch(phone, /80dvh|92dvh|18dvh/, "no dvh height jitter on phone word sheet");
+  assert.match(phone, /\[data-word-card\] \.word-ipa-values \{\s*flex-direction: column;/, "IPA stacks cleanly on phones without wrap-jumping");
+  assert.doesNotMatch(card, /const SPRING = "transform var\(--dur-spring/, "snap-back uses damped zero-overshoot easing");
+  assert.match(card, /Math\.max\(0, dy\)/, "clamps word-card drag at 0px so it never detaches from the bottom edge");
+});

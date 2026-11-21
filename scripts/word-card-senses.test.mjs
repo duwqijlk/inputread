@@ -127,6 +127,28 @@ test("real WordCard retains community identity and accepts a typed sense panel",
     await render({ state: { ...state, surface: "BANK", key: "bank", meaning: "", ready: false, status: "unknown" }, selectionId: 13 });
     await act(async () => pending.get("BANK")(bankResult));
     assert.ok(received.panel.communityEditor, "unknown words retain real missing-meaning feedback");
+
+    // Anti-jitter regression: when positionParagraphs + positionOffset are present (real catalog
+    // books), wait for mappedPosition before mounting WordSensePanel so the card never flashes
+    // temporary unmapped tabs/candidates and then collapses once the mapped sense arrives.
+    let resolvePos;
+    let resolveMap;
+    stubs["@/lib/dictionary-positions"].dictionaryPosition = () => new Promise(r => { resolvePos = r; });
+    stubs["@/lib/dictionary-positions"].mappedPosition = () => new Promise(r => { resolveMap = r; });
+    const mappedResult = { kind: "unmapped", senses: [{ id: "bank-mapped-1", pos: "noun", meaning: "Mapped river edge", source: { lemma: "bank", release: "oewn-test" } }] };
+    await render({
+      state: { ...state, surface: "bank", key: "bank", positionParagraphs: ["We sat on the bank."], positionOffset: 14 },
+      selectionId: 14,
+    });
+    await act(async () => pending.get("bank")(mappedResult));
+    assert.equal(container.querySelector("[data-test-panel]"), null, "does not flash unmapped panel before position mapping settles");
+    await act(async () => {
+      resolvePos({ paragraphIndex: 0, offset: 14, surface: "bank" });
+      for (let i = 0; i < 4 && !resolveMap; i += 1) await Promise.resolve();
+      resolveMap({ lemma: "bank", senseId: "bank-mapped-1" });
+    });
+    assert.ok(container.querySelector("[data-test-panel]"), "mounts panel once position mapping settles");
+    assert.equal(received.panel.resolution.kind, "mapped", "goes straight to mapped resolution without flashing unmapped");
   } finally {
     await act(async () => root.unmount());
     dom.window.close();

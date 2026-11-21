@@ -249,8 +249,8 @@ function panBoxes(node: Element | null, root: HTMLElement): PanBox[] {
   return boxes;
 }
 
-/** Back to place on the soft spring (with reduced motion or on e-ink it just goes). */
-const SPRING = "transform var(--dur-spring, 600ms) var(--ease-spring-soft, ease-out)";
+/** Smooth, damped snap-back with zero overshoot (with reduced motion or on e-ink it just goes). */
+const SPRING = "transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)";
 function springBack(): string {
   const still =
     (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) ||
@@ -319,6 +319,7 @@ function usePhoneSheetDismiss(panelRef: RefObject<HTMLElement | null>, onClose: 
       let lastT = 0;
       let speed = 0;
       let mode: "idle" | "undecided" | "dismiss" | "scroll" = "idle";
+      let originNode: Element | null = null;
       let timer = 0;
       let ignoreMouseUntil = 0;
       let suppressClick = false;
@@ -327,11 +328,21 @@ function usePhoneSheetDismiss(panelRef: RefObject<HTMLElement | null>, onClose: 
         if (timer) window.clearTimeout(timer);
         timer = 0;
       };
+      const scrollersAtTop = (from: Element | null): boolean => {
+        let node = from;
+        while (node && el.contains(node)) {
+          if (node.scrollTop > 0) return false;
+          if (node === el) break;
+          node = node.parentElement;
+        }
+        return el.scrollTop <= 0;
+      };
       const begin = (x: number, y: number, target: EventTarget | null) => {
         clearTimer();
         // Only suppress the drag's trailing click, never a new deliberate press.
         suppressClick = false;
         const origin = target instanceof Element ? target : null;
+        originNode = origin;
         const selection = window.getSelection();
         if (
           el.hasAttribute("data-word-card") &&
@@ -353,14 +364,9 @@ function usePhoneSheetDismiss(panelRef: RefObject<HTMLElement | null>, onClose: 
           mode = "idle";
           return;
         }
-        let node = origin;
-        while (node && el.contains(node)) {
-          if (node.scrollTop > 0) {
-            mode = "scroll";
-            return;
-          }
-          if (node === el) break;
-          node = node.parentElement;
+        if (!scrollersAtTop(origin)) {
+          mode = "scroll";
+          return;
         }
         startX = x;
         startY = y;
@@ -377,21 +383,25 @@ function usePhoneSheetDismiss(panelRef: RefObject<HTMLElement | null>, onClose: 
         if (now > lastT) speed = speed * 0.4 + ((y - lastY) / (now - lastT)) * 0.6;
         lastT = now;
         lastY = y;
+        const isWordCard = el.hasAttribute("data-word-card");
+        const threshold = isWordCard ? 12 : 8;
         if (mode === "undecided") {
-          const pull = dy > 0 && Math.abs(dy) > Math.abs(dx);
+          const pull = dy > 0 && Math.abs(dy) > Math.abs(dx) * (isWordCard ? 1.25 : 1);
+          const atTop = scrollersAtTop(originNode);
           // A downward pull at the top belongs to the sheet. Claim it on the first pixels:
           // once the browser starts panning the content (or the page under it), touchmove is
           // no longer cancelable and the article scrolls instead of the sheet following the
-          // finger. The 8px threshold below still decides when the sheet starts to move.
-          if (pull && el.scrollTop <= 0 && Math.abs(dy) < 8) {
+          // finger. The threshold below still decides when the sheet starts to move.
+          if (pull && atTop && Math.abs(dy) < threshold) {
             event.preventDefault();
             return;
           }
-          if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
-          if (pull && el.scrollTop <= 0 && dy > 0) {
+          if (Math.abs(dy) < threshold && Math.abs(dx) < threshold) return;
+          if (pull && atTop && dy > 0) {
             mode = "dismiss";
             el.style.animation = "none";
             el.style.transition = "none";
+            el.style.willChange = "transform";
           } else {
             mode = "scroll";
             return;
@@ -400,36 +410,52 @@ function usePhoneSheetDismiss(panelRef: RefObject<HTMLElement | null>, onClose: 
         // Once native scrolling owns a touch, never move the sheet on top of it.
         if (event.type === "touchmove" && !event.cancelable) {
           mode = "scroll";
-          el.style.transform = "";
+          el.style.willChange = "";
+          if (el.style.transform) el.style.transform = "";
           return;
         }
         event.preventDefault();
-        // The sheet goes with the finger; above its place it pulls back harder the further it goes.
-        el.style.transform = `translateY(${sheetOffset(dy, el.offsetHeight)}px)`;
+        // Clamp bottom-sheet drags at 0px on the word card so lifting the finger upward never
+        // detaches the sheet from the bottom edge and triggers a visible bounce/jitter.
+        const rawOffset = isWordCard ? Math.max(0, dy) : sheetOffset(dy, el.offsetHeight);
+        el.style.transform = `translate3d(0, ${Math.round(rawOffset)}px, 0)`;
       };
       const end = () => {
         if (mode !== "dismiss") {
           mode = "idle";
           return;
         }
-        const dy = lastY - startY;
+        const dy = Math.max(0, lastY - startY);
         mode = "idle";
         suppressClick = true;
         if (sheetCloses(dy, speed, el.offsetHeight)) {
           // Carry on from where the finger let go, at about its speed.
           el.style.transition = `transform ${Math.round(Math.max(120, Math.min(260, (el.offsetHeight - dy) / Math.max(speed, 1))))}ms ease-out`;
-          el.style.transform = "translateY(110%)";
+          el.style.transform = "translate3d(0, 110%, 0)";
           timer = window.setTimeout(() => closeRef.current(), 160);
         } else {
           el.style.transition = springBack();
           el.style.transform = "";
+          timer = window.setTimeout(() => {
+            el.style.transition = "";
+            el.style.willChange = "";
+          }, 240);
         }
       };
       const cancel = () => {
         clearTimer();
+        const wasDismiss = mode === "dismiss";
         mode = "idle";
-        el.style.transition = springBack();
-        el.style.transform = "";
+        if (wasDismiss || el.style.transform) {
+          el.style.transition = springBack();
+          el.style.transform = "";
+          timer = window.setTimeout(() => {
+            el.style.transition = "";
+            el.style.willChange = "";
+          }, 240);
+        } else {
+          el.style.willChange = "";
+        }
       };
       // The pan guard: every move over the sheet that nothing inside it can scroll is cancelled,
       // whatever the gesture is (a pull, a swipe on a button, a box that reached its end).
@@ -501,6 +527,7 @@ function usePhoneSheetDismiss(panelRef: RefObject<HTMLElement | null>, onClose: 
         el.removeEventListener("click", onClick, true);
         el.style.transform = "";
         el.style.transition = "";
+        el.style.willChange = "";
       };
     };
     bind();

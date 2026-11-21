@@ -1521,11 +1521,15 @@ export function ReaderScreen({
     const at = phraseAt;
     const surface = picked.surface;
     const offset = phraseOffset;
-    setPhrasePending(true);
+    if (!phrasesReady) setPhrasePending(true);
     void findPhrase(bookId, pickedSentence, surface, offset >= 0 ? offset : undefined).then(
       (hit) => {
         if (!alive) return;
-        setPhraseHit(hit ? { at, hit } : null);
+        setPhraseHit((prev) => {
+          if (!hit) return prev?.at === at ? null : prev;
+          if (prev?.at === at && prev.hit.key === hit.key && prev.hit.matched === hit.matched) return prev;
+          return { at, hit };
+        });
         setPhrasePending(false);
         // The tap already said the word, or the phrase when the list in memory knew it. Only a
         // phrase found here for the first time replaces that: one voice per tap.
@@ -1610,17 +1614,22 @@ export function ReaderScreen({
       activeExtra || !effectivePhraseList
         ? null
         : pickPhrase(effectivePhraseList, sentence, surface, offset >= 0 ? offset : undefined);
+    const nextSelectionId = ++selectionSequence.current;
+    const nextIndex = button.getAttribute("data-i") ?? "";
+    const nextPhraseAt = `${bookId}|${safeIndex}|${extraId}|${nextSelectionId}|${nextIndex}|${surface}|${sentence}|${offset}`;
     // Opening a word card is local only. Collection requires an explicit meaning choice.
+    // Seed the in-memory phrase match on the very first frame so phrase taps never flash as a
+    // single-word card and then jump height when the async IndexedDB lookup settles.
     closeHelp();
-    setPhraseHit(null);
-    setPhrasePending(!activeExtra);
+    setPhraseHit(phraseNow ? { at: nextPhraseAt, hit: phraseNow } : null);
+    setPhrasePending(!activeExtra && !phrasesReady);
     setAnchor(button instanceof HTMLElement ? button : null);
     setPicked({
-      selectionId: ++selectionSequence.current,
+      selectionId: nextSelectionId,
       targetMode: "phrase",
       surface,
       paragraph,
-      index: button.getAttribute("data-i") ?? "",
+      index: nextIndex,
       nth,
       before,
       block: Math.max(0, blockAt),

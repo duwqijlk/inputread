@@ -891,7 +891,7 @@
   [data-word-card] [data-word-title] {
     padding-bottom: 4px;
     max-height: 20vh;
-    max-height: 20dvh;
+    max-height: 20svh;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -995,11 +995,23 @@
       padding-bottom: 1.25rem;
       padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
     }
-    /* Sparse words need the same available swipe surface as a phrase. */
+    /* Keep a steady resting height and use svh instead of dvh so URL-bar resizing and async
+       meaning updates never make the phone bottom sheet jump or twitch. */
     [data-word-card].word-sheet-plain,
     [data-word-card].word-sheet-context {
+      min-height: 17.5rem;
+      min-height: min(38svh, 19rem);
       max-height: 80vh;
-      max-height: 80dvh;
+      max-height: 80svh;
+    }
+    [data-word-card] [data-word-body] {
+      flex: 1 1 auto;
+    }
+    /* Keep UK and US pronunciation on their own fixed rows on phones so long IPA never wraps
+       onto a second line after loading and pushes the card upward. */
+    [data-word-card] .word-ipa-values {
+      flex-direction: column;
+      align-items: flex-start;
     }
     [data-word-card] [data-word-primary] {
       min-height: 96px;
@@ -1041,7 +1053,7 @@
     }
     [data-word-card] [data-word-title] {
       max-height: 18vh;
-      max-height: 18dvh;
+      max-height: 18svh;
     }
     [data-word-card] [data-word-header] [data-speak],
     [data-word-card] [data-word-save],
@@ -1060,8 +1072,9 @@
   @media (max-width: 767px) and (max-height: 600px) {
     [data-word-card].word-sheet-plain,
     [data-word-card].word-sheet-context {
+      min-height: 11rem;
       max-height: 92vh;
-      max-height: 92dvh;
+      max-height: 92svh;
     }
     [data-word-card] [data-word-body] {
       margin-top: 8px;
