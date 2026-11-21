@@ -83,7 +83,7 @@ import {
   shareBookSignedMeanings,
   type SignedMeaningsOverlay,
 } from "@/lib/signed-meanings";
-import { warmStandardDictionary } from "@/lib/standard-dictionary";
+import { warmStandardDictionary, warmStandardLemmas } from "@/lib/standard-dictionary";
 import { MissingBook } from "@/components/missing-book";
 import { READER_GUTTER, SIDE_PANEL } from "@/components/side-panel";
 import { btn, cn, ProgressBar, speakEnglish } from "@/components/ui";
@@ -678,28 +678,42 @@ export function ReaderScreen({
   }, [words, bookKey]);
   const savedKeys = savedBookIndex.allKeys;
 
-  const [chapterSenseMap, setChapterSenseMap] = useState<{ key: string; byToken: Map<string, string> }>({
+  const [chapterSenseMap, setChapterSenseMap] = useState<{
+    key: string;
+    ready: boolean;
+    byToken: Map<string, PositionMapping>;
+  }>({
     key: "",
+    ready: false,
     byToken: new Map(),
   });
   useEffect(() => {
     let alive = true;
-    const entries = bookMappings.catalogId === catalogId ? bookMappings.entries : [];
+    if (!catalogId) {
+      setChapterSenseMap({ key: chapterKey, ready: true, byToken: new Map() });
+      return;
+    }
+    if (bookMappings.catalogId !== catalogId) {
+      setChapterSenseMap({ key: "", ready: false, byToken: new Map() });
+      return;
+    }
+    const entries = bookMappings.entries;
     const posCh = renderedPositionChapter();
-    if (!catalogId || entries.length === 0 || !posCh || posCh.texts.length === 0) {
-      setChapterSenseMap({ key: chapterKey, byToken: new Map() });
+    if (entries.length === 0 || !posCh || posCh.texts.length === 0) {
+      setChapterSenseMap({ key: chapterKey, ready: true, byToken: new Map() });
       return;
     }
     void textSha256(JSON.stringify(posCh.texts)).then(async (chHash) => {
       if (!alive || !chHash) return;
-      const byToken = new Map<string, string>();
+      const byToken = new Map<string, PositionMapping>();
       for (const row of entries) {
         if (row.chapterSha256 === chHash) {
-          byToken.set(`${row.paragraphIndex}:${row.offset}:${row.surface}`, row.senseId);
+          byToken.set(`${row.paragraphIndex}:${row.offset}:${row.surface}`, row);
         }
       }
       if (byToken.size === 0) {
         // Cross-edition fallback: match unchanged paragraphs by paragraphSha256 when chapterSha256 differs.
+        // Fail closed if identical paragraphs in the book map the same token to conflicting senses.
         const byPara = new Map<string, PositionMapping[]>();
         for (const row of entries) {
           const list = byPara.get(row.paragraphSha256) ?? [];
@@ -710,17 +724,48 @@ export function ReaderScreen({
         if (!alive) return;
         hashes.forEach((pHash, pIdx) => {
           if (!pHash) return;
+          const byLocal = new Map<string, PositionMapping[]>();
           for (const row of byPara.get(pHash) ?? []) {
-            byToken.set(`${pIdx}:${row.offset}:${row.surface}`, row.senseId);
+            const k = `${pIdx}:${row.offset}:${row.surface}`;
+            const list = byLocal.get(k) ?? [];
+            list.push(row);
+            byLocal.set(k, list);
+          }
+          for (const [k, rows] of byLocal) {
+            const first = rows[0];
+            if (!first) continue;
+            if (rows.some((r) => r.senseId !== first.senseId || r.lemma !== first.lemma)) continue;
+            rows.sort((a, b) => Math.abs(a.paragraphIndex - pIdx) - Math.abs(b.paragraphIndex - pIdx));
+            byToken.set(k, rows[0]!);
           }
         });
       }
-      if (alive) setChapterSenseMap({ key: chapterKey, byToken });
+      if (alive) setChapterSenseMap({ key: chapterKey, ready: true, byToken });
     });
     return () => {
       alive = false;
     };
   }, [bookMappings, catalogId, chapterKey, linkedHtml]);
+
+  // Quietly prewarm exact OEWN word payloads for this chapter's L1 mapped lemmas, so tapping a
+  // mapped word draws both community and standard meanings together on the very first frame.
+  useEffect(() => {
+    if (!chapterSenseMap.ready || chapterSenseMap.key !== chapterKey || chapterSenseMap.byToken.size === 0) {
+      return;
+    }
+    const lemmas: string[] = [];
+    const seen = new Set<string>();
+    for (const row of chapterSenseMap.byToken.values()) {
+      if (!row.lemma || seen.has(row.lemma)) continue;
+      seen.add(row.lemma);
+      lemmas.push(row.lemma);
+    }
+    if (lemmas.length === 0) return;
+    const timer = window.setTimeout(() => {
+      void warmStandardLemmas(lemmas);
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [chapterSenseMap, chapterKey]);
 
   // Paint saved words straight onto the page, without rebuilding its HTML.
   // Selection is separate: tapping a word must not repeat every saved-phrase match.
@@ -747,7 +792,7 @@ export function ReaderScreen({
         const pIdx = block ? blockIndex.get(block) : undefined;
         if (block && pIdx !== undefined) {
           const offset = Array.from(flowTextBefore(block, button)).length;
-          mappedSenseId = activeSenseMap.get(`${pIdx}:${offset}:${surface}`);
+          mappedSenseId = activeSenseMap.get(`${pIdx}:${offset}:${surface}`)?.senseId;
         }
       }
       if (mappedSenseId) {
@@ -1806,6 +1851,20 @@ export function ReaderScreen({
       paragraph,
       before: tap.before,
     };
+    const positionOffset = Array.from(tap.before).length;
+    const preMapped =
+      chapterSenseMap.ready && chapterSenseMap.key === chapterKey
+        ? chapterSenseMap.byToken.get(`${tap.block}:${positionOffset}:${surface}`)
+        : undefined;
+    const positionMapping =
+      preMapped !== undefined
+        ? preMapped
+        : chapterSenseMap.ready &&
+            chapterSenseMap.key === chapterKey &&
+            bookMappings.catalogId === catalogId &&
+            bookMappings.entries.length > 0
+          ? null
+          : undefined;
     let gloss: Gloss | undefined = effectiveGlossary[key];
     // A senseOnly entry says nothing about the places its senses do not name.
     if (gloss && !entryAppliesAt(key, gloss, tapAt)) gloss = undefined;
@@ -1835,7 +1894,8 @@ export function ReaderScreen({
         chapter: viewChapter,
         glossaryRev,
         positionParagraphs: tap.positionParagraphs,
-        positionOffset: Array.from(tap.before).length,
+        positionOffset,
+        ...(positionMapping !== undefined ? { positionMapping } : {}),
       };
     }
     // Not in this book's word list: say so in a friendly way, the same for every such word (a
@@ -1856,7 +1916,8 @@ export function ReaderScreen({
       chapter: viewChapter,
       glossaryRev,
       positionParagraphs: tap.positionParagraphs,
-      positionOffset: Array.from(tap.before).length,
+      positionOffset,
+      ...(positionMapping !== undefined ? { positionMapping } : {}),
     };
   }
 

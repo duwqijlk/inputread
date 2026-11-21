@@ -15,7 +15,12 @@ const stubs = {
   "lucide-react": { Heart: icon, Image: icon, Menu: icon, Sparkles: icon, X: icon },
   "@/assets/merriam-webster-logo.png": "logo.png",
   "@/lib/glossary-format": { countSurface: (word) => word.toLowerCase() },
-  "@/lib/standard-dictionary": { lookupStandardWord: async () => null },
+  "@/lib/standard-dictionary": {
+    lookupStandardWord: async () => null,
+    lookupStandardLemma: async () => null,
+    peekStandardLemma: () => null,
+    peekStandardWord: () => null,
+  },
   "@/lib/dictionary-positions": { dictionaryPosition: async () => null, mappedPosition: async () => null },
   "@/lib/dictionary-choices": { useDictionaryChoices: () => ({ vote: { eligibility: "unavailable", selectedId: null, pending: false }, onVote() {} }) },
   "@/lib/i18n": { useT: () => ({ t: (key) => key }) },
@@ -262,6 +267,124 @@ test("real WordCard retains community identity and accepts a typed sense panel",
     assert.equal(otherRecall.getAttribute("data-recall-status"), "saved-other-book");
     assert.ok(otherRecall.textContent.includes("card.recall.mastered"));
     assert.equal(container.querySelector("[data-word-add-sentence]"), null, "other-book recall uses main Heart rather than duplicate button");
+
+    // Frame-0 simultaneous community + standard render when chapter mapping & lemma cache are prewarmed
+    const prewarmedMapping = {
+      chapterSha256: "a".repeat(64),
+      paragraphIndex: 0,
+      paragraphSha256: "b".repeat(64),
+      offset: 4,
+      surface: "sprang",
+      positionKey: "c".repeat(64),
+      senseId: "oewn-spring-v",
+      lemma: "spring",
+      release: "oewn-test",
+      reviewedAt: 1,
+    };
+    const prewarmedEntry = {
+      kind: "unmapped",
+      senses: [{ id: "oewn-spring-v", pos: "verb", meaning: "Leap forward suddenly.", source: { lemma: "spring", release: "oewn-test" } }],
+    };
+    let wordLookupsOnHotHit = 0;
+    let lemmaLookupsOnHotHit = 0;
+    let posCallsOnHotHit = 0;
+    stubs["@/lib/standard-dictionary"].peekStandardLemma = (lemma) => (lemma === "spring" ? prewarmedEntry : null);
+    stubs["@/lib/standard-dictionary"].lookupStandardLemma = async () => { lemmaLookupsOnHotHit += 1; return prewarmedEntry; };
+    stubs["@/lib/standard-dictionary"].lookupStandardWord = async () => { wordLookupsOnHotHit += 1; return prewarmedEntry; };
+    stubs["@/lib/dictionary-positions"].dictionaryPosition = async () => { posCallsOnHotHit += 1; return null; };
+    await render({
+      state: {
+        ...state,
+        surface: "sprang",
+        key: "spring",
+        meaning: "突然跃起。",
+        pos: "verb",
+        ready: true,
+        status: "ready",
+        positionParagraphs: ["She sprang across the room."],
+        positionOffset: 4,
+        positionMapping: prewarmedMapping,
+      },
+      selectionId: 30,
+    });
+    assert.ok(container.querySelector("[data-test-panel]"), "prewarmed mapped word mounts WordSensePanel on frame 0");
+    assert.equal(received.panel.resolution.kind, "mapped");
+    assert.equal(received.panel.resolution.sense.id, "oewn-spring-v");
+    assert.ok(received.panel.communityContent, "community explanation renders together with standard sense");
+    assert.equal(container.querySelector("[data-standard-loading]"), null, "no loading skeleton when prewarmed");
+    assert.equal(wordLookupsOnHotHit, 0, "skips surface lookup when fresh lemma cache hits");
+    assert.equal(lemmaLookupsOnHotHit, 0, "skips network when fresh lemma cache hits");
+    assert.equal(posCallsOnHotHit, 0, "skips async SHA-256 when chapter mapping is already known");
+
+    // Cold mapped tap renders stable standard placeholder and fetches lemma directly (no surface lookup)
+    let resolveColdLemma;
+    let coldLemmaCalls = 0;
+    let coldSurfaceCalls = 0;
+    stubs["@/lib/standard-dictionary"].peekStandardLemma = () => null;
+    stubs["@/lib/standard-dictionary"].lookupStandardLemma = (lemma) => {
+      coldLemmaCalls += 1;
+      assert.equal(lemma, "spring");
+      return new Promise((resolve) => { resolveColdLemma = resolve; });
+    };
+    stubs["@/lib/standard-dictionary"].lookupStandardWord = async () => { coldSurfaceCalls += 1; return null; };
+    await render({
+      state: {
+        ...state,
+        surface: "sprang",
+        key: "spring",
+        meaning: "突然跃起。",
+        pos: "verb",
+        ready: true,
+        status: "ready",
+        positionParagraphs: ["She sprang across the room."],
+        positionOffset: 4,
+        positionMapping: prewarmedMapping,
+      },
+      selectionId: 31,
+    });
+    assert.ok(container.querySelector("[data-community-explanation]"), "shows community meaning immediately");
+    assert.ok(container.querySelector("[data-standard-loading]"), "reserves standard section height on cold mapped tap");
+    assert.equal(coldLemmaCalls, 1);
+    assert.equal(coldSurfaceCalls, 0);
+    await act(async () => resolveColdLemma(prewarmedEntry));
+    assert.equal(container.querySelector("[data-standard-loading]"), null);
+    assert.equal(received.panel.resolution.kind, "mapped");
+    assert.equal(received.panel.resolution.sense.meaning, "Leap forward suddenly.");
+
+    // SWR stale hit renders immediately on frame 0 and refreshes seamlessly in background
+    const staleEntry = {
+      kind: "unmapped",
+      senses: [{ id: "oewn-spring-v", pos: "verb", meaning: "Old cached gloss.", source: { lemma: "spring", release: "oewn-test" } }],
+    };
+    const freshEntry = {
+      kind: "unmapped",
+      senses: [{ id: "oewn-spring-v", pos: "verb", meaning: "Updated R2 gloss.", source: { lemma: "spring", release: "oewn-test" } }],
+    };
+    let resolveSwr;
+    stubs["@/lib/standard-dictionary"].peekStandardLemma = (lemma, opts) =>
+      lemma === "spring" && opts?.allowStale ? staleEntry : null;
+    stubs["@/lib/standard-dictionary"].lookupStandardLemma = () =>
+      new Promise((resolve) => { resolveSwr = resolve; });
+    await render({
+      state: {
+        ...state,
+        surface: "sprang",
+        key: "spring",
+        meaning: "突然跃起。",
+        pos: "verb",
+        ready: true,
+        status: "ready",
+        positionParagraphs: ["She sprang across the room."],
+        positionOffset: 4,
+        positionMapping: prewarmedMapping,
+      },
+      selectionId: 32,
+    });
+    assert.equal(received.panel.resolution.kind, "mapped");
+    assert.equal(received.panel.resolution.sense.meaning, "Old cached gloss.");
+    assert.equal(container.querySelector("[data-standard-loading]"), null);
+    await act(async () => resolveSwr(freshEntry));
+    assert.equal(received.panel.resolution.sense.meaning, "Updated R2 gloss.");
   } finally {
     await act(async () => root.unmount());
     dom.window.close();

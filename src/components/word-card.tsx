@@ -2,7 +2,13 @@ import { Heart, Image as ImageIcon, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import merriamWebsterLogo from "@/assets/merriam-webster-logo.png";
 import { countSurface, type OtherMeaning } from "@/lib/glossary-format";
-import { lookupStandardWord, type DictionaryLookup } from "@/lib/standard-dictionary";
+import {
+  lookupStandardLemma,
+  lookupStandardWord,
+  peekStandardLemma,
+  peekStandardWord,
+  type DictionaryLookup,
+} from "@/lib/standard-dictionary";
 import { useDictionaryChoices } from "@/lib/dictionary-choices";
 import { dictionaryPosition, mappedPosition, type DictionaryPosition, type PositionMapping } from "@/lib/dictionary-positions";
 import { useT, type Key } from "@/lib/i18n";
@@ -43,6 +49,8 @@ export type CardState = {
   glossaryRev?: string;
   positionParagraphs?: string[];
   positionOffset?: number;
+  /** Pre-resolved L1 mapping from the active chapter (`null` = confirmed unmapped; `undefined` = unresolved). */
+  positionMapping?: PositionMapping | null;
 };
 
 /** The whole sentence around a tapped word, and where that word starts inside it. */
@@ -232,36 +240,95 @@ export function WordCard({
   // Prefer the exact spelling in the book, not resolveGlossKey's lowercase/heuristic stem.
   const dictionaryKey = state.surface.normalize("NFC");
   const dictionaryAt = `${bookId}:${selectionId}:${targetMode}:${dictionaryKey}:${catalogId ?? ""}:${state.chapter ?? chapter}:${state.paragraph ?? 0}:${state.positionOffset ?? ""}`;
-  const standardLookup = standardResult?.at === dictionaryAt ? standardResult.value : null;
+  const preResolvedMapping =
+    !activePhrase && !sensePanel && !meaningContent ? state.positionMapping : undefined;
+  const knownMapping = preResolvedMapping ?? null;
+  const cachedStandard: DictionaryLookup | null =
+    !activePhrase && !sensePanel && !meaningContent && dictionaryKey.trim()
+      ? knownMapping
+        ? (peekStandardLemma?.(knownMapping.lemma, { allowStale: true }) ?? null)
+        : (peekStandardWord?.(dictionaryKey, { allowStale: true }) ?? null)
+      : null;
+  const standardLookup =
+    standardResult?.at === dictionaryAt ? standardResult.value : cachedStandard;
   useEffect(() => {
     let alive = true;
     if (activePhrase || sensePanel || meaningContent || !dictionaryKey.trim()) return;
     const receive = (value: DictionaryLookup | null) => {
       if (alive) setStandardResult({ at: dictionaryAt, value });
     };
-    void lookupStandardWord(dictionaryKey, receive).then(receive);
+    if (knownMapping) {
+      const fresh = peekStandardLemma?.(knownMapping.lemma);
+      if (
+        fresh?.kind === "unmapped" &&
+        fresh.senses.some(
+          (sense) => sense.id === knownMapping.senseId && sense.source?.lemma === knownMapping.lemma,
+        )
+      ) {
+        return;
+      }
+      if (lookupStandardLemma) {
+        void lookupStandardLemma(knownMapping.lemma).then((hit) => {
+          if (!alive) return;
+          if (
+            hit?.kind === "unmapped" &&
+            hit.senses.some(
+              (sense) =>
+                sense.id === knownMapping.senseId && sense.source?.lemma === knownMapping.lemma,
+            )
+          ) {
+            receive(hit);
+            return;
+          }
+          if (hit?.kind === "error" && cachedStandard?.kind === "unmapped") return;
+          if (hit === null) {
+            receive(null);
+            return;
+          }
+          void lookupStandardWord(dictionaryKey, receive).then((fallbackHit) => {
+            if (fallbackHit?.kind === "error" && cachedStandard?.kind === "unmapped") return;
+            receive(fallbackHit);
+          });
+        });
+        return () => { alive = false; };
+      }
+    }
+    const freshWord = !knownMapping ? peekStandardWord?.(dictionaryKey) : null;
+    if (freshWord?.kind === "unmapped") return;
+    void lookupStandardWord(dictionaryKey, receive).then((result) => {
+      if (result?.kind === "error" && cachedStandard?.kind === "unmapped") return;
+      receive(result);
+    });
     return () => { alive = false; };
-  }, [activePhrase, sensePanel, meaningContent, dictionaryKey, dictionaryAt]);
-  const expectsPosition = Boolean(
-    !activePhrase && !sensePanel && !meaningContent && catalogId && state.positionParagraphs && state.positionOffset !== undefined,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePhrase, sensePanel, meaningContent, dictionaryKey, dictionaryAt, knownMapping]);
+  const needsPositionLookup = Boolean(
+    !activePhrase &&
+      !sensePanel &&
+      !meaningContent &&
+      !knownMapping &&
+      catalogId &&
+      state.positionParagraphs &&
+      state.positionOffset !== undefined,
   );
+  const expectsPosition = needsPositionLookup && preResolvedMapping === undefined;
   const [positionResult, setPositionResult] = useState<{ at: string; position: DictionaryPosition | null; mapping: PositionMapping | null } | null>(null);
   const positionSettled = !expectsPosition || positionResult?.at === dictionaryAt;
   const position = positionResult?.at === dictionaryAt ? positionResult.position : null;
-  const mapping = positionResult?.at === dictionaryAt ? positionResult.mapping : null;
+  const mapping = knownMapping ?? (positionResult?.at === dictionaryAt ? positionResult.mapping : null);
   useEffect(() => {
     let alive = true;
-    if (!expectsPosition || !catalogId || !state.positionParagraphs || state.positionOffset === undefined) return;
+    if (!needsPositionLookup || !catalogId || !state.positionParagraphs || state.positionOffset === undefined) return;
     void dictionaryPosition(state.positionParagraphs, state.paragraph ?? 0, state.positionOffset, state.surface).catch(() => null).then(async pos => {
       if (!alive) return;
       let map: PositionMapping | null = null;
-      if (pos) {
+      if (pos && preResolvedMapping === undefined) {
         try { map = await mappedPosition(catalogId, pos); } catch { /* Keep full candidates on an unavailable mapping. */ }
       }
       if (alive) setPositionResult({ at: dictionaryAt, position: pos, mapping: map });
     });
     return () => { alive = false; };
-  }, [dictionaryAt, expectsPosition, catalogId, state.positionParagraphs, state.positionOffset, state.paragraph, state.surface]);
+  }, [dictionaryAt, needsPositionLookup, preResolvedMapping, catalogId, state.positionParagraphs, state.positionOffset, state.paragraph, state.surface]);
   const fixedSense = mapping && standardLookup?.kind === "unmapped" ? standardLookup.senses.find(sense => sense.id === mapping.senseId && sense.source?.lemma === mapping.lemma) : undefined;
   const report = {
     bookId,
@@ -544,25 +611,45 @@ export function WordCard({
             />
           ) : (
             (meaningContent ?? (
-              <div data-community-explanation>
-                {!missing ? (
-                  <p className="mb-2 font-sans text-sm leading-5 text-muted">
-                    {t(activeCredit ? "card.senses.signed" : "card.senses.community")}
-                  </p>
+              <>
+                {!missing || !knownMapping || standardLookup ? (
+                  <div data-community-explanation>
+                    {!missing ? (
+                      <p className="mb-2 font-sans text-sm leading-5 text-muted">
+                        {t(activeCredit ? "card.senses.signed" : "card.senses.community")}
+                      </p>
+                    ) : null}
+                    <WordMeaning
+                      key={`${bookId}:${selectionId}:${targetMode}:${target}:${state.chapter ?? chapter}:${state.occurrence ?? 1}`}
+                      meaning={targetMeaning}
+                      pos={targetPos}
+                      credit={activeCredit}
+                      missing={missing}
+                      noList={noList}
+                      part={activePhrase ? "phrase-meaning" : "word-meaning"}
+                      target={report}
+                    >
+                      {!activePhrase && state.coined ? <CoinedBadge /> : null}
+                    </WordMeaning>
+                  </div>
                 ) : null}
-                <WordMeaning
-                  key={`${bookId}:${selectionId}:${targetMode}:${target}:${state.chapter ?? chapter}:${state.occurrence ?? 1}`}
-                  meaning={targetMeaning}
-                  pos={targetPos}
-                  credit={activeCredit}
-                  missing={missing}
-                  noList={noList}
-                  part={activePhrase ? "phrase-meaning" : "word-meaning"}
-                  target={report}
-                >
-                  {!activePhrase && state.coined ? <CoinedBadge /> : null}
-                </WordMeaning>
-              </div>
+                {knownMapping && !standardLookup && !activePhrase && !phrasePending ? (
+                  <section
+                    className={cn(!missing && "mt-4 border-t border-line pt-4")}
+                    aria-busy="true"
+                    data-standard-loading
+                  >
+                    <div className="font-sans text-sm leading-5 text-muted">
+                      {t("card.senses.standard")}
+                    </div>
+                    <div className="mt-2 grid gap-2" aria-hidden>
+                      <div className="h-3.5 w-14 animate-pulse rounded bg-ink/[0.08]" />
+                      <div className="h-6 w-11/12 animate-pulse rounded bg-ink/[0.08]" />
+                      <div className="h-6 w-2/3 animate-pulse rounded bg-ink/[0.08]" />
+                    </div>
+                  </section>
+                ) : null}
+              </>
             ))
           )}
           {!activePhrase && !phrasePending && positionSettled && !sensePanel && !meaningContent && standardLookup && standardLookup.kind !== "unmapped" ? (

@@ -348,3 +348,60 @@ test("absent manifest leaves legacy reader alone and mismatched entry fails clos
   try { assert.deepEqual(await load().lookupStandardWord("bank"), { kind: "error" }); }
   finally { globalThis.fetch = original; }
 });
+
+test("warmStandardLemmas and lookupStandardLemma prewarm exact word payloads and serve synchronous peek + SWR", async () => {
+  const original = globalThis.fetch;
+  const now = Date.now;
+  let clock = 0;
+  let wording = "initial gloss";
+  const urls = [];
+  Date.now = () => clock;
+  globalThis.fetch = async (url) => {
+    urls.push(url);
+    if (url.endsWith("current.json")) {
+      return response({
+        schema: "oewn-r2-current-v1",
+        release: "oewn-2025-test",
+        caseIndex: "case-v1-0123456789ab",
+        formsIndex: "forms-v1-0123456789ab",
+        wordsMutable: true,
+      });
+    }
+    const hex = url.split("/").at(-1).replace(".json", "");
+    const key = Buffer.from(hex, "hex").toString();
+    return response({
+      schema: "oewn-r2-entry-v1",
+      release: "oewn-2025-test",
+      lookupKey: key,
+      senses: [{ id: `${key}-s1`, pos: "v", meaning: `${key}: ${wording}`, originalMeaning: "orig" }],
+    });
+  };
+  try {
+    const api = load();
+    assert.equal(api.peekStandardLemma("spring"), null);
+    await api.warmStandardLemmas(["spring", "spring", "mutter"]);
+    assert.equal(urls.some((u) => u.includes("case-indexes") || u.includes("form-indexes")), false, "direct lemma warm skips index shards");
+    assert.equal(urls.filter((u) => u.includes("/words/")).length, 2, "deduplicates lemmas");
+    assert.equal(api.peekStandardLemma("spring")?.senses[0].meaning, "spring: initial gloss");
+    assert.equal(api.peekStandardWord("mutter")?.senses[0].meaning, "mutter: initial gloss");
+
+    // Re-warming fresh lemmas performs zero extra fetches
+    await api.warmStandardLemmas(["spring", "mutter"]);
+    assert.equal(urls.filter((u) => u.includes("/words/")).length, 2);
+
+    // After 60s TTL: strict peek returns null (triggering refresh), allowStale still returns cached entry for frame-0 SWR
+    clock = 60_001;
+    wording = "updated gloss";
+    assert.equal(api.peekStandardLemma("spring"), null);
+    assert.equal(api.peekStandardLemma("spring", { allowStale: true })?.senses[0].meaning, "spring: initial gloss");
+
+    // Direct lookupStandardLemma fetches updated word without index round-trips
+    const refreshed = await api.lookupStandardLemma("spring");
+    assert.equal(refreshed?.senses[0].meaning, "spring: updated gloss");
+    assert.equal(api.peekStandardLemma("spring")?.senses[0].meaning, "spring: updated gloss");
+    assert.equal(urls.some((u) => u.includes("case-indexes") || u.includes("form-indexes")), false);
+  } finally {
+    globalThis.fetch = original;
+    Date.now = now;
+  }
+});

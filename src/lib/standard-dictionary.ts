@@ -15,12 +15,15 @@ const RELEASE = /^[a-z0-9][a-z0-9-]{0,79}$/;
 const CASE_INDEX = /^case-v1-[0-9a-f]{12}$/;
 const MAX_ENTRY_BYTES = 192 * 1024;
 const MAX_INDEX_BYTES = 192 * 1024;
-const MAX_CACHED_WORDS = 64;
+const MAX_CACHED_WORDS = 256;
 const CURRENT_TTL = 60_000;
 let current: { request: Promise<Publication | null>; expires: number } | undefined;
 const WORD_TTL = 60_000;
 type EntryRequest = { request: Promise<DictionaryLookup>; expires: number };
+type ResolvedEntry = { value: DictionaryLookup; expires: number };
 const entries = new Map<string, EntryRequest>();
+const resolvedByLemma = new Map<string, ResolvedEntry>();
+const resolvedByWord = new Map<string, ResolvedEntry>();
 const requests = new Map<string, Promise<DictionaryLookup>>();
 const indexes = new Map<string, Promise<Record<string, string[]>>>();
 type PartialLookup = Extract<DictionaryLookup, { kind: "unmapped" }>;
@@ -141,8 +144,19 @@ function exactEntry(publication: Publication, lookupKey: string): Promise<Dictio
     entries.set(entryCacheKey, entryRequest);
     trimCache(entries);
     void pending.then((result) => {
-      if (result.kind === "error" && entries.get(entryCacheKey) === entryRequest) entries.delete(entryCacheKey);
-      else entryRequest.expires = mutable ? Date.now() + WORD_TTL : Infinity;
+      if (result.kind === "error" && entries.get(entryCacheKey) === entryRequest) {
+        entries.delete(entryCacheKey);
+      } else {
+        const expires = mutable ? Date.now() + WORD_TTL : Infinity;
+        entryRequest.expires = expires;
+        if (result.kind === "unmapped") {
+          resolvedByLemma.delete(lookupKey);
+          resolvedByLemma.set(lookupKey, { value: result, expires });
+          trimCache(resolvedByLemma);
+        } else if (result.kind === "missing") {
+          resolvedByLemma.delete(lookupKey);
+        }
+      }
     });
   }
   return pending;
@@ -350,6 +364,14 @@ export async function lookupStandardWord(word: string, onPartial?: (value: Parti
     void pending.then((result) => {
       if ((publication.wordsMutable || result.kind === "error") && requests.get(cacheKey) === pending) requests.delete(cacheKey);
       if (progress.get(cacheKey) === updates) progress.delete(cacheKey);
+      if (result.kind === "unmapped") {
+        const expires = publication.wordsMutable ? Date.now() + WORD_TTL : Infinity;
+        resolvedByWord.delete(lookupKey);
+        resolvedByWord.set(lookupKey, { value: result, expires });
+        trimCache(resolvedByWord);
+      } else if (result.kind === "missing" || result.kind === "ambiguous") {
+        resolvedByWord.delete(lookupKey);
+      }
     });
   }
   if (onPartial && updates) {
@@ -360,4 +382,73 @@ export async function lookupStandardWord(word: string, onPartial?: (value: Parti
   }
   try { return await pending; }
   finally { if (onPartial) updates?.listeners.delete(onPartial); }
+}
+
+/** Synchronous cache peek for an exact OEWN lemma (allows stale hit for zero-flicker SWR rendering). */
+export function peekStandardLemma(
+  lemma: string,
+  opts?: { allowStale?: boolean },
+): DictionaryLookup | null {
+  const key = lemma.normalize("NFC");
+  if (!key) return null;
+  const hit = resolvedByLemma.get(key);
+  if (!hit) return null;
+  if (opts?.allowStale || Date.now() < hit.expires) return hit.value;
+  return null;
+}
+
+/** Synchronous cache peek for a tapped word surface or lemma. */
+export function peekStandardWord(
+  word: string,
+  opts?: { allowStale?: boolean },
+): DictionaryLookup | null {
+  const key = word.normalize("NFC");
+  if (!key) return null;
+  const hit = resolvedByWord.get(key) ?? resolvedByLemma.get(key);
+  if (!hit) return null;
+  if (opts?.allowStale || Date.now() < hit.expires) return hit.value;
+  return null;
+}
+
+/** Fast-path exact lookup for an already-known L1 mapped lemma; skips case and form indexes. */
+export async function lookupStandardLemma(lemma: string): Promise<DictionaryLookup | null> {
+  const key = lemma.normalize("NFC");
+  try { keyHex(key); } catch { return { kind: "missing" }; }
+  let publication: Publication | null;
+  try { publication = await activeRelease(); } catch { return { kind: "error" }; }
+  if (!publication) return null;
+  return exactEntry(publication, key);
+}
+
+/** Quietly prewarm exact OEWN word payloads for a chapter's known L1 mapped lemmas. */
+export async function warmStandardLemmas(
+  lemmas: Iterable<string>,
+  opts?: { limit?: number; concurrency?: number },
+): Promise<void> {
+  try {
+    const publication = await activeRelease();
+    if (!publication) return;
+    const limit = Math.max(1, Math.min(200, opts?.limit ?? 80));
+    const concurrency = Math.max(1, Math.min(8, opts?.concurrency ?? 4));
+    const queue: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of lemmas) {
+      const key = raw.normalize("NFC");
+      if (!key || seen.has(key)) continue;
+      try { keyHex(key); } catch { continue; }
+      seen.add(key);
+      if (peekStandardLemma(key)) continue;
+      queue.push(key);
+      if (queue.length >= limit) break;
+    }
+    if (queue.length === 0) return;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < queue.length) {
+        const next = queue[cursor++];
+        if (next) await exactEntry(publication, next);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, worker));
+  } catch { /* Speculative chapter lemma prewarming must never block reading or poison retries. */ }
 }
